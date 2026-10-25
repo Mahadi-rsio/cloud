@@ -29,6 +29,11 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
     advanced: {
       cookiePrefix: "better-auth",
     },
+    user: {
+      deleteUser: {
+        enabled: true,
+      },
+    },
     databaseHooks: {
       user: {
         create: {
