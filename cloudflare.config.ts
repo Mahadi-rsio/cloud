@@ -3,6 +3,8 @@ import { createWorkersCacheConfig } from "@vinext/cloudflare/cache/config";
 
 const cache = await createWorkersCacheConfig();
 
+const isPreviewBuild = process.env.CLOUDFLARE_PREVIEW_BUILD === "true";
+
 export default defineConfig({
   worker: defineWorker({
     ...cache,
@@ -24,6 +26,8 @@ export default defineConfig({
       BETTER_AUTH_SECRET: bindings.secret(),
       BETTER_AUTH_URL: bindings.secret(),
     },
-    triggers: [triggers.queue({ name: "auth-jobs" })],
+    ...(isPreviewBuild
+      ? {}
+      : { triggers: [triggers.queue({ name: "auth-jobs" })] }),
   }),
 });

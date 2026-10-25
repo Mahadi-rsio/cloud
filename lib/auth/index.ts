@@ -7,14 +7,17 @@ import { enqueueAuthJob } from "@/lib/queue";
 
 let cached: ReturnType<typeof createAuth> | undefined;
 
-function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, baseURL: string) {
+function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallbackURL: string) {
   return betterAuth({
     database: drizzleAdapter(db, {
       provider: "pg",
     }),
     secret,
-    baseURL,
-    trustedOrigins: [baseURL].filter(Boolean),
+    baseURL: {
+      allowedHosts: ["localhost:*", "*.workers.dev"],
+      protocol: "auto",
+      fallback: fallbackURL,
+    },
     secondaryStorage: kvSecondaryStorage(),
     emailAndPassword: {
       enabled: true,
@@ -47,9 +50,9 @@ export async function getAuth() {
   if (cached) return cached;
   const env = await getEnv();
   const db = await getDb();
-  if (!env.BETTER_AUTH_SECRET || !env.BETTER_AUTH_URL) {
-    throw new Error("BETTER_AUTH_SECRET and BETTER_AUTH_URL are required");
+  if (!env.BETTER_AUTH_SECRET) {
+    throw new Error("BETTER_AUTH_SECRET is required");
   }
-  cached = createAuth(db, env.BETTER_AUTH_SECRET, env.BETTER_AUTH_URL);
+  cached = createAuth(db, env.BETTER_AUTH_SECRET, env.BETTER_AUTH_URL || "http://localhost:3001");
   return cached;
 }

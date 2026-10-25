@@ -13,7 +13,7 @@ export function SignOutButton() {
       variant="outline"
       className="w-full"
       onClick={async () => {
-        await api.post("/sign-out");
+        await api.post("/sign-out", {});
         router.push("/login");
         router.refresh();
       }}
