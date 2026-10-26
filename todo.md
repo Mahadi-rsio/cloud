@@ -30,7 +30,7 @@
 - [ ] Add product job queues (provisioning/lifecycle/backups) with idempotent consumers (proposed)
 
 ### Applications and provisioning (partially implemented)
-- [x] `applications` and `machines` tables plus create/update/delete API (`lib/db/product-schema.ts`, `app/api/v1/applications/**`); list/detail `GET` still proposed
+- [x] `applications` and `machines` tables plus create/update/delete/list/detail API (`lib/db/product-schema.ts`, `app/api/v1/applications/**`)
 - [x] Application creation with runtime/region selection (no plan/quota selection yet)
 - [x] Fly Machines client with synchronous provisioning (`lib/fly/client.ts`; no queue worker/outbox yet)
 - [ ] Start / stop / restart / redeploy lifecycle operations (delete is implemented)

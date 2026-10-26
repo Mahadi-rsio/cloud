@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { assertOwnership, requireUser } from "@/lib/authz";
@@ -50,6 +50,28 @@ async function findOwnedApplication(id: string, userId: string) {
   }
   assertOwnership(application.userId, userId);
   return { db, application };
+}
+
+export async function GET(request: NextRequest, ctx: RouteContext) {
+  try {
+    await assertRateLimit(`rl:applications:read:${clientIp(request)}`, {
+      limit: 120,
+      windowSeconds: 60,
+    });
+    const user = await requireUser();
+    const id = z.uuid().parse((await ctx.params).id);
+    const { db, application } = await findOwnedApplication(id, user.id);
+
+    const machineRows = await db
+      .select()
+      .from(machines)
+      .where(eq(machines.applicationId, id))
+      .orderBy(asc(machines.createdAt));
+
+    return jsonOk({ application, machines: machineRows });
+  } catch (error) {
+    return errorResponse(error);
+  }
 }
 
 export async function PATCH(request: NextRequest, ctx: RouteContext) {

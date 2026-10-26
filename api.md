@@ -125,9 +125,9 @@ Endpoints marked **[Implemented]** exist today; endpoints marked **[Proposed]** 
 
 | Endpoint | Auth | Body / Query | Success | Status |
 | --- | --- | --- | --- | --- |
-| `GET /api/v1/applications` | session | `?cursor&filter[status]&sort` | `data.items`, `data.nextCursor` | Proposed |
+| `GET /api/v1/applications` | session | `?cursor&limit&filter[status]&sort` | `data.items`, `data.nextCursor` | Implemented |
 | `POST /api/v1/applications` | session | `{ name, region?, runtime? }` | 201 `data.application`, `data.machine` | Implemented |
-| `GET /api/v1/applications/{id}` | session + owner | — | `data.app` with machine/volume summary | Proposed |
+| `GET /api/v1/applications/{id}` | session + owner | — | `data.application`, `data.machines` | Implemented |
 | `PATCH /api/v1/applications/{id}` | session + owner | `{ name?, region?, runtime? }` (at least one) | 200 `data.application` | Implemented |
 | `DELETE /api/v1/applications/{id}` | session + owner | — | 200 `data.application` (soft-deleted) | Implemented |
 
@@ -136,8 +136,9 @@ Endpoints marked **[Implemented]** exist today; endpoints marked **[Proposed]** 
 - **Runtime shape (implemented):** `{ image?, guest?: { cpu_kind?, cpus?, memory_mb? }, env?: Record<string,string>, internalPort? }`.
 - **Slug (implemented):** generated server-side from the name plus a random suffix; clients cannot set it.
 - **Delete semantics (implemented):** synchronous. Sets `deleting`, destroys the Fly machine and app (ignoring 404s), marks machines `destroyed`, then sets `deleted` + `deletedAt`. Returns 409 if deletion is already in progress.
-- **Rate limits (implemented):** product endpoints are limited per IP via `lib/rate-limit.ts` (KV-backed, `AUTH_KV`): create 20/60s, update 60/60s, delete 30/60s. Exceeded requests return 429 `RATE_LIMITED` with `error.details.retryAfter`.
-- **Not implemented:** list/detail `GET`, `Idempotency-Key` handling, queue/outbox interaction, `data.operationId` responses, plan/quota selection.
+- **Rate limits (implemented):** product endpoints are limited per IP via `lib/rate-limit.ts` (KV-backed, `AUTH_KV`): create 20/60s, update 60/60s, delete 30/60s, list and detail 120/60s. Exceeded requests return 429 `RATE_LIMITED` with `error.details.retryAfter`.
+- **List/detail (implemented):** list returns non-deleted apps only, keyset-paginated on `(order column, id)` — `sort` is `updated_at_desc` (default), `updated_at_asc`, `created_at_desc`, `created_at_asc`; `cursor` is an opaque base64 token; `filter[status]` restricts by status. Detail returns the application plus its machines (newest last).
+- **Not implemented:** `Idempotency-Key` handling, queue/outbox interaction, `data.operationId` responses, plan/quota selection.
 - **Note:** create/update/delete call the Fly API synchronously from the route handlers; failures mark the application `failed` and attempt Fly cleanup.
 
 ### 3.2 Lifecycle operations
