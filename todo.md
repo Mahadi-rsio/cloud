@@ -1,6 +1,6 @@
 # Engineering Checklist — Cloud Hosting Platform
 
-> **Legend:** `[x]` = verified implemented in the source tree (commit `d6265a6`). `[ ]` = incomplete, proposed, or unverified. Proposed file paths are labeled `(proposed)`.
+> **Legend:** `[x]` = verified implemented in the source tree. `[ ]` = incomplete, proposed, or unverified. Proposed file paths are labeled `(proposed)`.
 > **Related documents:** [`prd.md`](./prd.md), [`api.md`](./api.md), [`architecture.md`](./architecture.md), [`db.md`](./db.md), [`plan.md`](./plan.md)
 
 ## P0 — Critical blockers, security, data integrity
@@ -10,10 +10,10 @@
 - [x] Authenticated route group redirects unauthenticated users to `/login` (`app/(app)/layout.tsx`)
 - [x] Account deletion requires the current password (`components/settings/settings-form.tsx` → `POST /api/auth/delete-user`)
 - [x] Secrets are bound as Worker secrets, not committed (`cloudflare.config.ts`; `.env*` and `.dev.vars` are gitignored)
-- [ ] Enforce per-user application ownership server-side on every product endpoint (`lib/authz.ts` — proposed; no product endpoints exist yet)
+- [x] Enforce per-user application ownership server-side on every product endpoint (`lib/authz.ts`; implemented for application create/update/delete)
 - [ ] Never trust client-supplied payment status; verify bKash server-side (`app/api/v1/bkash/verify` — proposed)
 - [ ] Idempotency keys for create/delete/lifecycle/payment/backup operations (`idempotency_records` table — proposed)
-- [ ] Rate limits on auth, provisioning, and payment endpoints (`lib/rate-limit.ts` — proposed)
+- [x] Rate limits on auth (Better Auth built-in, KV secondary-storage) and provisioning/update/delete (`lib/rate-limit.ts`); payment endpoints still proposed
 - [ ] Do not log or expose `DATABASE_URL`, Fly token, or bKash secrets in responses/logs
 
 ## P1 — Required for MVP
@@ -29,11 +29,11 @@
 - [ ] Make `welcome-email` consumer robust: retries, logging, DLQ (proposed; currently only `console.log`)
 - [ ] Add product job queues (provisioning/lifecycle/backups) with idempotent consumers (proposed)
 
-### Applications and provisioning (all proposed)
-- [ ] `applications` table and CRUD API (`lib/db/product-schema.ts`, `app/api/v1/applications/**`)
-- [ ] Application creation with plan/runtime/region selection
-- [ ] Fly Machines provisioning worker (`lib/fly/client.ts` wrapping Fly Machines API)
-- [ ] Start / stop / restart / redeploy / delete lifecycle operations
+### Applications and provisioning (partially implemented)
+- [x] `applications` and `machines` tables plus create/update/delete API (`lib/db/product-schema.ts`, `app/api/v1/applications/**`); list/detail `GET` still proposed
+- [x] Application creation with runtime/region selection (no plan/quota selection yet)
+- [x] Fly Machines client with synchronous provisioning (`lib/fly/client.ts`; no queue worker/outbox yet)
+- [ ] Start / stop / restart / redeploy lifecycle operations (delete is implemented)
 - [ ] Machine status and error surfacing in the UI
 
 ### Billing (all proposed)
@@ -51,7 +51,7 @@
 ## P2 — Important improvements
 
 - [ ] Centralize session checks in `middleware.ts` instead of per-page `getSession()` + `redirect` duplication
-- [ ] Replace axios (`lib/api.ts`) with a typed `fetch` client + Zod validation (`lib/http.ts` — proposed) per target stack
+- [ ] Replace axios (`lib/api.ts`) with a typed `fetch` client + Zod validation (`lib/http.ts` exists for product endpoints; client adoption still pending) per target stack
 - [ ] Deduplicate `extractErrorMessage` (duplicated in `components/auth/login-form.tsx` and `lib/errors.ts`)
 - [ ] Add `GET /api/health` readiness endpoint (proposed)
 - [ ] Application detail pages: resource settings, volumes, operations history, logs UI (proposed)

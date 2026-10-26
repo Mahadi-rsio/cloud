@@ -14,7 +14,7 @@ export function AppBar({ user }: { user: { name: string; email: string } }) {
         type="button"
         variant="ghost"
         size="icon"
-        className="lg:hidden"
+        className="md:hidden"
         aria-label="Open menu"
         onClick={() => shell.setSidebarOpen(true)}
       >

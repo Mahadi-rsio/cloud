@@ -8,6 +8,13 @@
       "when": 1792867935688,
       "tag": "0000_luxuriant_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792985969605,
+      "tag": "0001_add_applications_and_machines",
+      "breakpoints": true
     }
   ]
 }

@@ -53,7 +53,7 @@ graph TD
 ### 2.1 Responsibilities split
 
 - **Control plane** (this repo, deployed as a Cloudflare Worker): auth, dashboard, API, plans, subscriptions, payments, backups metadata, audit.
-- **Runtime plane** (Fly.io): Fly Machines and Volumes. Managed exclusively by the control plane backend through the Fly Machines API using a server-side token. [Proposed]
+- **Runtime plane** (Fly.io): Fly Machines and Volumes. Managed exclusively by the control plane backend through the Fly Machines API using a server-side token. [Partially implemented: `lib/fly/client.ts`; volumes pending]
 - **Backup/storage plane** (Cloudflare R2): backup objects and artifacts. [Proposed]
 
 ### 2.2 Target architecture diagram
@@ -95,11 +95,15 @@ graph TD
 3. Worker: create Fly Machine via Fly API, store `fly_machine_id`, transition to `running`, emit audit event.
 4. On failure: retry with backoff, then mark `failed` and record error.
 
+**Current implementation:** `POST /api/v1/applications` writes the `applications` row, creates the Fly app and machine synchronously via `lib/fly/client.ts`, then stores the `machines` row and sets the app `running` (or `failed`). There is no quota check, outbox, or queue worker yet; failures attempt Fly cleanup.
+
 ### 2.5 Lifecycle flows (proposed)
 
 - **Start/stop/restart/redeploy:** same outbox pattern; idempotency keyed per operation.
 - **Update:** `PATCH` applies safe fields only (name, runtime, region) with a 409 guard if an operation is pending.
 - **Delete:** mark `deleting` → worker stops machine, destroys volumes, archives rows → `deleted`.
+
+**Current implementation:** `PATCH` merges runtime/region into the existing Fly machine config and updates the DB synchronously; `DELETE` destroys the machine and app synchronously, then soft-deletes the row. Start/stop/restart/redeploy, volumes, outbox, and workers are not implemented.
 
 ### 2.6 Payment and subscription lifecycle (proposed)
 

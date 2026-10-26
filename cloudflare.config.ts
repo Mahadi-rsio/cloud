@@ -25,6 +25,10 @@ export default defineConfig({
       DATABASE_URL: bindings.secret(),
       BETTER_AUTH_SECRET: bindings.secret(),
       BETTER_AUTH_URL: bindings.secret(),
+      FLY_API_TOKEN: bindings.secret(),
+      FLY_ORG_SLUG: bindings.secret(),
+      FLY_DEFAULT_REGION: bindings.secret(),
+      FLY_DEFAULT_IMAGE: bindings.secret(),
     },
     ...(isPreviewBuild
       ? {}

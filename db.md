@@ -5,7 +5,7 @@
 
 ## 1. Existing Schema (verified)
 
-Source: `lib/db/schema.ts`, migration `drizzle/0000_luxuriant_toad.sql`.
+Source: `lib/db/schema.ts`, migration `drizzle/0000_luxuriant_toad.sql`; product tables: `lib/db/product-schema.ts`, migration `drizzle/0001_add_applications_and_machines.sql`.
 
 ### 1.1 Tables
 
@@ -38,9 +38,52 @@ Index: `account_userId_idx` on `account(user_id)`.
 
 ### 1.2 Gaps vs target design
 
-- Only auth tables exist. No applications, plans, subscriptions, payments, machines, volumes, backups, operations, usage, idempotency, outbox, or audit tables.
+- Auth tables plus `applications` and `machines` exist (migration `0001_add_applications_and_machines.sql`).
+- Still missing: plans, subscriptions, payments, volumes, backups, operations, usage, idempotency, outbox, and audit tables.
 - No RLS; ownership must be enforced in the application layer (already the model used by Better Auth).
-- No enum/check constraints on lifecycle state (no lifecycle state exists yet).
+- Lifecycle check constraints exist on `applications.status` and `machines.status`.
+
+### 1.3 Product tables (implemented)
+
+Source: `lib/db/product-schema.ts`; migration `drizzle/0001_add_applications_and_machines.sql`.
+
+**`applications`** — user-owned application and desired state.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | uuid | PK, default random |
+| `user_id` | text | not null, FK → `user.id` ON DELETE CASCADE |
+| `name` | text | not null |
+| `slug` | text | not null, unique |
+| `status` | text | not null, default `pending`; check `pending|provisioning|running|failed|deleting|deleted` |
+| `region` | text | not null |
+| `runtime` | jsonb | nullable |
+| `requested_resources` | jsonb | nullable |
+| `last_operation_at` | timestamptz | nullable |
+| `created_at` / `updated_at` | timestamptz | not null |
+| `deleted_at` | timestamptz | nullable (soft delete) |
+
+Indexes: `applications_user_status_idx` on `(user_id, status)`, `applications_user_updated_idx` on `(user_id, updated_at)`.
+
+**`machines`** — Fly Machine records belonging to an application.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | uuid | PK, default random |
+| `application_id` | uuid | not null, FK → `applications.id` ON DELETE CASCADE |
+| `fly_machine_id` | text | unique, nullable |
+| `status` | text | not null, default `provisioning`; check `provisioning|running|stopped|stopping|starting|restarting|redeploying|failed|destroying|destroyed` |
+| `region` | text | not null |
+| `instance_number` | integer | not null, default 0 |
+| `shared_ipv4` / `shared_ipv6` | text | nullable |
+| `public_url` | text | nullable |
+| `allocated_resources` | jsonb | nullable |
+| `error` | jsonb | nullable |
+| `created_at` / `updated_at` | timestamptz | not null |
+
+Indexes: unique partial `machines_application_id_active_idx` on `(application_id)` where `status <> 'destroyed'`.
+
+**Note:** the target schema in §2.1–§2.2 remains the design goal; the implemented tables omit `plan_id`, `subscription_id`, volumes, operations, and the rest of the normalized model.
 
 ## 2. Proposed Normalized Target Schema
 

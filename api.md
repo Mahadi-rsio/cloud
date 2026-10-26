@@ -8,17 +8,17 @@
 ### 1.1 Base URL
 
 - Current: all client calls go through the axios instance in `lib/api.ts` with `baseURL: "/api/auth"`.
-- Proposed: versioned namespace `/api/v1/` for product resources, keeping `/api/auth/*` for Better Auth.
+- Implemented for product endpoints: versioned namespace `/api/v1/`, keeping `/api/auth/*` for Better Auth.
 
 ### 1.2 Authentication
 
 - Current: Better Auth session cookie (`better-auth` cookie prefix, `lib/auth/index.ts`). Server reads sessions via `getSession()` (`lib/auth/session.ts`) using `auth.api.getSession`.
-- Proposed: the same session mechanism authorizes product endpoints. `GET /api/auth/get-session` is the client-side way to refresh session state.
+- Implemented for product endpoints: the same session mechanism authorizes `/api/v1/*`; `requireUser()` in `lib/authz.ts` returns 401 when absent. `GET /api/auth/get-session` is the client-side way to refresh session state.
 
 ### 1.3 Response envelope
 
 - Current: Better Auth endpoints return their own JSON shapes; the client (`lib/errors.ts`) reads `error.response.data.message` (string or array of `{ message }`).
-- Proposed: standardize on one envelope for new endpoints:
+- Implemented for product endpoints (`lib/http.ts`): one envelope for new endpoints:
 
 ```json
 {
@@ -37,7 +37,7 @@
 }
 ```
 
-### 1.4 Error codes (proposed)
+### 1.4 Error codes (implemented for product endpoints)
 
 | HTTP | Code | Meaning |
 | --- | --- | --- |
@@ -53,6 +53,7 @@
 ### 1.5 Validation
 
 - Current: `lib/validators/auth.ts` (Zod v4) validates sign-in and sign-up input client-side and server-side.
+- Implemented for product endpoints: `lib/validators/application.ts` validates application create/update bodies server-side with Zod v4.
 - Proposed: every request body is validated server-side with Zod; shared schemas live in `lib/validators/`.
 
 ### 1.6 Pagination / filtering / sorting (proposed)
@@ -104,7 +105,7 @@ All current endpoints are handled by the Better Auth catch-all route `app/api/au
 - **Auth:** session required.
 - **Body:** `{ password: string }`.
 - **Security:** Better Auth verifies the password and cascades deletes of linked accounts (`onDelete: cascade` on `account.user_id`).
-- **Note:** no application/billing cleanup exists today because those resources are not yet implemented.
+- **Note:** account deletion cascades DB rows via `user_id`, but does not yet tear down Fly applications/machines or billing resources.
 
 ### 2.6 `GET /api/auth/get-session` — [Implemented]
 
@@ -116,24 +117,28 @@ All current endpoints are handled by the Better Auth catch-all route `app/api/au
 
 The `[...all]` catch-all also serves any other Better Auth route (`/callback/*`, `/error`, etc.). These are provider-managed and not documented individually.
 
-## 3. Proposed API — Not Implemented
+## 3. Product API — Partially Implemented
 
-All endpoints below are **[Proposed]** and currently return 404. File paths are proposed locations.
+Endpoints marked **[Implemented]** exist today; endpoints marked **[Proposed]** do not yet exist. File paths are actual for implemented endpoints and proposed locations otherwise.
 
 ### 3.1 Applications
 
-| Endpoint | Auth | Body / Query | Success |
-| --- | --- | --- | --- |
-| `GET /api/v1/applications` | session | `?cursor&filter[status]&sort` | `data.items`, `data.nextCursor` |
-| `POST /api/v1/applications` | session | `{ name, planId?, region?, runtime? }` | 201 `data.app` |
-| `GET /api/v1/applications/{id}` | session + owner | — | `data.app` with machine/volume summary |
-| `PATCH /api/v1/applications/{id}` | session + owner | `{ name?, runtime?, region? }` | `data.app` |
-| `DELETE /api/v1/applications/{id}` | session + owner | — | `data.operationId` (async) |
+| Endpoint | Auth | Body / Query | Success | Status |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/applications` | session | `?cursor&filter[status]&sort` | `data.items`, `data.nextCursor` | Proposed |
+| `POST /api/v1/applications` | session | `{ name, region?, runtime? }` | 201 `data.application`, `data.machine` | Implemented |
+| `GET /api/v1/applications/{id}` | session + owner | — | `data.app` with machine/volume summary | Proposed |
+| `PATCH /api/v1/applications/{id}` | session + owner | `{ name?, region?, runtime? }` (at least one) | 200 `data.application` | Implemented |
+| `DELETE /api/v1/applications/{id}` | session + owner | — | 200 `data.application` (soft-deleted) | Implemented |
 
-- **Ownership:** every handler resolves the application row, asserts `app.userId === session.user.id`; otherwise 403.
-- **Zod:** `createApplicationSchema` (name 2–64 chars, region enum, planId UUID), `updateApplicationSchema`.
-- **Idempotency:** `POST /api/v1/applications` honors an `Idempotency-Key` header; duplicates return the original resource.
-- **Queue interaction:** create/delete enqueue provisioning/cleanup jobs.
+- **Ownership (implemented):** `lib/authz.ts` resolves the session user and asserts `app.userId === session.user.id`; non-owners get 403 and missing/deleted rows get 404.
+- **Validation (implemented):** `createApplicationSchema` requires `name` 2–64 chars; `updateApplicationSchema` requires at least one of `name`, `region`, `runtime`. `region` is a 3-letter Fly code. Bodies are strict (unknown keys rejected).
+- **Runtime shape (implemented):** `{ image?, guest?: { cpu_kind?, cpus?, memory_mb? }, env?: Record<string,string>, internalPort? }`.
+- **Slug (implemented):** generated server-side from the name plus a random suffix; clients cannot set it.
+- **Delete semantics (implemented):** synchronous. Sets `deleting`, destroys the Fly machine and app (ignoring 404s), marks machines `destroyed`, then sets `deleted` + `deletedAt`. Returns 409 if deletion is already in progress.
+- **Rate limits (implemented):** product endpoints are limited per IP via `lib/rate-limit.ts` (KV-backed, `AUTH_KV`): create 20/60s, update 60/60s, delete 30/60s. Exceeded requests return 429 `RATE_LIMITED` with `error.details.retryAfter`.
+- **Not implemented:** list/detail `GET`, `Idempotency-Key` handling, queue/outbox interaction, `data.operationId` responses, plan/quota selection.
+- **Note:** create/update/delete call the Fly API synchronously from the route handlers; failures mark the application `failed` and attempt Fly cleanup.
 
 ### 3.2 Lifecycle operations
 

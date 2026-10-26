@@ -6,6 +6,8 @@ export const metadata = {
   title: "Sign in",
 };
 
+export const instant = false;
+
 export default async function LoginPage() {
   const session = await getSession();
   if (session) {

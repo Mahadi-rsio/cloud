@@ -33,7 +33,7 @@ class InMemoryKv implements KvLike {
 
 let cachedKv: KvLike | undefined;
 
-async function getKvBinding(): Promise<KvLike> {
+export async function getKvBinding(): Promise<KvLike> {
   if (cachedKv) return cachedKv;
   try {
     const { env } = await import("cloudflare:workers");

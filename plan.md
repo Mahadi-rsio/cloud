@@ -5,8 +5,8 @@
 
 ## Current Implementation Baseline (verified)
 
-- Next.js 16.4.3 (vinext) + Cloudflare Workers, Better Auth + Neon/Drizzle (user + account tables only), KV secondary storage, one queue (`auth-jobs`) with a logging consumer, shadcn/ui shell, TanStack Query in forms, Zustand for UI state.
-- No application, billing, payment, machine, volume, backup, or usage code exists.
+- Next.js 16.4.3 (vinext) + Cloudflare Workers, Better Auth + Neon/Drizzle (auth tables, plus `applications`/`machines`), KV secondary storage, one queue (`auth-jobs`) with a logging consumer, shadcn/ui shell, TanStack Query in forms, Zustand for UI state.
+- Applications and machines tables plus create/update/delete API and a synchronous Fly Machines client exist. Billing, payments, volumes, backups, and usage code do not.
 
 ## Phase 0 — Codebase audit and foundational cleanup
 
@@ -27,11 +27,11 @@
 ## Phase 1 — Database schema and migration foundations
 
 - **Objective:** create the product schema (see [`db.md`](./db.md)) and migration pipeline.
-- **Current status:** Not started (only Better Auth tables exist).
+- **Current status:** Partially implemented: `applications` and `machines` exist; plans, subscriptions, payments, volumes, backups, operations, idempotency, outbox, audit, and usage remain.
 - **Prerequisites:** Phase 0.
 - **Tasks:**
   - Add `lib/db/product-schema.ts` with Drizzle tables: `applications`, `plans`, `subscriptions`, `payment_transactions`, `payment_events`, `machines`, `volumes`, `backups`, `provisioning_operations`, `idempotency_records`, `outbox`, `audit_logs`, `usage_records`.
-  - Wire the schema into `lib/db/index.ts` (currently `schema: authSchema` only).
+  - Wire the schema into `lib/db/index.ts` (implemented: merges auth and product schemas).
   - Generate migration `0001_*.sql` with `drizzle-kit generate`; review SQL.
 - **Expected files:** `lib/db/product-schema.ts` (new), `drizzle/0001_*.sql` (new).
 - **Migrations:** one additive migration; no destructive changes.
@@ -42,7 +42,7 @@
 ## Phase 2 — Application API and ownership enforcement
 
 - **Objective:** CRUD API for applications with ownership checks.
-- **Current status:** Not started.
+- **Current status:** Partially implemented: create/update/delete with ownership and validation exist; list/get and the real `/apps` UI remain.
 - **Prerequisites:** Phase 1.
 - **Tasks:**
   - Create `app/api/v1/applications/route.ts` (list/create) and `app/api/v1/applications/[id]/route.ts` (get/update/delete).
@@ -59,7 +59,7 @@
 ## Phase 3 — Fly Machines provisioning and lifecycle orchestration
 
 - **Objective:** provision and manage Fly Machines from the backend.
-- **Current status:** Not started (no Fly code exists).
+- **Current status:** Partially implemented: `lib/fly/client.ts` provisions and tears down machines synchronously; queues, outbox, and lifecycle operations remain.
 - **Prerequisites:** Phase 2; Fly API token available as a secret.
 - **Tasks:**
   - Add `lib/fly/client.ts` wrapping the Fly Machines API (create/start/stop/restart/delete/list).
