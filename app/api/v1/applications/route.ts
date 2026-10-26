@@ -5,7 +5,13 @@ import { requireUser } from "@/lib/authz";
 import { getDb } from "@/lib/db";
 import { applications, machines } from "@/lib/db/product-schema";
 import { getEnv } from "@/lib/env";
-import { createFlyApp, createFlyMachine, destroyFlyApp } from "@/lib/fly/client";
+import {
+  allocateSharedIpv4,
+  createFlyApp,
+  createFlyMachine,
+  destroyFlyApp,
+  destroyFlyMachine,
+} from "@/lib/fly/client";
 import { errorResponse, HttpError, jsonOk, readJson } from "@/lib/http";
 import { assertRateLimit, clientIp } from "@/lib/rate-limit";
 import { createApplicationSchema } from "@/lib/validators/application";
@@ -68,6 +74,7 @@ export async function POST(request: NextRequest) {
       .returning();
 
     let flyMachine;
+    let ipAssignment;
     try {
       await createFlyApp({
         name: slug,
@@ -80,11 +87,16 @@ export async function POST(request: NextRequest) {
         runtime: input.runtime,
         name: slug,
       });
+      // Free shared IPv4 (Anycast) only — never a dedicated IP or paid IPv6.
+      ipAssignment = await allocateSharedIpv4(slug);
     } catch (error) {
       await db
         .update(applications)
         .set({ status: "failed", updatedAt: new Date() })
         .where(eq(applications.id, application.id));
+      if (flyMachine?.id) {
+        await destroyFlyMachine(slug, flyMachine.id).catch(() => undefined);
+      }
       await destroyFlyApp(slug).catch(() => undefined);
       throw error;
     }
@@ -98,7 +110,9 @@ export async function POST(request: NextRequest) {
         status,
         region: flyMachine.region ?? region,
         instanceNumber: 0,
-        publicUrl: input.runtime?.internalPort ? `https://${slug}.fly.dev` : null,
+        sharedIpv4: ipAssignment.ip ?? null,
+        // Reachable at the app's public URL via the shared IPv4.
+        publicUrl: `https://${slug}.fly.dev`,
         allocatedResources: input.runtime?.guest ?? null,
       })
       .returning();

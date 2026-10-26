@@ -8,7 +8,7 @@
 ### 1.1 Base URL
 
 - Current: all client calls go through the axios instance in `lib/api.ts` with `baseURL: "/api/auth"`.
-- Implemented for product endpoints: versioned namespace `/api/v1/`, keeping `/api/auth/*` for Better Auth.
+- Implemented for product endpoints: versioned namespace `/api/v1/`, keeping `/api/auth/*` for Better Auth. The apps UI uses the axios instance in `lib/api-v1.ts` (`baseURL: "/api/v1"`) via the typed client in `lib/applications.ts`.
 
 ### 1.2 Authentication
 
@@ -56,10 +56,11 @@
 - Implemented for product endpoints: `lib/validators/application.ts` validates application create/update bodies server-side with Zod v4.
 - Proposed: every request body is validated server-side with Zod; shared schemas live in `lib/validators/`.
 
-### 1.6 Pagination / filtering / sorting (proposed)
+### 1.6 Pagination / filtering / sorting (implemented for applications)
 
-- Collections use `?cursor=<opaque>` for keyset pagination, `?filter[status]=running`, and `?sort=-createdAt`.
+- Collections use `?cursor=<opaque>` for keyset pagination, `?filter[status]=running`, and `?sort=updated_at_desc`.
 - Response shape: `data.items`, `data.nextCursor`.
+- Implemented on `GET /api/v1/applications`; `filter[status]` and `sort` follow the documented forms (see §3.1).
 
 ## 2. Current API — Implemented
 
@@ -138,6 +139,7 @@ Endpoints marked **[Implemented]** exist today; endpoints marked **[Proposed]** 
 - **Delete semantics (implemented):** synchronous. Sets `deleting`, destroys the Fly machine and app (ignoring 404s), marks machines `destroyed`, then sets `deleted` + `deletedAt`. Returns 409 if deletion is already in progress.
 - **Rate limits (implemented):** product endpoints are limited per IP via `lib/rate-limit.ts` (KV-backed, `AUTH_KV`): create 20/60s, update 60/60s, delete 30/60s, list and detail 120/60s. Exceeded requests return 429 `RATE_LIMITED` with `error.details.retryAfter`.
 - **List/detail (implemented):** list returns non-deleted apps only, keyset-paginated on `(order column, id)` — `sort` is `updated_at_desc` (default), `updated_at_asc`, `created_at_desc`, `created_at_asc`; `cursor` is an opaque base64 token; `filter[status]` restricts by status. Detail returns the application plus its machines (newest last).
+- **Networking (implemented):** on create, the app gets a **free shared IPv4** (Anycast) allocated via `POST /v1/apps/{app_name}/ip_assignments` with `type: "shared_v4"`, so it is reachable at `https://<app-name>.fly.dev` (`machine.publicUrl`). No **dedicated IPv4** and no **public IPv6** are ever allocated. The machine also gets its private 6PN address (free, internal network).
 - **Not implemented:** `Idempotency-Key` handling, queue/outbox interaction, `data.operationId` responses, plan/quota selection.
 - **Note:** create/update/delete call the Fly API synchronously from the route handlers; failures mark the application `failed` and attempt Fly cleanup.
 

@@ -92,7 +92,7 @@
 ## Phase 5 — Dashboard and application management UI
 
 - **Objective:** full application management UI.
-- **Current status:** Shell only; `/apps` is a placeholder.
+- **Current status:** `/apps` list and `/apps/[id]` detail implemented (create/update/delete/list/detail with status badges and runtime fields). Lifecycle ops (start/stop) and `/apps/[id]/settings` still pending.
 - **Prerequisites:** Phases 2–3.
 - **Tasks:**
   - Build `/apps` list, `/apps/[id]` detail, and `/apps/[id]/settings` pages.

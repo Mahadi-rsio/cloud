@@ -69,7 +69,8 @@ export function Sidebar({ user }: { user: { name: string; email: string } }) {
     <div className="flex h-full flex-col gap-6 px-3 py-4">
       <nav className="flex flex-col gap-1" aria-label="Main">
         {NAV_LINKS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
+          const active =
+            pathname === href || pathname.startsWith(href);
           return (
             <a
               key={href}

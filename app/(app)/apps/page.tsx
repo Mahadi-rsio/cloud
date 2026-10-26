@@ -1,20 +1,16 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth/session";
+import { AppsPageProvider } from "@/components/apps/apps-page";
 
 export const metadata = {
   title: "Apps",
 };
 
-export default function AppsPage() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Apps</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">
-          Your connected apps will appear here.
-        </p>
-      </CardContent>
-    </Card>
-  );
+export default async function AppsPage() {
+  const session = await getSession();
+  if (!session) {
+    redirect("/login");
+  }
+
+  return <AppsPageProvider />;
 }

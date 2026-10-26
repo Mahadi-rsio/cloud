@@ -133,6 +133,11 @@ export function mergeMachineConfig(
   return config;
 }
 
+/**
+ * Create a Fly App. No IP is allocated here — that is a separate explicit
+ * step (see `allocateSharedIpv4`) so we never accidentally create a dedicated
+ * IPv4 or a paid IPv6.
+ */
 export async function createFlyApp(input: {
   name: string;
   orgSlug?: string;
@@ -148,12 +153,40 @@ export async function createFlyApp(input: {
   });
 }
 
+export type FlyIpAssignment = {
+  ip?: string;
+  shared?: boolean;
+  region?: string;
+  created_at?: string;
+};
+
+/**
+ * Allocate a free shared IPv4 (Anycast) for the app so it is reachable at
+ * `https://<app-name>.fly.dev`. This is the free option — it never allocates
+ * a dedicated IPv4 or a public IPv6.
+ */
+export async function allocateSharedIpv4(appName: string) {
+  return flyFetch<FlyIpAssignment>(
+    `/v1/apps/${encodeURIComponent(appName)}/ip_assignments`,
+    {
+      method: "POST",
+      body: JSON.stringify({ type: "shared_v4" }),
+    },
+  );
+}
+
 export async function destroyFlyApp(name: string) {
   return flyFetch<unknown>(`/v1/apps/${encodeURIComponent(name)}`, {
     method: "DELETE",
   });
 }
 
+/**
+ * Create a Fly Machine without requesting any public/dedicated IP or IPv6.
+ * The machine only receives its private 6PN address (free, internal network).
+ * Services config is written so the app can serve traffic once (and if) a
+ * public IP is allocated later.
+ */
 export async function createFlyMachine(input: {
   appName: string;
   region: string;
