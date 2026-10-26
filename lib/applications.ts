@@ -129,6 +129,26 @@ export async function deleteApplication(
   return data.data;
 }
 
+export interface MachineLogEntry {
+  id?: string;
+  timestamp: string;
+  message: string;
+  level?: "info" | "warn" | "error" | "debug" | "system";
+  instance?: string;
+  region?: string;
+}
+
+export async function getApplicationLogs(
+  id: string,
+  params?: { machineId?: string },
+): Promise<{ logs: MachineLogEntry[]; machine: Machine | null }> {
+  const { data } = await apiV1.get<{
+    success: true;
+    data: { logs: MachineLogEntry[]; machine: Machine | null };
+  }>(`/applications/${id}/logs`, { params });
+  return data.data;
+}
+
 export const FLY_REGIONS: { code: string; name: string }[] = [
   { code: "sin", name: "Singapore" },
   { code: "ams", name: "Amsterdam" },

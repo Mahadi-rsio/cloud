@@ -14,9 +14,9 @@ export function getStoredTheme(): Theme {
   try {
     return window.matchMedia("(prefers-color-scheme: dark)").matches
       ? "dark"
-      : "light";
+      : "dark";
   } catch {
-    return "light";
+    return "dark";
   }
 }
 
@@ -45,7 +45,7 @@ interface ThemeStore {
 }
 
 export const useThemeStore = create<ThemeStore>((set) => ({
-  theme: "light",
+  theme: "dark",
   init: () => {
     const theme = getStoredTheme();
     applyTheme(theme);

@@ -1,20 +1,34 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  Hanken_Grotesk,
+  JetBrains_Mono,
+  Noto_Sans_Bengali,
+} from "next/font/google";
 import "./globals.css";
+import { Providers } from "./providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const hanken = Hanken_Grotesk({
+  variable: "--font-hanken",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const bengali = Noto_Sans_Bengali({
+  variable: "--font-bengali",
+  subsets: ["bengali"],
+  display: "swap",
+});
+
+const jetbrains = JetBrains_Mono({
+  variable: "--font-jetbrains",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Cloud",
-  description: "Next.js on Cloudflare Workers with Better Auth, Neon, KV, and Queues.",
+  title: "Cloudisy",
+  description:
+    "Cloudisy — deploy backend apps from a Docker image or a GitHub repo and get a public URL.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -22,17 +36,19 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`dark ${hanken.variable} ${bengali.variable} ${jetbrains.variable} h-full antialiased`}
     >
       <head>
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var t=localStorage.getItem(\"theme\");if(t===\"dark\"||(!t&&window.matchMedia(\"(prefers-color-scheme: dark)\").matches))document.documentElement.classList.add(\"dark\")}catch(e){}",
+              "try{var t=localStorage.getItem(\"theme\");if(t===\"light\")document.documentElement.classList.remove(\"dark\")}catch(e){}",
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

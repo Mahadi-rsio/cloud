@@ -5,6 +5,12 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --font-sans: var(--font-hanken), var(--font-bengali), ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol";
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -24,56 +30,68 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-xl: var(--radius-xl-fixed);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Dark theme first. */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --radius: 0.5rem;
+  --radius-xl-fixed: 0.75rem;
+
+  --background: #f7f9fa;
+  --foreground: #0f1b21;
+  --card: #ffffff;
+  --card-foreground: #0f1b21;
+  --popover: #ffffff;
+  --popover-foreground: #0f1b21;
+  --primary: #0284c7;
+  --primary-foreground: #ffffff;
+  --secondary: #e9eff3;
+  --secondary-foreground: #0f1b21;
+  --muted: #e9eff3;
+  --muted-foreground: #5b6b74;
+  --accent: #e6edf1;
+  --accent-foreground: #0f1b21;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #d8e0e6;
+  --input: #d8e0e6;
+  --ring: #0284c7;
+  --success: #16a34a;
+  --warning: #d97706;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: #0d1418;
+  --foreground: #e8eff2;
+  --card: #141e24;
+  --card-foreground: #e8eff2;
+  --popover: #141e24;
+  --popover-foreground: #e8eff2;
+  --primary: #38bdf8;
+  --primary-foreground: #082032;
+  --secondary: #1b272e;
+  --secondary-foreground: #e8eff2;
+  --muted: #18242b;
+  --muted-foreground: #8a9da6;
+  --accent: #1f2d35;
+  --accent-foreground: #e8eff2;
+  --destructive: #e5484d;
+  --destructive-foreground: #ffffff;
+  --border: #243239;
+  --input: #2c3b44;
+  --ring: #38bdf8;
+  --success: #3dd68c;
+  --warning: #f5a524;
 }
 
 @layer base {
@@ -81,7 +99,46 @@
     @apply border-border outline-ring/50;
   }
 
+  html {
+    @apply font-sans;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 25%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--muted-foreground) 35%, transparent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+}
+
+/* Only motion allowed is short transitions for menus, dialogs and tabs.
+   No entrance animations, and respect the user's reduced-motion setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

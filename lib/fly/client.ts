@@ -5,6 +5,16 @@ import type { RuntimeInput } from "@/lib/validators/application";
 const FLY_API_BASE = "https://api.machines.dev";
 const FLY_REQUEST_TIMEOUT_MS = 20_000;
 
+export type FlyMachineEvent = {
+  id?: string;
+  type?: string;
+  status?: string;
+  source?: string;
+  timestamp?: number;
+  message?: string;
+  request?: Record<string, unknown>;
+};
+
 export type FlyMachine = {
   id: string;
   name?: string;
@@ -13,6 +23,18 @@ export type FlyMachine = {
   private_ip?: string;
   version?: string;
   config?: Record<string, unknown>;
+  events?: FlyMachineEvent[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type FlyLogMessage = {
+  id?: string;
+  timestamp: string;
+  message: string;
+  level?: "info" | "warn" | "error" | "debug" | "system";
+  instance?: string;
+  region?: string;
 };
 
 export type FlyMachineConfig = Record<string, unknown>;
@@ -250,4 +272,59 @@ export async function destroyFlyMachine(
 
 export function isFlyNotFound(error: unknown) {
   return error instanceof FlyApiError && error.providerStatus === 404;
+}
+
+export async function getFlyLogs(
+  appName: string,
+  options?: { instance?: string; region?: string },
+): Promise<FlyLogMessage[]> {
+  const env = await getEnv();
+  if (!env.FLY_API_TOKEN) {
+    return [];
+  }
+
+  const url = new URL(`https://api.fly.io/api/v1/apps/${encodeURIComponent(appName)}/logs`);
+  if (options?.instance) url.searchParams.set("instance", options.instance);
+  if (options?.region) url.searchParams.set("region", options.region);
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${env.FLY_API_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(FLY_REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const json = (await response.json()) as {
+      data?: Array<{
+        id?: string;
+        attributes?: {
+          timestamp?: string;
+          message?: string;
+          level?: string;
+          instance?: string;
+          region?: string;
+        };
+      }>;
+    };
+
+    if (Array.isArray(json?.data)) {
+      return json.data.map((item) => ({
+        id: item.id,
+        timestamp: item.attributes?.timestamp ?? new Date().toISOString(),
+        message: item.attributes?.message ?? "",
+        level: (item.attributes?.level as FlyLogMessage["level"]) ?? "info",
+        instance: item.attributes?.instance,
+        region: item.attributes?.region,
+      }));
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
