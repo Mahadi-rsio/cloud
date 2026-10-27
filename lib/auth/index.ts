@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
-import { kvSecondaryStorage } from "@/lib/auth/storage/kv";
+import { redisSecondaryStorage } from "@/lib/auth/storage/redis";
 import { enqueueAuthJob } from "@/lib/queue";
 
 let cached: ReturnType<typeof createAuth> | undefined;
@@ -18,7 +18,7 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
       protocol: "auto",
       fallback: fallbackURL,
     },
-    secondaryStorage: kvSecondaryStorage(),
+    secondaryStorage: redisSecondaryStorage(),
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,

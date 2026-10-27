@@ -1,5 +1,5 @@
 import { HttpError } from "@/lib/http";
-import { getKvBinding } from "@/lib/auth/storage/kv";
+import { getRedis } from "@/lib/redis";
 
 export interface RateLimitRule {
   limit?: number;
@@ -20,11 +20,15 @@ export async function assertRateLimit(
 ) {
   const limit = rule.limit ?? 100;
   const windowSeconds = rule.windowSeconds ?? 60;
-  const kv = await getKvBinding();
-  const raw = await kv.get(key);
-  const count = raw ? parseInt(raw, 10) : 0;
-
-  if (count >= limit) {
+  const redis = await getRedis();
+  const count = await redis.incr(key);
+  if (count === 1) {
+    await redis.expire(key, windowSeconds);
+  }
+  if (count > limit) {
+    console.warn(
+      `[rate-limit] blocked ${key}: count=${count} limit=${limit} window=${windowSeconds}s`,
+    );
     throw new HttpError(
       "RATE_LIMITED",
       "Too many requests. Please try again later.",
@@ -32,6 +36,5 @@ export async function assertRateLimit(
       { retryAfter: windowSeconds },
     );
   }
-
-  await kv.put(key, String(count + 1), { expirationTtl: windowSeconds });
+  console.log(`[rate-limit] ${key}: ${count}/${limit} (window ${windowSeconds}s)`);
 }

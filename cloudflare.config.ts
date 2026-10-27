@@ -20,7 +20,6 @@ export default defineConfig({
     env: {
       ...cache.env,
       ASSETS: bindings.assets(),
-      AUTH_KV: bindings.kv(),
       AUTH_JOBS: bindings.queue({ name: "auth-jobs" }),
       BUILD_JOBS: bindings.queue({ name: "build-jobs" }),
       DATABASE_URL: bindings.secret(),
@@ -44,6 +43,8 @@ export default defineConfig({
       BUILD_WORKSPACE_DIR: bindings.secret(),
       BUILD_DEFAULT_INTERNAL_PORT: bindings.secret(),
       GITHUB_API_TOKEN: bindings.secret(),
+      UPSTASH_REDIS_REST_URL: bindings.secret(),
+      UPSTASH_REDIS_REST_TOKEN: bindings.secret(),
     },
     ...(isPreviewBuild
       ? {}

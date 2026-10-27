@@ -8,6 +8,7 @@
  */
 
 const GITHUB_HOST = "github.com";
+const GITHUB_USER_AGENT = "vinext-cloud";
 
 const OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$/;
 const REPO_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
@@ -87,7 +88,10 @@ export async function checkGitHubRepository(
   repository: GitHubRepository,
   token?: string | null,
 ): Promise<GitHubRepoStatus> {
-  const headers = new Headers({ Accept: "application/vnd.github+json" });
+  const headers = new Headers({
+    Accept: "application/vnd.github+json",
+    "User-Agent": GITHUB_USER_AGENT,
+  });
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   let response: Response;
@@ -114,6 +118,9 @@ export async function checkGitHubRepository(
   }
 
   if (response.status === 403 || response.status === 429) {
+    console.warn(
+      `[github] check ${repository.owner}/${repository.repo} -> ${response.status}`,
+    );
     return {
       ok: false,
       reason: "rate-limited",
@@ -168,7 +175,10 @@ export async function resolveGitHubHeadSha(
   token?: string | null,
 ): Promise<string | null> {
   try {
-    const headers = new Headers({ Accept: "application/vnd.github+json" });
+    const headers = new Headers({
+      Accept: "application/vnd.github+json",
+      "User-Agent": GITHUB_USER_AGENT,
+    });
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const response = await fetch(
       `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/commits/${encodeURIComponent(branch)}`,

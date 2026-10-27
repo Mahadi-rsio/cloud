@@ -3,14 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "test": "node --experimental-transform-types --import ./tests/register.js --test",
-    "dev:vinext": "vite dev --port 3001",
-    "build:vinext": "vite build",
-    "start:vinext": "vite preview",
-    "deploy:vinext": "vinext-cloudflare deploy"
+    "dev": "vinext dev",
+    "build": "vinext build",
+    "start": "vite preview --port 3001",
+    "deploy": "vinext-cloudflare deploy"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.12",
@@ -18,6 +14,7 @@
     "@radix-ui/react-label": "^2.1.17",
     "@radix-ui/react-slot": "^1.5.0",
     "@tanstack/react-query": "^5.104.5",
+    "@upstash/redis": "^1.40.0",
     "@vinext/cloudflare": "^1.2.0",
     "axios": "^1.20.0",
     "better-auth": "^1.7.12",

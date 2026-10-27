@@ -30,6 +30,10 @@ type Env = {
 
   // Optional GitHub API token (raises rate limits; never required for public repos)
   GITHUB_API_TOKEN?: string;
+
+  // Upstash Redis (cache + rate limiting)
+  UPSTASH_REDIS_REST_URL?: string;
+  UPSTASH_REDIS_REST_TOKEN?: string;
 };
 
 const KEYS: (keyof Env)[] = [
@@ -54,6 +58,8 @@ const KEYS: (keyof Env)[] = [
   "BUILD_WORKSPACE_DIR",
   "BUILD_DEFAULT_INTERNAL_PORT",
   "GITHUB_API_TOKEN",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
 ];
 
 let cached: Env | undefined;
