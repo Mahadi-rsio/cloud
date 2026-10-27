@@ -287,6 +287,14 @@ export async function destroyFlyMachine(
   );
 }
 
+/** Explicitly start a stopped machine (used to wake the shared builder). */
+export async function startFlyMachine(appName: string, machineId: string) {
+  return flyFetch<unknown>(
+    `/v1/apps/${encodeURIComponent(appName)}/machines/${encodeURIComponent(machineId)}/start`,
+    { method: "POST" },
+  );
+}
+
 export function isFlyNotFound(error: unknown) {
   return error instanceof FlyApiError && error.providerStatus === 404;
 }

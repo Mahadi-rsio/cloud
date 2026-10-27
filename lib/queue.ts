@@ -5,6 +5,9 @@ export type AuthJob = {
   name: string;
 };
 
+export type { DeployJob } from "@/lib/build/process-job";
+export { enqueueDeployJob } from "@/lib/build/process-job";
+
 export async function enqueueAuthJob(job: AuthJob) {
   try {
     const { env } = await import("cloudflare:workers");

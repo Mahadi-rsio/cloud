@@ -18,6 +18,7 @@ const DOT_STYLES: Record<Tone, string> = {
 
 const STATUS_TONE: Record<string, Tone> = {
   running: "success",
+  active: "success",
   started: "success",
   created: "success",
   provisioning: "warning",
@@ -26,6 +27,12 @@ const STATUS_TONE: Record<string, Tone> = {
   restarting: "warning",
   redeploying: "warning",
   stopping: "warning",
+  queued: "muted",
+  preparing: "warning",
+  building: "warning",
+  pushing: "warning",
+  deploying: "warning",
+  cancelled: "muted",
   failed: "danger",
   error: "danger",
   stopped: "muted",

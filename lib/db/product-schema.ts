@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  bigserial,
   check,
   index,
   integer,
@@ -84,5 +85,72 @@ export const machinesRelations = relations(machines, ({ one }) => ({
   application: one(applications, {
     fields: [machines.applicationId],
     references: [applications.id],
+  }),
+}));
+
+export const deployments = pgTable(
+  "deployments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    repoUrl: text("repo_url").notNull(),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    branch: text("branch").notNull().default("main"),
+    commitSha: text("commit_sha"),
+    status: text("status").notNull().default("queued"),
+    errorMessage: text("error_message"),
+    imageRef: text("image_ref"),
+    flyAppId: text("fly_app_id"),
+    flyMachineId: text("fly_machine_id"),
+    publicUrl: text("public_url"),
+    buildNumber: integer("build_number").notNull().default(0),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("deployments_user_created_idx").on(table.userId, table.createdAt),
+    check(
+      "deployments_status_check",
+      sql`${table.status} in ('queued','preparing','building','pushing','deploying','active','failed','cancelled')`,
+    ),
+  ],
+);
+
+export const deploymentLogs = pgTable(
+  "deployment_logs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    deploymentId: uuid("deployment_id")
+      .notNull()
+      .references(() => deployments.id, { onDelete: "cascade" }),
+    stream: text("stream").notNull().default("stdout"),
+    message: text("message").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("deployment_logs_deployment_id_idx").on(table.deploymentId, table.id),
+  ],
+);
+
+export const deploymentsRelations = relations(deployments, ({ one, many }) => ({
+  user: one(user, {
+    fields: [deployments.userId],
+    references: [user.id],
+  }),
+  logs: many(deploymentLogs),
+}));
+
+export const deploymentLogsRelations = relations(deploymentLogs, ({ one }) => ({
+  deployment: one(deployments, {
+    fields: [deploymentLogs.deploymentId],
+    references: [deployments.id],
   }),
 }));

@@ -208,6 +208,30 @@ Endpoints marked **[Implemented]** exist today; endpoints marked **[Proposed]** 
 - `GET /api/v1/applications/{id}/operations/{opId}` — operation status + error.
 - `GET /api/v1/applications/{id}/logs` — recent runtime logs (provider-sourced, read-only).
 
+### 3.10 Deployments (GitHub) — Implemented
+
+Deployments build a public GitHub repository into an OCI image (Railpack or Dockerfile) and push it to a Fly machine. Public routes live in `app/api/v1/deployments/**`; internal builder callbacks in `app/api/v1/internal/deployments/**` (authenticated with `INTERNAL_API_TOKEN`).
+
+| Endpoint | Auth | Body / Query | Success | Status |
+| --- | --- | --- | --- | --- |
+| `POST /api/v1/deployments` | session | `{ url }` | 201 `data.deployment` | Implemented |
+| `GET /api/v1/deployments` | session | `?cursor&limit` | `data.items`, `data.nextCursor` | Implemented |
+| `POST /api/v1/deployments/validate` | session | `{ url }` | `data.valid` + repo info or reason | Implemented |
+| `GET /api/v1/deployments/{id}` | session + owner | — | `data.deployment` | Implemented |
+| `POST /api/v1/deployments/{id}/retry` | session + owner | — | `data.deployment` (build_number incremented) | Implemented |
+| `GET /api/v1/deployments/{id}/logs` | session + owner | `?after&limit` | `data.items`, `data.nextCursor`, `data.status`, `data.terminal` | Implemented |
+| `GET /api/v1/deployments/{id}/logs/stream` | session + owner | `?after` (or `Last-Event-ID`) | `text/event-stream` | Implemented |
+| `POST /api/v1/internal/deployments/{id}/logs` | `INTERNAL_API_TOKEN` | `{ lines: [{ stream, message, timestamp? }] }` | 204 | Implemented |
+| `POST /api/v1/internal/deployments/{id}/status` | `INTERNAL_API_TOKEN` | `{ status, message? }` | 200 `data.deployment` | Implemented |
+| `POST /api/v1/internal/deployments/{id}/complete` | `INTERNAL_API_TOKEN` | `{ imageRef, internalPort? }` | 200 `data.deployment` | Implemented |
+
+- **Create (`POST /api/v1/deployments`):** rate-limited 10/min per IP. The URL must parse as `https://github.com/{owner}/{repo}` (no `.git` suffix, no tree/commit paths, no query/fragment — `lib/build/github.ts`). The repo is checked for public reachability via the GitHub API (server-side, no PAT required; 404→`missing`, 403/429→rate-limited, private→rejected). On success a deployment is inserted with status `queued`, `build_number = 1`, and a `build-jobs` queue message is enqueued.
+- **Validate (`POST /api/v1/deployments/validate`):** 30/min. Returns `{ valid: true, repository: { owner, name, url, defaultBranch, fork, pushedAt } }` or `{ valid: false, reason, message }` (no exception on missing/private repos).
+- **Logs (`GET .../logs`):** keyset-paginated on `(deployment_id, id)` using `after` (opaque numeric cursor) and `limit` (default 200, max 500). `terminal` mirrors `isTerminalStatus(deployment.status)`.
+- **Stream (`GET .../logs/stream`):** `text/event-stream`. Polls Postgres every 3s, sends a heartbeat comment every 10s, and closes after 60s (clients reconnect with `Last-Event-ID` / `?after`). Events: `log` (`{ id, stream, message, timestamp }`), `status` (`{ status }`), `complete` (`{ status }`), `error` (`{ message }`), plus `heartbeat` comments. The stream closes automatically once the deployment reaches a terminal state. Auth and ownership are checked before the response is returned.
+- **Retry (`POST .../retry`):** only terminal deployments (`active | failed | cancelled`) can be retried; the build number is incremented atomically and the deployment is enqueued again.
+- **Internal callbacks:** authenticated by constant-time Bearer comparison against `INTERNAL_API_TOKEN`. The builder may not set `active` itself — only the control plane's `complete` endpoint performs the Fly deploy (`deployImageToFly`) and then transitions to `active`. Status transitions are validated with `canTransition`; same-status heartbeats are idempotent.
+
 ### 3.9 System
 
 - `GET /api/health` — readiness/liveness; returns `{ status: "ok" }`.

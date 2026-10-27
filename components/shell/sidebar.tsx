@@ -7,6 +7,7 @@ import {
   BookOpen,
   CreditCard,
   Database,
+  GitBranch,
   Globe,
   LogOut,
   PanelLeftClose,
@@ -29,6 +30,7 @@ import { UserAvatar } from "@/components/shell/user-avatar";
 
 const PRIMARY_NAV = [
   { href: "/apps", label: "Apps", icon: AppWindow },
+  { href: "/github", label: "GitHub", icon: GitBranch },
   { href: "/databases", label: "Databases", icon: Database },
   { href: "/domains", label: "Domains", icon: Globe },
   { href: "/billing", label: "Billing", icon: CreditCard },

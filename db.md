@@ -85,6 +85,45 @@ Indexes: unique partial `machines_application_id_active_idx` on `(application_id
 
 **Note:** the target schema in §2.1–§2.2 remains the design goal; the implemented tables omit `plan_id`, `subscription_id`, volumes, operations, and the rest of the normalized model.
 
+### 1.4 Deployment tables (implemented)
+
+Source: `lib/db/product-schema.ts`; migration `drizzle/0002_add_deployments_and_deployment_logs.sql`.
+
+**`deployments`** — a GitHub-repository deployment (build + deploy run).
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | uuid | PK, default random |
+| `user_id` | text | not null, FK → `user.id` ON DELETE CASCADE |
+| `repo_url` | text | not null |
+| `repo_owner` / `repo_name` | text | not null |
+| `branch` | text | not null |
+| `commit_sha` | text | nullable (resolved head before a build) |
+| `status` | text | not null, default `queued`; check `queued|preparing|building|pushing|deploying|active|failed|cancelled` |
+| `error_message` | text | nullable |
+| `image_ref` | text | nullable (OCI image reference of the last pushed build) |
+| `fly_app_id` / `fly_machine_id` | text | nullable |
+| `public_url` | text | nullable |
+| `build_number` | integer | not null, default 1; incremented on each retry |
+| `started_at` / `finished_at` | timestamptz | nullable |
+| `created_at` / `updated_at` | timestamptz | not null |
+
+Indexes: `deployments_user_created_idx` on `(user_id, created_at)`, unique partial `deployments_fly_app_id_active_idx` on `(fly_app_id)` where `fly_app_id is not null`.
+
+**`deployment_logs`** — append-only build output for a deployment.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | bigserial | PK (number mode; JSON-safe for API responses) |
+| `deployment_id` | uuid | not null, FK → `deployments.id` ON DELETE CASCADE |
+| `stream` | text | not null; check `stdout|stderr|system` |
+| `message` | text | not null |
+| `created_at` | timestamptz | not null, default now |
+
+Index: `deployment_logs_deployment_id_id_idx` on `(deployment_id, id)` for keyset pagination.
+
+Status transitions are enforced by the application layer (`lib/build/status.ts`); see §3.
+
 ## 2. Proposed Normalized Target Schema
 
 Principles:
@@ -331,6 +370,7 @@ Principles:
 
 - Applications: `pending → provisioning → running | failed`; `running → stopping → stopped`; `stopped → starting → running`; `deleting → deleted`. No transition from `deleted`.
 - Payments: `initiated → pending → succeeded | failed`; `succeeded → refunded` (only via server-side verified event).
+- Deployments: `queued → preparing → building → pushing → deploying → active`. Any in-flight state may move to `failed` or `cancelled`. Only a terminal state (`active | failed | cancelled`) may move back to `queued` (retry), which increments `build_number`. Same-state updates are idempotent (used for builder heartbeats). Enforced by `lib/build/status.ts` (`canTransition`) and the DB check constraint.
 - One active subscription per user (partial unique index).
 - One non-destroyed machine per application (partial unique index).
 - Machine lifecycle operations are serialized per application via `provisioning_operations` status guard (409 if a `queued|running` operation exists).
