@@ -40,13 +40,18 @@ export type FlyLogMessage = {
 export type FlyMachineConfig = Record<string, unknown>;
 
 export class FlyApiError extends HttpError {
+  providerStatus: number;
+  body: unknown;
+
   constructor(
     message: string,
-    public providerStatus: number,
-    public body: unknown,
+    providerStatus: number,
+    body: unknown,
   ) {
     super("PROVIDER_ERROR", message, 422, body);
     this.name = "FlyApiError";
+    this.providerStatus = providerStatus;
+    this.body = body;
   }
 }
 
@@ -99,12 +104,22 @@ async function flyFetch<T>(
   return body as T;
 }
 
-function buildServices(internalPort: number) {
+export function buildServices(internalPort: number) {
   return [
     {
       protocol: "tcp",
       internal_port: internalPort,
-      ports: [{ port: 80, handlers: ["http"], force_https: true }],
+      ports: [
+        {
+          port: 80,
+          handlers: ["http"],
+          force_https: true,
+        },
+        {
+          port: 443,
+          handlers: ["tls", "http"],
+        },
+      ],
       autostart: true,
       autostop: "stop",
       min_machines_running: 0,
@@ -123,11 +138,13 @@ export function buildMachineConfig(
     ...runtime?.guest,
   };
 
+  const internalPort = runtime?.internalPort ?? 80;
+
   return {
     image: runtime?.image ?? defaultImage,
     guest,
     ...(runtime?.env ? { env: runtime.env } : {}),
-    ...(runtime?.internalPort ? { services: buildServices(runtime.internalPort) } : {}),
+    services: buildServices(internalPort),
   };
 }
 
