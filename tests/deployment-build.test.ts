@@ -28,6 +28,8 @@ import {
   splitLogChunk,
   normalizeLogMessage,
 } from "@/lib/build/logs";
+import { buildImageRef } from "@/lib/build/builder-client";
+import { deploymentAppName } from "@/lib/build/names";
 
 describe("GitHub URL parsing", () => {
   it("parses canonical public repository URLs", () => {
@@ -218,6 +220,38 @@ describe("Deployment status transitions", () => {
     assert.equal(isTerminalStatus("failed"), true);
     assert.equal(isTerminalStatus("cancelled"), true);
     assert.equal(isTerminalStatus("queued"), false);
+  });
+});
+
+describe("Image reference & Fly app naming", () => {
+  it("derives a stable app name from the deployment id", () => {
+    const id = "9d6c3f3e-2a1b-4c5d-8e9f-0a1b2c3d4e5f";
+    assert.equal(
+      deploymentAppName(id),
+      "dep-9d6c3f3e2a1b4c5d8e9f",
+    );
+    assert.match(deploymentAppName(id), /^dep-[a-z0-9]{20}$/);
+  });
+
+  it("builds an app-namespaced image ref for Fly", () => {
+    const ref = buildImageRef({
+      registry: "registry.fly.io",
+      appName: "dep-9d6c3f3e2a1b4c5d8e9f",
+      buildNumber: 1,
+    });
+    assert.equal(
+      ref,
+      "registry.fly.io/dep-9d6c3f3e2a1b4c5d8e9f:b1",
+    );
+  });
+
+  it("builds an image ref under a custom registry root", () => {
+    const ref = buildImageRef({
+      registry: "ghcr.io/acme/",
+      appName: "dep-abc",
+      buildNumber: 4,
+    });
+    assert.equal(ref, "ghcr.io/acme/dep-abc:b4");
   });
 });
 

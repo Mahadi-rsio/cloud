@@ -48,6 +48,7 @@ const config = {
   idleTimeoutMs: positiveInt(process.env.BUILD_IDLE_TIMEOUT_MS, 10 * 60 * 1000),
   defaultInternalPort: positiveInt(process.env.BUILD_DEFAULT_INTERNAL_PORT, 8080),
   railpackBin: process.env.RAILPACK_BIN ?? "railpack",
+  buildStrategy: (process.env.BUILD_STRATEGY ?? "auto").toLowerCase(),
   buildkitHost: process.env.BUILDKIT_HOST ?? "",
   frontendImage:
     process.env.RAILPACK_FRONTEND_IMAGE ?? "ghcr.io/railwayapp/railpack-frontend",
@@ -354,6 +355,13 @@ async function detectStrategy(appDir) {
     files.find((name) => name.toLowerCase() === "dockerfile") ??
     files.find((name) => name.toLowerCase() === "containerfile") ??
     null;
+
+  // `BUILD_STRATEGY=railpack` forces Railpack even when a Dockerfile exists
+  // (e.g. Nx-generated Dockerfiles that assume a prebuilt dist/).
+  if (config.buildStrategy === "railpack") return { dockerfile: null };
+  if (config.buildStrategy === "dockerfile" && !dockerfile) {
+    throw new Error("BUILD_STRATEGY=dockerfile but no Dockerfile found.");
+  }
   return { dockerfile };
 }
 

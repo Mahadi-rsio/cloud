@@ -18,14 +18,19 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** OCI image reference for a deployment build, e.g. ghcr.io/acme/deployments/<uuid>:b1 */
+/**
+ * OCI image reference for a deployment build, e.g.
+ * ghcr.io/acme/dep-<deploymentId>:b1. The image is pushed into the deployment
+ * app's own namespace, which Fly requires (`registry.fly.io/<app>:<tag>`
+ * only accepts repositories that match a real app).
+ */
 export function buildImageRef(input: {
   registry: string;
-  deploymentId: string;
+  appName: string;
   buildNumber: number;
 }): string {
   const registry = input.registry.replace(/\/+$/, "");
-  return `${registry}/deployments/${input.deploymentId}:b${input.buildNumber}`;
+  return `${registry}/${input.appName}:b${input.buildNumber}`;
 }
 
 /**

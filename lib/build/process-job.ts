@@ -6,6 +6,7 @@ import {
 import {
   appendDeploymentLogs,
   appendSystemLog,
+  ensureDeploymentFlyApp,
   findDeployment,
   markDeploymentFailed,
   setDeploymentStatus,
@@ -61,14 +62,18 @@ export async function processDeployJob(
     return;
   }
 
+  // The image is pushed into the deployment app's own registry namespace, so
+  // the app must exist before the build starts (Fly requires app-named repos).
+  const appName = await ensureDeploymentFlyApp(deployment);
+
   const imageRef = buildImageRef({
     registry,
-    deploymentId: deployment.id,
+    appName,
     buildNumber: deployment.buildNumber,
   });
 
   try {
-    await setDeploymentStatus(deployment.id, "preparing");
+    await setDeploymentStatus(deployment.id, "preparing", { flyAppId: appName });
     await appendSystemLog(
       deployment.id,
       `Preparing build for ${deployment.repoOwner}/${deployment.repoName}@${deployment.branch}.`,

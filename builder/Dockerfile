@@ -27,15 +27,19 @@ RUN curl -fsSL "https://github.com/railwayapp/railpack/releases/download/v${RAIL
     | tar -xz -C /usr/local/bin railpack \
   && chmod +x /usr/local/bin/railpack
 
-# BuildKit daemon + client.
+# BuildKit daemon + client. The release archive's top-level dir is `bin/`, so
+# extracting into /usr/local (no strip) lands binaries at /usr/local/bin/.
 RUN curl -fsSL "https://github.com/moby/buildkit/releases/download/${BUILDKIT_VERSION}/buildkit-${BUILDKIT_VERSION}.linux-amd64.tar.gz" \
-    | tar -xz -C /usr/local --strip-components=1 \
+    -o /tmp/buildkit.tar.gz \
+  && tar -xzf /tmp/buildkit.tar.gz -C /usr/local \
+  && rm -f /tmp/buildkit.tar.gz \
   && chmod +x /usr/local/bin/buildkitd /usr/local/bin/buildctl
 
-RUN groupadd -g 1000 builder \
-  && useradd -u 1000 -g 1000 -m -s /bin/bash builder \
-  && echo "builder:100000:65536" >> /etc/subuid \
-  && echo "builder:100000:65536" >> /etc/subgid
+# uid/gid 1000 is taken by the base image's `node` user; use 1001 instead.
+RUN groupadd -g 1001 builder \
+  && useradd -u 1001 -g 1001 -m -s /bin/bash builder \
+  && echo "builder:200000:65536" >> /etc/subuid \
+  && echo "builder:200000:65536" >> /etc/subgid
 
 WORKDIR /app
 COPY builder/server.mjs /app/server.mjs

@@ -18,6 +18,9 @@ import {
   type DeploymentStatus,
 } from "@/lib/build/status";
 import type { DeploymentLogStream } from "@/lib/build/logs";
+import { deploymentAppName } from "@/lib/build/names";
+
+export { deploymentAppName } from "@/lib/build/names";
 
 export type Deployment = typeof deployments.$inferSelect;
 export type DeploymentLog = typeof deploymentLogs.$inferSelect;
@@ -166,8 +169,33 @@ export async function listDeployments(input: {
     .limit(Math.min(Math.max(input.limit ?? 50, 1), 100));
 }
 
-export function deploymentAppName(deploymentId: string): string {
-  return `dep-${deploymentId.replace(/-/g, "").slice(0, 20)}`;
+/**
+ * Resolve the Fly app that owns this deployment's images, creating it when
+ * missing. The app must exist before the builder pushes the image so the
+ * app-scoped registry namespace (`registry.fly.io/<app>:<tag>`) is writable —
+ * Fly's registry rejects repositories that do not match a real app.
+ */
+export async function ensureDeploymentFlyApp(
+  deployment: Deployment,
+): Promise<string> {
+  const appName = deployment.flyAppId ?? deploymentAppName(deployment.id);
+  if (deployment.flyAppId) return appName;
+
+  const env = await getEnv();
+  try {
+    await createFlyApp({
+      name: appName,
+      orgSlug: env.FLY_ORG_SLUG,
+      idempotencyKey: deployment.id,
+    });
+  } catch (error) {
+    // A previous attempt may have created the app before failing.
+    if (!isFlyNotFound(error)) {
+      const status = (error as { providerStatus?: number }).providerStatus;
+      if (status !== 422 && status !== 409) throw error;
+    }
+  }
+  return appName;
 }
 
 export type DeployImageResult = {
@@ -188,23 +216,7 @@ export async function deployImageToFly(input: {
 }): Promise<DeployImageResult> {
   const env = await getEnv();
   const region = env.FLY_DEFAULT_REGION ?? "sin";
-  const appName = input.deployment.flyAppId ?? deploymentAppName(input.deployment.id);
-
-  if (!input.deployment.flyAppId) {
-    try {
-      await createFlyApp({
-        name: appName,
-        orgSlug: env.FLY_ORG_SLUG,
-        idempotencyKey: input.deployment.id,
-      });
-    } catch (error) {
-      // A previous attempt may have created the app before failing.
-      if (!isFlyNotFound(error)) {
-        const status = (error as { providerStatus?: number }).providerStatus;
-        if (status !== 422 && status !== 409) throw error;
-      }
-    }
-  }
+  const appName = await ensureDeploymentFlyApp(input.deployment);
 
   const runtime = {
     image: input.imageRef,
