@@ -90,7 +90,7 @@ once and needs no user namespace:
 
 ```
 buildkitd \
-  --root /root/.local/share/buildkit \
+  --root /data/buildkit \
   --addr unix:///home/builder/.run/buildkit/buildkitd.sock \
   --oci-worker-snapshotter fuse-overlayfs
 ```
@@ -101,9 +101,31 @@ This requires `/dev/fuse` (present on Fly machines) and `fuse-overlayfs`
 `ENABLE_BUILDKITD` env var, when set to `0`, skips this startup and expects an
 external `BUILDKIT_HOST` to be reachable.
 
+BuildKit's root is a **persistent Fly volume** (`buildkit_cache`, mounted at
+`/data/buildkit` via `fly.toml`) rather than the machine's ephemeral root disk.
+Without it, every `fly deploy` and machine restart starts from an empty cache:
+the first build then pulls the Railpack base images, installs Node/mise, runs
+`npm install`, copies `node_modules`, and gzip-compresses every layer, which
+takes ~10–15 min. With a warm cache the same build finishes in under a minute.
+The volume also fixes the ~8 GB root-disk limit.
+
+The image exporter uses `compression=gzip,compression-level=1`
+(`builder/server.mjs`). Layer compression is CPU-bound and was the single
+largest cold-build cost (~7 min for a Next.js app on 2 vCPU); level 1 produces
+slightly larger layers but pushes them in seconds. The VM is sized at 4 shared
+vCPU / 8 GB for the same reason.
+
 Because the builder is a single-tenant build VM that only runs this container,
 running buildkitd (and the Node server) as root is an accepted trade-off;
 isolation between tenants comes from one ephemeral VM per builder.
+
+Deploy the builder with `fly deploy` from the repo root (the root `fly.toml`
+targets `cloud-builder`). The `buildkit_cache` volume must exist in the app's
+region first:
+
+```
+fly volumes create buildkit_cache --region lax --size 30 -a cloud-builder
+```
 
 ### Retry and staleness behavior
 

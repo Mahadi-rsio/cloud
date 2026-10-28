@@ -466,7 +466,11 @@ async function buildImage({ strategy, appDir, workDir, planPath, imageRef, cache
       "--local",
       `context=${appDir}`,
       "--output",
-      `type=image,name=${imageRef},push=true`,
+      // Layer compression is CPU-bound and dominates cold builds on the small
+      // builder VM; level 1 trades a little size for a large speed-up. Warm
+      // layers are reused from the BuildKit cache, so this only affects new
+      // layers.
+      `type=image,name=${imageRef},push=true,compression=gzip,compression-level=1`,
     ];
 
     if (strategy.dockerfile) {

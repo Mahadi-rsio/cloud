@@ -1,9 +1,9 @@
 # Cloudisy build worker image.
 #
-# One build at a time, isolated on a dedicated Fly machine. BuildKit runs
-# rootless (no privileged container, no host Docker socket). The service talks
-# to BuildKit with `buildctl`; set BUILDKIT_HOST to point at an external
-# BuildKit if you prefer to run the daemon separately.
+# One build at a time, isolated on a dedicated Fly machine. BuildKit runs as
+# root with the FUSE overlay snapshotter (see entrypoint.sh); its cache lives on
+# a Fly volume. The service talks to BuildKit with `buildctl`; set BUILDKIT_HOST
+# to point at an external BuildKit if you prefer to run the daemon separately.
 
 FROM node:22-bookworm-slim
 

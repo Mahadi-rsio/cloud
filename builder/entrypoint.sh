@@ -1,16 +1,18 @@
 #!/bin/sh
 set -eu
 
-mkdir -p "$BUILD_WORKSPACE_DIR" "$XDG_RUNTIME_DIR" "$HOME/.local/share/buildkit" "$(dirname "${BUILDKIT_HOST#unix://}")"
+BUILDKIT_ROOT="${BUILDKIT_ROOT:-$HOME/.local/share/buildkit}"
+
+mkdir -p "$BUILD_WORKSPACE_DIR" "$XDG_RUNTIME_DIR" "$BUILDKIT_ROOT" "$(dirname "${BUILDKIT_HOST#unix://}")"
 chmod 700 "$XDG_RUNTIME_DIR"
 
 if [ "${ENABLE_BUILDKITD:-1}" = "1" ]; then
-  echo "[entrypoint] starting buildkitd (fuse-overlayfs snapshotter)"
+  echo "[entrypoint] starting buildkitd (fuse-overlayfs snapshotter, root $BUILDKIT_ROOT)"
   # This is a dedicated, ephemeral build VM, so buildkitd runs as root and uses
   # the FUSE overlay snapshotter: it avoids copying every layer (which exhausts
   # the small root disk and is very slow) and does not require a user namespace.
   buildkitd \
-    --root "$HOME/.local/share/buildkit" \
+    --root "$BUILDKIT_ROOT" \
     --addr "$BUILDKIT_HOST" \
     --oci-worker-snapshotter fuse-overlayfs \
     >"$HOME/buildkitd.log" 2>&1 &

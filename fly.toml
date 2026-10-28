@@ -10,6 +10,15 @@ kill_signal = "SIGTERM"
   NODE_ENV = "production"
   ENABLE_BUILDKITD = "1"
   BUILD_WORKSPACE_DIR = "/home/builder/builds"
+  # Persist BuildKit's cache on a volume so the base images, installed
+  # toolchains, and per-app layers survive `fly deploy` / machine restarts.
+  BUILDKIT_ROOT = "/data/buildkit"
+
+# BuildKit cache lives on a volume; without it every deploy is a cold build
+# (pull base images, install the runtime, recompress every layer).
+[[mounts]]
+  source = "buildkit_cache"
+  destination = "/data/buildkit"
 
 [http_service]
   internal_port = 8080
@@ -20,10 +29,11 @@ kill_signal = "SIGTERM"
   processes = ["app"]
 
 [[vm]]
-  # BuildKit needs ~4 GB; 2 vCPU shared.
-  memory = "4gb"
+  # Layer compression and installs are CPU-bound; 4 vCPU roughly halves the
+  # cold-build time versus 2.
+  memory = "8gb"
   cpu_kind = "shared"
-  cpus = 2
+  cpus = 4
 
 [experimental]
   auto_rollback = true
