@@ -37,16 +37,16 @@ RUN curl -fsSL "https://github.com/moby/buildkit/releases/download/${BUILDKIT_VE
 
 # uid/gid 1000 is taken by the base image's `node` user; use 1001 instead.
 RUN groupadd -g 1001 builder \
-  && useradd -u 1001 -g 1001 -m -s /bin/bash builder \
-  && echo "builder:200000:65536" >> /etc/subuid \
-  && echo "builder:200000:65536" >> /etc/subgid
+  && useradd -u 1001 -g 1001 -m -s /bin/bash builder
 
 WORKDIR /app
 COPY builder/server.mjs /app/server.mjs
 COPY builder/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh && chown -R builder:builder /app
 
-USER builder
+# Run as root on the dedicated, ephemeral build VM so buildkitd can access
+# /dev/fuse and use the FUSE overlay snapshotter without a user namespace.
+USER root
 
 ENV NODE_ENV=production \
     PORT=8080 \

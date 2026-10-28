@@ -52,10 +52,10 @@ These are bound as **secrets** (`bindings.secret()`) in the Workers configuratio
 | `PORT` | Internal port the builder listens on (default: `8080`). |
 | `BUILD_STRATEGY` | `auto` (default) — use the repo Dockerfile when present, otherwise Railpack; **if the Dockerfile build fails, automatically fall back to Railpack**; `railpack` — always use Railpack even when a Dockerfile exists (e.g. Nx-generated Dockerfiles that assume a prebuilt `dist/`); `dockerfile` — require a Dockerfile and never fall back, fail otherwise. |
 | `RAILPACK_BIN` | Path to the railpack binary (used in testing; production uses BuildKit front-end). |
-| `BUILDKIT_HOST` | Unix socket for rootless buildkitd, e.g. `unix:///home/builder/.run/buildkit/buildkitd.sock`. |
+| `BUILDKIT_HOST` | Unix socket for buildkitd, e.g. `unix:///home/builder/.run/buildkit/buildkitd.sock`. |
 | `RAILPACK_FRONTEND_IMAGE` | `ghcr.io/railwayapp/railpack-frontend:latest` (used as `BUILDKIT_SYNTAX`). |
 | `GITHUB_TOKEN` | Optional GitHub PAT for private repo checks (not required for public repos). |
-| `ENABLE_BUILDKITD` | When `0`, the builder expects an external `BUILDKIT_HOST` pointing to an existing buildkitd instance; when `1` the entrypoint starts rootless buildkitd. |
+| `ENABLE_BUILDKITD` | When `0`, the builder expects an external `BUILDKIT_HOST` pointing to an existing buildkitd instance; when `1` the entrypoint starts buildkitd. |
 | `BUILD_MAX_DURATION_MS` | Max wall-clock time a build may run before the builder kills it. |
 
 ## Builder Runtime Details
@@ -79,17 +79,31 @@ These are bound as **secrets** (`bindings.secret()`) in the Workers configuratio
 9. **/health endpoint** — `GET /health` returns `{ status: "ok" }`. Used by `ensureBuilderAwake()` to determine whether the builder needs restarting.
 10. **/builds endpoint** — `POST /builds` validates a single job object, spawns the detached build child process, returns `{ jobId }`. Single-active-build guard: only one build runs at a time. On fatal error, the builder exits(1) and the queue consumer marks the deployment failed after max attempts.
 
-### Rootless BuildKit setup (Fly machine)
+### BuildKit setup on the Fly machine
 
-The `builder/entrypoint.sh` starts a rootless buildkitd:
+The builder runs on a dedicated, ephemeral Fly microVM, so it does **not** use
+rootless BuildKit (user-namespace mapping and the native snapshotter are both
+unreliable there: `newuidmap` rejects overlapping subuid ranges, and copying
+every layer exhausts the ~8 GB root disk). Instead `builder/entrypoint.sh`
+starts buildkitd as root with the FUSE overlay snapshotter, which stores layers
+once and needs no user namespace:
 
 ```
-buildkitd --oci-worker-no-process-sandbox \
+buildkitd \
+  --root /root/.local/share/buildkit \
   --addr unix:///home/builder/.run/buildkit/buildkitd.sock \
-  --oci-worker-no-process-sandbox
+  --oci-worker-snapshotter fuse-overlayfs
 ```
 
-It then waits for `buildctl debug workers` to become available (a few seconds). The `ENABLE_BUILDKITD` env var, when set to `0`, skips this startup and expects an external `BUILDKIT_HOST` to be reachable. This is the documented fallback for environments where user namespaces or the `--oci-worker-no-process-sandbox` flag are not available.
+This requires `/dev/fuse` (present on Fly machines) and `fuse-overlayfs`
+(installed in `builder/Dockerfile`). The entrypoint waits up to 30 s for
+`buildctl debug workers` to succeed before starting the HTTP server. The
+`ENABLE_BUILDKITD` env var, when set to `0`, skips this startup and expects an
+external `BUILDKIT_HOST` to be reachable.
+
+Because the builder is a single-tenant build VM that only runs this container,
+running buildkitd (and the Node server) as root is an accepted trade-off;
+isolation between tenants comes from one ephemeral VM per builder.
 
 ### Retry and staleness behavior
 
