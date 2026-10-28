@@ -574,9 +574,10 @@ async function runBuild(job) {
       commitSha ? `Checked out commit ${commitSha.slice(0, 12)}.` : "Repository cloned.",
     );
 
-    const strategy = await detectStrategy(appDir);
+    let strategy = await detectStrategy(appDir);
     let internalPort = config.defaultInternalPort;
     let planPath = null;
+    let useRailpack = false;
 
     if (strategy.dockerfile) {
       onLine("system", `Using Dockerfile: ${strategy.dockerfile}`);
@@ -585,30 +586,53 @@ async function runBuild(job) {
         internalPort;
     } else {
       onLine("system", "No Dockerfile found; using Railpack.");
-      stage = "building";
-      await sendStatus(job.deploymentId, "building");
-      const prepared = await prepareRailpack(appDir, workDir, onLine);
-      for (const line of prepared.logs) sink.push("stdout", line);
-      if (!prepared.success) {
-        throw new Error(prepared.error ?? "Railpack could not plan this application.");
-      }
-      if (prepared.provider) onLine("system", `Detected provider: ${prepared.provider}`);
-      if (prepared.internalPort) internalPort = prepared.internalPort;
-      planPath = prepared.planPath;
+      useRailpack = true;
     }
 
     stage = "building";
     await sendStatus(job.deploymentId, "building");
-    onLine("system", `Building and pushing image ${job.imageRef}.`);
-    await buildImage({
-      strategy,
-      appDir,
-      workDir,
-      planPath,
-      imageRef: job.imageRef,
-      cacheKey: job.deploymentId,
-      onLine,
-    });
+
+    while (true) {
+      if (useRailpack) {
+        const prepared = await prepareRailpack(appDir, workDir, onLine);
+        for (const line of prepared.logs) sink.push("stdout", line);
+        if (!prepared.success) {
+          throw new Error(prepared.error ?? "Railpack could not plan this application.");
+        }
+        if (prepared.provider) onLine("system", `Detected provider: ${prepared.provider}`);
+        if (prepared.internalPort) internalPort = prepared.internalPort;
+        planPath = prepared.planPath;
+        strategy = { dockerfile: null };
+      }
+
+      onLine(
+        "system",
+        useRailpack
+          ? `Building and pushing image ${job.imageRef} with Railpack.`
+          : `Building and pushing image ${job.imageRef} with the repository Dockerfile.`,
+      );
+      try {
+        await buildImage({
+          strategy,
+          appDir,
+          workDir,
+          planPath,
+          imageRef: job.imageRef,
+          cacheKey: job.deploymentId,
+          onLine,
+        });
+        break;
+      } catch (error) {
+        if (useRailpack) throw error;
+        onLine(
+          "system",
+          `Dockerfile build failed (${
+            error instanceof Error ? error.message : "unknown error"
+          }); falling back to Railpack.`,
+        );
+        useRailpack = true;
+      }
+    }
 
     stage = "pushing";
     await sendStatus(job.deploymentId, "pushing");
