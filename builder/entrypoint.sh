@@ -32,74 +32,48 @@ if [ "${ENABLE_BUILDKITD:-1}" = "1" ]; then
   fi
 fi
 
-# Warm the Railpack base images (builder, runtime, frontend) and the default
-# runtimes (node, python, go) into the BuildKit content store so the first
-# build after a boot or after the cache volume was reset does not cold-pull
-# them.
+# BuildKit and the Railpack gateway read registry credentials from the root
+# user's Docker config during pulls, so write it before the first warmup build
+# (the service also rewrites it before real builds).
+if [ -n "${OCI_REGISTRY-}" ] && [ -n "${OCI_REGISTRY_USERNAME-}" ] && [ -n "${OCI_REGISTRY_PASSWORD-}" ]; then
+  mkdir -p "$HOME/.docker"
+  auth="$(printf '%s:%s' "$OCI_REGISTRY_USERNAME" "$OCI_REGISTRY_PASSWORD" | base64)"
+  host="$(printf '%s' "$OCI_REGISTRY" | cut -d/ -f1)"
+  printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$host" "$auth" > "$HOME/.docker/config.json"
+  chmod 600 "$HOME/.docker/config.json"
+fi
+
+# Warm the Railpack base images into the BuildKit content store so a build
+# after a boot does not cold-pull them.
 #
-# The builder/runtime tags use a mise-<date> scheme pinned to the Railpack
-# release, and the runtimes are installed by the `packages:mise` build step,
-# so both are resolved by generating a real plan. We then run the same gateway
-# build the service uses (server.mjs buildImage) on a tiny dummy project per
-# runtime, with push=false, so the layers land in the local BuildKit cache.
-#
-# The mise step has no cache mounts: its BuildKit cache key is just the parent
-# builder image + the generated /etc/mise/config.toml + the command. So these
-# layers are reused by any later build that resolves the same runtime version,
-# regardless of the per-deployment cache-key that namespaces the npm/apt cache
-# mounts. A fresh `mise install` is only a few seconds anyway, so this is a
-# small win that mainly avoids cold-pulling the base images; pinned runtimes
-# still install their own version on first use and then stay cached.
+# There is no persistent volume anymore: the default runtimes are baked into
+# our custom builder image (builder/railpack/Dockerfile), so the only images to
+# pre-pull are that builder image (with the runtimes already installed), the
+# Railpack runtime image, and the gateway frontend. BuildKit has no image-pull
+# command, so we import each base image with a trivial `FROM` build through the
+# built-in dockerfile.v0 frontend; the layers land in the local BuildKit cache.
 #
 # Runs in the background: when already cached these are fast no-ops.
 warm_images() {
-  local warm_dir="$HOME/warmup/runtimes"
-  local frontend="ghcr.io/railwayapp/railpack-frontend:latest"
-  local name
+  local warm_dir="$HOME/warmup/base"
+  local image
 
-  mkdir -p "$warm_dir/node" "$warm_dir/python" "$warm_dir/go"
+  mkdir -p "$warm_dir"
 
-  # node: no version pin -> resolves to the default LTS unpinned apps get
-  printf '%s\n' '{"name":"__warmup__","version":"1.0.0","scripts":{"start":"node index.js"}}' \
-    > "$warm_dir/node/package.json"
-  printf 'console.log("ok")\n' > "$warm_dir/node/index.js"
-
-  # python: no version pin -> resolves to the default CPython
-  printf 'flask==3.0.0\n' > "$warm_dir/python/requirements.txt"
-  cat > "$warm_dir/python/app.py" <<'EOF'
-from flask import Flask
-app = Flask(__name__)
-
-@app.route("/")
-def hello():
-    return "ok"
-EOF
-
-  # go: a common go.mod directive (mise resolves the matching go toolchain)
-  cat > "$warm_dir/go/go.mod" <<'EOF'
-module warmup
-
-go 1.22
-EOF
-  printf 'package main\n\nfunc main() {}\n' > "$warm_dir/go/main.go"
-
-  for name in node python go; do
-    local dir="$warm_dir/$name"
-    local plan="$dir/railpack-plan.json"
-    echo "[entrypoint] warming runtime for $name"
-    if ! railpack prepare "$dir" --plan-out "$plan" --info-out "$dir/railpack-info.json" >/dev/null 2>&1; then
-      echo "[entrypoint] warmup: $name: railpack prepare failed; skipping" >&2
-      continue
-    fi
+  for image in \
+    "${RAILPACK_BUILDER_IMAGE:-ghcr.io/railwayapp/railpack-builder:mise-2026.10.14}" \
+    "${RAILPACK_RUNTIME_IMAGE:-ghcr.io/railwayapp/railpack-runtime:mise-2026.10.14}" \
+    "${RAILPACK_FRONTEND_IMAGE:-ghcr.io/railwayapp/railpack-frontend}:latest"; do
+    printf 'FROM %s\n' "$image" > "$warm_dir/Dockerfile"
+    echo "[entrypoint] warming base image $image"
     buildctl --addr "$BUILDKIT_HOST" build \
-      --local "context=$dir" \
-      --local "dockerfile=$dir" \
-      --frontend=gateway.v0 \
-      --opt "source=$frontend" \
-      --output "type=image,name=example.com/railpack-warmup/$name:latest,push=false,compression=gzip,compression-level=1" \
+      --local "context=$warm_dir" \
+      --local "dockerfile=$warm_dir" \
+      --frontend=dockerfile.v0 \
+      --output "type=image,name=example.com/railpack-warmup/base:latest,push=false,compression=gzip,compression-level=1" \
       >/dev/null 2>&1 \
-      || echo "[entrypoint] warmup: $name gateway build did not finish (runtime layers may still be cached)" >&2
-    echo "[entrypoint] warmup: $name done"
+      || echo "[entrypoint] warmup: $image did not finish (layers may still be cached)" >&2
+    echo "[entrypoint] warmup: $image done"
   done
   echo "[entrypoint] warmup complete"
 }
