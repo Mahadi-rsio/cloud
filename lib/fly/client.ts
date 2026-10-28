@@ -251,6 +251,10 @@ export async function getFlyMachine(appName: string, machineId: string) {
   );
 }
 
+export async function listFlyMachines(appName: string) {
+  return flyFetch<FlyMachine[]>(`/v1/apps/${encodeURIComponent(appName)}/machines`);
+}
+
 export async function updateFlyMachine(
   appName: string,
   machineId: string,

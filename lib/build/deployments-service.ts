@@ -8,8 +8,10 @@ import {
   createFlyMachine,
   getFlyMachine,
   isFlyNotFound,
+  listFlyMachines,
   mergeMachineConfig,
   updateFlyMachine,
+  type FlyMachine,
 } from "@/lib/fly/client";
 import { HttpError } from "@/lib/http";
 import {
@@ -87,37 +89,51 @@ export async function setDeploymentStatus(
     commitSha: string | null;
   }> = {},
 ): Promise<Deployment> {
-  const current = await findDeployment(deploymentId);
-  if (!current) {
-    throw new HttpError("NOT_FOUND", "Deployment not found.", 404);
-  }
-  if (!canTransition(current.status, status)) {
-    throw new HttpError(
-      "CONFLICT",
-      `Cannot move deployment from ${current.status} to ${status}.`,
-      409,
-    );
-  }
-
-  const now = new Date();
-  const isStarting = status !== "queued" && !current.startedAt;
-  const isEnding = isTerminalStatus(status);
-
   const db = await getDb();
-  const [updated] = await db
-    .update(deployments)
-    .set({
-      status,
-      ...patch,
-      ...(isStarting ? { startedAt: now } : {}),
-      ...(isEnding ? { finishedAt: now } : {}),
-      ...(status === "queued" ? { startedAt: null, finishedAt: null } : {}),
-      updatedAt: now,
-    })
-    .where(eq(deployments.id, deploymentId))
-    .returning();
 
-  return updated;
+  // The read-check-write below is guarded by `status = <observed status>` so a
+  // concurrent transition cannot be silently overwritten by a stale callback
+  // (e.g. a late `pushing` ping racing the `complete` callback's `deploying`).
+  // When the guard loses the race we re-read and re-validate.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const current = await findDeployment(deploymentId);
+    if (!current) {
+      throw new HttpError("NOT_FOUND", "Deployment not found.", 404);
+    }
+    if (!canTransition(current.status, status)) {
+      throw new HttpError(
+        "CONFLICT",
+        `Cannot move deployment from ${current.status} to ${status}.`,
+        409,
+      );
+    }
+
+    const now = new Date();
+    const isStarting = status !== "queued" && !current.startedAt;
+    const isEnding = isTerminalStatus(status);
+
+    const [updated] = await db
+      .update(deployments)
+      .set({
+        status,
+        ...patch,
+        ...(isStarting ? { startedAt: now } : {}),
+        ...(isEnding ? { finishedAt: now } : {}),
+        ...(status === "queued" ? { startedAt: null, finishedAt: null } : {}),
+        updatedAt: now,
+      })
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, current.status)))
+      .returning();
+
+    if (updated) return updated;
+  }
+
+  const latest = await findDeployment(deploymentId);
+  throw new HttpError(
+    "CONFLICT",
+    `Cannot move deployment from ${latest?.status ?? "unknown"} to ${status}.`,
+    409,
+  );
 }
 
 export async function markDeploymentFailed(deploymentId: string, message: string) {
@@ -228,15 +244,32 @@ export async function deployImageToFly(input: {
   let machineId = input.deployment.flyMachineId;
 
   if (!machineId) {
-    const machine = await createFlyMachine({
-      appName,
-      region,
-      runtime,
-      name: appName,
-    });
-    machineId = machine.id;
-    // Free shared IPv4 only; ignore "already allocated".
-    await allocateSharedIpv4(appName).catch(() => undefined);
+    // A previous attempt may have created the machine without persisting its id
+    // (e.g. the status update failed after the Fly call). Reuse a machine that
+    // already has this app's name instead of failing with "already exists".
+    const existing = (await listFlyMachines(appName).catch(() => [] as FlyMachine[])).find(
+      (machine) => machine.name === appName,
+    );
+    if (existing) {
+      machineId = existing.id;
+      const config = mergeMachineConfig(existing.config, runtime);
+      await updateFlyMachine(appName, machineId, {
+        config,
+        currentVersion: existing.version,
+        region: existing.region ?? region,
+      });
+      await allocateSharedIpv4(appName).catch(() => undefined);
+    } else {
+      const machine = await createFlyMachine({
+        appName,
+        region,
+        runtime,
+        name: appName,
+      });
+      machineId = machine.id;
+      // Free shared IPv4 only; ignore "already allocated".
+      await allocateSharedIpv4(appName).catch(() => undefined);
+    }
   } else {
     try {
       const current = await getFlyMachine(appName, machineId);
@@ -297,7 +330,7 @@ export async function advanceDeploymentToDeploying(
       startedAt: current.startedAt ?? now,
       updatedAt: now,
     })
-    .where(eq(deployments.id, deploymentId))
+    .where(and(eq(deployments.id, deploymentId), eq(deployments.status, current.status)))
     .returning();
-  return updated ?? null;
+  return updated ?? (await findDeployment(deploymentId));
 }
