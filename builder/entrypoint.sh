@@ -37,7 +37,9 @@ fi
 # (the service also rewrites it before real builds).
 if [ -n "${OCI_REGISTRY-}" ] && [ -n "${OCI_REGISTRY_USERNAME-}" ] && [ -n "${OCI_REGISTRY_PASSWORD-}" ]; then
   mkdir -p "$HOME/.docker"
-  auth="$(printf '%s:%s' "$OCI_REGISTRY_USERNAME" "$OCI_REGISTRY_PASSWORD" | base64)"
+  # BusyBox base64 wraps at 76 columns; the wrapped newline would be an invalid
+  # escape in the JSON string, so collapse it to a single line.
+  auth="$(printf '%s:%s' "$OCI_REGISTRY_USERNAME" "$OCI_REGISTRY_PASSWORD" | base64 | tr -d '\n')"
   host="$(printf '%s' "$OCI_REGISTRY" | cut -d/ -f1)"
   printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$host" "$auth" > "$HOME/.docker/config.json"
   chmod 600 "$HOME/.docker/config.json"
