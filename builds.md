@@ -115,6 +115,15 @@ largest cold-build cost (~7 min for a Next.js app on 2 vCPU); level 1 produces
 slightly larger layers but pushes them in seconds. The VM is sized at 4 shared
 vCPU / 8 GB for the same reason.
 
+On boot, `builder/entrypoint.sh` also pre-warms the Railpack base images
+(`railpack-builder` and `railpack-runtime`, whose `mise-<date>` tags track the
+Railpack release, plus `railpack-frontend`) into the BuildKit content store via
+`buildctl build` with `type=image,push=false`. This is a background no-op when
+the images are already cached, and it turns even a first build on a fresh
+volume into a warm build (no cold base-image pulls). The builder/runtime tags
+are resolved from a real `railpack prepare` plan, so they stay correct when
+Railpack bumps the pinned mise version.
+
 Because the builder is a single-tenant build VM that only runs this container,
 running buildkitd (and the Node server) as root is an accepted trade-off;
 isolation between tenants comes from one ephemeral VM per builder.
