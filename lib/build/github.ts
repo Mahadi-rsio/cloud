@@ -88,18 +88,28 @@ export async function checkGitHubRepository(
   repository: GitHubRepository,
   token?: string | null,
 ): Promise<GitHubRepoStatus> {
-  const headers = new Headers({
-    Accept: "application/vnd.github+json",
-    "User-Agent": GITHUB_USER_AGENT,
-  });
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const endpoint = `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}`;
+
+  const request = (authToken?: string | null): Promise<Response> => {
+    const headers = new Headers({
+      Accept: "application/vnd.github+json",
+      "User-Agent": GITHUB_USER_AGENT,
+    });
+    if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+    return fetch(endpoint, { headers, signal: AbortSignal.timeout(15_000) });
+  };
 
   let response: Response;
   try {
-    response = await fetch(
-      `https://api.github.com/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}`,
-      { headers, signal: AbortSignal.timeout(15_000) },
-    );
+    response = await request(token);
+    // A stale or revoked token makes GitHub reject an otherwise-public
+    // repository with 401. Retry anonymously before failing the request.
+    if (response.status === 401 && token) {
+      console.warn(
+        `[github] check ${repository.owner}/${repository.repo} -> 401 with token; retrying anonymously`,
+      );
+      response = await request(null);
+    }
   } catch {
     return {
       ok: false,

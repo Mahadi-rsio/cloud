@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   parseGitHubUrl,
   cloneUrl,
+  checkGitHubRepository,
 } from "@/lib/build/github";
 import {
   findDockerfile,
@@ -61,6 +62,39 @@ describe("GitHub URL parsing", () => {
       cloneUrl({ owner: "octocat", repo: "Hello-World", url: "https://github.com/octocat/Hello-World" }),
       "https://github.com/octocat/Hello-World.git",
     );
+  });
+});
+
+describe("GitHub repository checks", () => {
+  it("retries anonymously when a stale token is rejected with 401", async () => {
+    const originalFetch = globalThis.fetch;
+    const authorizations: Array<string | null> = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const authorization = new Headers(init?.headers).get("Authorization");
+      authorizations.push(authorization);
+      if (authorization) {
+        return new Response("unauthorized", { status: 401 });
+      }
+      return Response.json({
+        private: false,
+        fork: false,
+        default_branch: "main",
+        pushed_at: null,
+      });
+    }) as typeof fetch;
+
+    try {
+      const repository = parseGitHubUrl(
+        "https://github.com/MrSaikatS/nextjs-starter-frontend",
+      );
+      assert.ok(repository);
+      const status = await checkGitHubRepository(repository, "stale-token");
+      assert.equal(status.ok, true);
+      if (status.ok) assert.equal(status.defaultBranch, "main");
+      assert.deepEqual(authorizations, ["Bearer stale-token", null]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 
