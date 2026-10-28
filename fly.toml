@@ -10,15 +10,10 @@ kill_signal = "SIGTERM"
   NODE_ENV = "production"
   ENABLE_BUILDKITD = "1"
   BUILD_WORKSPACE_DIR = "/home/builder/builds"
-  # Persist BuildKit's cache on a volume so the base images, installed
-  # toolchains, and per-app layers survive `fly deploy` / machine restarts.
-  BUILDKIT_ROOT = "/data/buildkit"
-
-# BuildKit cache lives on a volume; without it every deploy is a cold build
-# (pull base images, install the runtime, recompress every layer).
-[[mounts]]
-  source = "buildkit_cache"
-  destination = "/data/buildkit"
+  # Runtimes are baked into this image (builder/railpack/Dockerfile); BuildKit
+  # stays stateless (no volume). Base images are re-pulled on boot; the baked
+  # runtimes make the slowest part (toolchain installs) instant.
+  RAILPACK_BUILDER_IMAGE = "registry.fly.io/cloud-builder:railpack-builder-mise-2026.10.14"
 
 [http_service]
   internal_port = 8080

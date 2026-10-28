@@ -24,6 +24,10 @@
  *   RAILPACK_BIN             railpack binary (default "railpack")
  *   BUILDKIT_HOST            if set, use buildctl against this BuildKit address
  *   RAILPACK_FRONTEND_IMAGE  frontend image (default ghcr.io/railwayapp/railpack-frontend)
+ *   RAILPACK_BUILDER_IMAGE   builder image plans are rewritten to use; baked
+ *                            with common runtimes preinstalled. When unset it
+ *                            defaults to the upstream builder image, in which
+ *                            case plans are left untouched.
  *   GITHUB_TOKEN             optional token to raise GitHub rate limits
  *   ENABLE_BUILDKITD         entrypoint hint only
  */
@@ -52,6 +56,12 @@ const config = {
   buildkitHost: process.env.BUILDKIT_HOST ?? "",
   frontendImage:
     process.env.RAILPACK_FRONTEND_IMAGE ?? "ghcr.io/railwayapp/railpack-frontend",
+  // Builder image that plans are rewritten to use. When it is the upstream
+  // image (or unset, which resolves to the upstream default), the rewrite is a
+  // no-op and plans build exactly as Railpack generated them.
+  railpackBuilderImage:
+    process.env.RAILPACK_BUILDER_IMAGE ??
+    "ghcr.io/railwayapp/railpack-builder:mise-2026.10.14",
   githubToken: process.env.GITHUB_TOKEN ?? "",
   maxBuildMs: positiveInt(process.env.BUILD_MAX_DURATION_MS, 25 * 60 * 1000),
 };
@@ -305,6 +315,59 @@ async function readInfo(infoPath) {
   }
 }
 
+const UPSTREAM_RAILPACK_BUILDER_RE = /^ghcr\.io\/railwayapp\/railpack-builder:/;
+
+/**
+ * Rewrite a generated Railpack plan so builds use our baked builder image and
+ * prune the runtimes the app does not need before the deploy image is built.
+ *
+ * - Every step input that references the upstream builder image (the
+ *   `packages:mise` step and the `install_bin` helper) is pointed at
+ *   `builderImage`.
+ * - The `packages:mise` step gets `mise prune --yes` appended after `mise
+ *   install`. Pruning with `--yes` removes the runtimes baked into the builder
+ *   image that the app's /etc/mise/config.toml does not request, so node/python
+ *   deploy images (which copy the whole /mise/installs tree) stay small.
+ *
+ * Returns the rewritten plan document, or null when `builderImage` is the
+ * upstream image (in which case the plan is left untouched).
+ */
+async function rewriteRailpackPlan(planPath, builderImage) {
+  if (!builderImage || UPSTREAM_RAILPACK_BUILDER_RE.test(builderImage)) return null;
+
+  let plan;
+  try {
+    plan = JSON.parse(await readFile(planPath, "utf8"));
+  } catch {
+    throw new Error(`Could not read the build plan at ${planPath}.`);
+  }
+  if (!plan || typeof plan !== "object" || !Array.isArray(plan.steps)) return null;
+
+  let replaced = false;
+  for (const step of plan.steps) {
+    for (const input of step.inputs ?? []) {
+      if (typeof input.image === "string" && UPSTREAM_RAILPACK_BUILDER_RE.test(input.image)) {
+        input.image = builderImage;
+        replaced = true;
+      }
+    }
+    if (step.name !== "packages:mise") continue;
+
+    const commands = step.commands ?? [];
+    const installIndex = commands.findIndex((command) => command.cmd === "mise install");
+    if (installIndex === -1) continue;
+    if (commands.some((command) => command.cmd === "mise prune --yes")) continue;
+
+    commands.push({ cmd: "mise prune --yes", customName: "prune unused runtimes" });
+    replaced = true;
+  }
+
+  if (!replaced) return null;
+  await writeFile(planPath, JSON.stringify(plan));
+  log(`rewrote plan to use builder image ${builderImage} with runtime pruning`);
+  return plan;
+}
+
 async function cloneRepo(job, appDir, onLine) {
   const url = new URL(job.repoUrl);
   if (url.protocol !== "https:" || url.hostname !== "github.com") {
@@ -405,6 +468,7 @@ async function prepareRailpack(appDir, workDir, onLine) {
     const retryable = result.code === 75 || result.code === null;
 
     if (result.code === 0 && info.success) {
+      await rewriteRailpackPlan(planPath, config.railpackBuilderImage);
       return { planPath, ...info };
     }
     if (retryable) {

@@ -54,6 +54,7 @@ These are bound as **secrets** (`bindings.secret()`) in the Workers configuratio
 | `RAILPACK_BIN` | Path to the railpack binary (used in testing; production uses BuildKit front-end). |
 | `BUILDKIT_HOST` | Unix socket for buildkitd, e.g. `unix:///home/builder/.run/buildkit/buildkitd.sock`. |
 | `RAILPACK_FRONTEND_IMAGE` | `ghcr.io/railwayapp/railpack-frontend:latest` (used as `BUILDKIT_SYNTAX`). |
+| `RAILPACK_BUILDER_IMAGE` | Builder image used for runtime installs. Set to our baked image `registry.fly.io/cloud-builder:railpack-builder-mise-2026.10.14` (see `builder/railpack/Dockerfile`). Unset (upstream) → the plan rewrite is a no-op. |
 | `GITHUB_TOKEN` | Optional GitHub PAT for private repo checks (not required for public repos). |
 | `ENABLE_BUILDKITD` | When `0`, the builder expects an external `BUILDKIT_HOST` pointing to an existing buildkitd instance; when `1` the entrypoint starts buildkitd. |
 | `BUILD_MAX_DURATION_MS` | Max wall-clock time a build may run before the builder kills it. |
@@ -67,7 +68,8 @@ These are bound as **secrets** (`bindings.secret()`) in the Workers configuratio
 3. **Railpack build** (BuildKit, BuildKit frontend):
    - Run `railpack prepare <dir> --plan-out railpack-plan.json --info-out railpack-info.json`.
    - `classifyPrepareExit` treats exit `0` as success, `75`/null/undefined as transient retry, anything else as permanent failure.
-   - On success, run `docker buildx build --build-arg BUILDKIT_SYNTAX=${RAILPACK_FRONTEND_IMAGE} -f railpack-plan.json --push -t <imageRef> <dir>` OR via `buildctl` when `BUILDKIT_HOST` is set.
+   - On success the generated plan is rewritten (`rewriteRailpackPlan` in `lib/build/railpack.ts` / `builder/server.mjs`): every step image matching the upstream `ghcr.io/railwayapp/railpack-builder:*` is pointed at `RAILPACK_BUILDER_IMAGE`, and the `packages:mise` step gets `mise prune --yes` appended after `mise install` (idempotent, skips plans with no mise step, no-op upstream).
+   - Run `docker buildx build --build-arg BUILDKIT_SYNTAX=${RAILPACK_FRONTEND_IMAGE} -f railpack-plan.json --push -t <imageRef> <dir>` OR via `buildctl` when `BUILDKIT_HOST` is set.
    - The image tag is `${OCI_REGISTRY}/<app>:b${buildNumber}` (lowercase), where `<app>` is the deployment's Fly app (`dep-<deploymentId>` truncated). The app is created by the control plane before the build is dispatched.
 4. **Plain Dockerfile build** (when a Dockerfile is used):
    - Run `docker buildx build --push -t <imageRef> -f <dockerfile> <context>`.
@@ -78,6 +80,21 @@ These are bound as **secrets** (`bindings.secret()`) in the Workers configuratio
 8. **Crash / signal handling** — SIGTERM/SIGINT trigger a graceful exit: close EventSource, flush buffered logs, `process.exit(0)`.
 9. **/health endpoint** — `GET /health` returns `{ status: "ok" }`. Used by `ensureBuilderAwake()` to determine whether the builder needs restarting.
 10. **/builds endpoint** — `POST /builds` validates a single job object, spawns the detached build child process, returns `{ jobId }`. Single-active-build guard: only one build runs at a time. On fatal error, the builder exits(1) and the queue consumer marks the deployment failed after max attempts.
+
+### Builder image (baked runtimes)
+
+The worker deploys with a custom Railpack builder image
+(`builder/railpack/Dockerfile`) instead of pulling toolchains from the network
+on every build. It bakes pinned runtimes (Node 22/24, Python 3.12/3.13, Go
+1.24/1.25 — no PHP, which uses its own `dunglas/frankenphp` step) into
+`/mise/installs` and ships metadata in `/etc/baked-runtimes.json`/`.txt`. PHP
+plans have no `packages:mise` step and are left untouched by the rewrite.
+
+Builds use `RAILPACK_BUILDER_IMAGE` when available and fall back to the
+upstream image otherwise. After all runtimes have been made available, the
+rewrite appends `mise prune --yes` to the `packages:mise` step so the deploy
+image keeps only the app's requested runtime (node/python plans copy the whole
+`/mise/installs` tree; pruning drops the unrequested baked versions).
 
 ### BuildKit setup on the Fly machine
 
@@ -90,51 +107,19 @@ once and needs no user namespace:
 
 ```
 buildkitd \
-  --root /data/buildkit \
   --addr unix:///home/builder/.run/buildkit/buildkitd.sock \
   --oci-worker-snapshotter fuse-overlayfs
 ```
 
-This requires `/dev/fuse` (present on Fly machines) and `fuse-overlayfs`
-(installed in `builder/Dockerfile`). The entrypoint waits up to 30 s for
-`buildctl debug workers` to succeed before starting the HTTP server. The
-`ENABLE_BUILDKITD` env var, when set to `0`, skips this startup and expects an
-external `BUILDKIT_HOST` to be reachable.
-
-BuildKit's root is a **persistent Fly volume** (`buildkit_cache`, mounted at
-`/data/buildkit` via `fly.toml`) rather than the machine's ephemeral root disk.
-Without it, every `fly deploy` and machine restart starts from an empty cache:
-the first build then pulls the Railpack base images, installs Node/mise, runs
-`npm install`, copies `node_modules`, and gzip-compresses every layer, which
-takes ~10–15 min. With a warm cache the same build finishes in under a minute.
-The volume also fixes the ~8 GB root-disk limit.
-
-The image exporter uses `compression=gzip,compression-level=1`
-(`builder/server.mjs`). Layer compression is CPU-bound and was the single
-largest cold-build cost (~7 min for a Next.js app on 2 vCPU); level 1 produces
-slightly larger layers but pushes them in seconds. The VM is sized at 4 shared
-vCPU / 8 GB for the same reason.
-
-On boot, `builder/entrypoint.sh` also pre-warms the Railpack base images
-(`railpack-builder` and `railpack-runtime`, whose `mise-<date>` tags track the
-Railpack release, plus `railpack-frontend`) into the BuildKit content store via
-`buildctl build` with `type=image,push=false`. This is a background no-op when
-the images are already cached, and it turns even a first build on a fresh
-volume into a warm build (no cold base-image pulls). The builder/runtime tags
-are resolved from a real `railpack prepare` plan, so they stay correct when
-Railpack bumps the pinned mise version.
-
-Because the builder is a single-tenant build VM that only runs this container,
-running buildkitd (and the Node server) as root is an accepted trade-off;
-isolation between tenants comes from one ephemeral VM per builder.
-
-Deploy the builder with `fly deploy` from the repo root (the root `fly.toml`
-targets `cloud-builder`). The `buildkit_cache` volume must exist in the app's
-region first:
-
-```
-fly volumes create buildkit_cache --region lax --size 30 -a cloud-builder
-```
+BuildKit is **stateless by default** (no persistent volume): `/tmp/buildkitd`
+holds its content store. On boot `builder/entrypoint.sh` also pre-warms the
+Railpack base images without relying on the loopback registry — it imports
+`railpack-builder` (the custom baked image), `railpack-runtime`
+(`mise-<date>` tags track the Railpack release), and `railpack-frontend` into
+the BuildKit content store using `buildctl` with the built-in `dockerfile.v0`
+frontend (`FROM <image>` builds with `--output type=image,push=false`). The
+image tags are resolved from a real `railpack prepare` plan, so they stay
+correct when Railpack bumps the pinned mise version.
 
 ### Retry and staleness behavior
 
@@ -165,6 +150,8 @@ With `BUILD_STRATEGY` unset (default `auto`), a repo with no Dockerfile is built
 5. **Verify health** — `curl /health` on the builder URL should return `{"status":"ok"}`.
 6. **Test a deployment** — create a GitHub deployment from a public repo; watch the live log stream and the status transition through the pipeline.
 7. **Monitor staleness** — the scheduled `*/5 * * * *` cron triggers `recoverStaleDeployments`; verify it fires after 10 min of inactivity.
+
+> **Retired volume**: the pre-stateless deployments used a `buildkit_cache` volume (`vol_rkgdd0m66qq1zjw4`, 30 GB) mounted at `/data/buildkit`. It is no longer referenced by `fly.toml`; once the new image has been deployed and verified, remove it manually with `fly volumes destroy vol_rkgdd0m66qq1zjw4 -a cloud-builder`.
 
 ## Troubleshooting
 

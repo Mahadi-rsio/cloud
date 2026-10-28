@@ -15,6 +15,7 @@ import {
   dockerBuildxArgs,
   classifyPrepareExit,
   parseRailpackInfo,
+  rewriteRailpackPlan,
 } from "@/lib/build/railpack";
 import {
   canTransition,
@@ -163,6 +164,84 @@ describe("Railpack command construction", () => {
     assert.ok(!args.some((arg) => arg.includes("railpack-frontend")));
     assert.ok(args.includes("-f"));
     assert.ok(args.includes("Dockerfile"));
+  });
+});
+
+describe("Railpack plan rewrite", () => {
+  const BUILDER = "registry.fly.io/cloud-builder:railpack-builder-mise-2026.10.14";
+  const UPSTREAM = "ghcr.io/railwayapp/railpack-builder:mise-2026.10.14";
+
+  function nodePlan() {
+    return {
+      provider: "node",
+      steps: [
+        {
+          name: "packages:apt:runtime",
+          inputs: [{ image: "dunglas/frankenphp:latest" }],
+          commands: [],
+        },
+        {
+          name: "packages:mise",
+          inputs: [{ image: UPSTREAM }],
+          commands: [
+            { cmd: "/mise/shims", customName: "copy mise shims" },
+            { cmd: "create mise config" },
+            { cmd: "mise install" },
+          ],
+        },
+        {
+          name: "install_bin",
+          inputs: [{ image: UPSTREAM }],
+          commands: [],
+        },
+      ],
+    };
+  }
+
+  it("repoints builder image inputs to the custom image", () => {
+    const plan = nodePlan();
+    rewriteRailpackPlan(plan, BUILDER);
+    const mise = plan.steps[1];
+    assert.equal(mise.inputs[0].image, BUILDER);
+    const installBin = plan.steps[2];
+    assert.equal(installBin.inputs[0].image, BUILDER);
+    const apt = plan.steps[0];
+    assert.equal(apt.inputs[0].image, "dunglas/frankenphp:latest");
+  });
+
+  it("appends a mise prune step after mise install", () => {
+    const plan = nodePlan();
+    rewriteRailpackPlan(plan, BUILDER);
+    const commands = plan.steps[1].commands;
+    assert.deepEqual(
+      commands.map((c: { cmd?: string; customName?: string }) => c.cmd),
+      ["/mise/shims", "create mise config", "mise install", "mise prune --yes"],
+    );
+    assert.equal(commands[3].customName, "prune unused runtimes");
+  });
+
+  it("is idempotent", () => {
+    const plan = nodePlan();
+    rewriteRailpackPlan(plan, BUILDER);
+    const first = JSON.stringify(plan);
+    rewriteRailpackPlan(plan, BUILDER);
+    assert.equal(JSON.stringify(plan), first);
+  });
+
+  it("leaves plans with no mise step untouched", () => {
+    const plan = {
+      provider: "php",
+      steps: [
+        {
+          name: "packages:runtime",
+          inputs: [{ image: "dunglas/frankenphp:latest" }],
+          commands: [],
+        },
+      ],
+    };
+    const before = JSON.stringify(plan);
+    rewriteRailpackPlan(plan, BUILDER);
+    assert.equal(JSON.stringify(plan), before);
   });
 });
 

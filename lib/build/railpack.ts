@@ -18,6 +18,57 @@
 
 export const RAILPACK_FRONTEND_IMAGE = "ghcr.io/railwayapp/railpack-frontend";
 
+/**
+ * Builder image Railpack pins into generated plans. The worker bakes its own
+ * copy with common runtimes preinstalled (builder/railpack/Dockerfile) and
+ * rewrites every plan to use it instead.
+ */
+export const RAILPACK_BUILDER_IMAGE = "ghcr.io/railwayapp/railpack-builder";
+const RAILPACK_BUILDER_IMAGE_RE = /^ghcr\.io\/railwayapp\/railpack-builder:/;
+
+/**
+ * Rewrite a generated Railpack plan so builds use our baked builder image and
+ * prune the runtimes the app does not need before the deploy image is built:
+ *
+ *  - Every step input that references the upstream builder image (the
+ *    `packages:mise` step and the `install_bin` helper) is pointed at
+ *    `builderImage`.
+ *  - The `packages:mise` step gets `mise prune --yes` appended after `mise
+ *    install`. Pruning with `--prune`/`--yes` removes the runtimes baked into
+ *    the builder image that the app's /etc/mise/config.toml does not request,
+ *    so node/python deploy images (which copy the whole /mise/installs tree)
+ *    stay small.
+ *
+ * Returns the (mutated) plan for convenience. When `builderImage` is the
+ * upstream image this is a no-op apart from the prune step.
+ */
+export function rewriteRailpackPlan(
+  plan: {
+    steps?: Array<{
+      name?: string;
+      inputs?: Array<{ image?: string }>;
+      commands?: Array<{ cmd?: string; customName?: string }>;
+    }>;
+  },
+  builderImage: string,
+) {
+  const steps = plan.steps ?? [];
+  for (const step of steps) {
+    for (const input of step.inputs ?? []) {
+      if (input.image && RAILPACK_BUILDER_IMAGE_RE.test(input.image)) {
+        input.image = builderImage;
+      }
+    }
+    if (step.name !== "packages:mise") continue;
+    const commands = step.commands ?? [];
+    const installIndex = commands.findIndex((command) => command.cmd === "mise install");
+    if (installIndex === -1) continue;
+    if (commands.some((command) => command.cmd === "mise prune --yes")) continue;
+    commands.push({ cmd: "mise prune --yes", customName: "prune unused runtimes" });
+  }
+  return plan;
+}
+
 export function railpackPrepareArgs(input: {
   directory: string;
   planOut: string;
