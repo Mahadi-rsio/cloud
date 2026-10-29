@@ -39,6 +39,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 const config = {
   port: Number(process.env.PORT ?? 8080),
@@ -319,21 +320,32 @@ const UPSTREAM_RAILPACK_BUILDER_RE = /^ghcr\.io\/railwayapp\/railpack-builder:/;
 
 /**
  * Rewrite a generated Railpack plan so builds use our baked builder image and
- * prune the runtimes the app does not need before the deploy image is built.
+ * prune the runtimes the app does not need before the deploy image is built,
+ * and prevent user layers from being shared across deployments.
  *
- * - Every step input that references the upstream builder image (the
- *   `packages:mise` step and the `install_bin` helper) is pointed at
- *   `builderImage`.
- * - The `packages:mise` step gets `mise prune --yes` appended after `mise
- *   install`. Pruning with `--yes` removes the runtimes baked into the builder
- *   image that the app's /etc/mise/config.toml does not request, so node/python
- *   deploy images (which copy the whole /mise/installs tree) stay small.
+ * - When `builderImage` is a custom image:
+ *   - Every step input that references the upstream builder image (the
+ *     `packages:mise` step and the `install_bin` helper) is pointed at
+ *     `builderImage`.
+ *   - The `packages:mise` step gets `mise prune --yes` appended after `mise
+ *     install`. Pruning with `--yes` removes the runtimes baked into the builder
+ *     image that the app's /etc/mise/config.toml does not request, so node/python
+ *     deploy images (which copy the whole /mise/installs tree) stay small.
+ * - When `cacheKey` is provided (typically the deployment ID):
+ *   - Every step whose name is a string and does not start with `packages:`
+ *     (e.g. `install`, `build`) gets a unique dummy command
+ *     `true # cloudisy-nocache:<cacheKey>` prepended as its first command.
+ *     Because BuildKit's layer cache is content-addressed, a unique first exec
+ *     invalidates the cache for that step and every step chained after it,
+ *     preventing cross-deployment layer reuse (npm install, node_modules, build
+ *     outputs) while allowing generic `packages:*` layers (apt, mise runtimes)
+ *     and base images to remain cached on the volume.
  *
- * Returns the rewritten plan document, or null when `builderImage` is the
- * upstream image (in which case the plan is left untouched).
+ * Returns the rewritten plan document, or null when neither rewrite applies.
  */
-async function rewriteRailpackPlan(planPath, builderImage) {
-  if (!builderImage || UPSTREAM_RAILPACK_BUILDER_RE.test(builderImage)) return null;
+async function rewriteRailpackPlan(planPath, builderImage, cacheKey) {
+  const rewriteImage = Boolean(builderImage) && !UPSTREAM_RAILPACK_BUILDER_RE.test(builderImage);
+  if (!rewriteImage && !cacheKey) return null;
 
   let plan;
   try {
@@ -345,26 +357,39 @@ async function rewriteRailpackPlan(planPath, builderImage) {
 
   let replaced = false;
   for (const step of plan.steps) {
-    for (const input of step.inputs ?? []) {
-      if (typeof input.image === "string" && UPSTREAM_RAILPACK_BUILDER_RE.test(input.image)) {
-        input.image = builderImage;
+    if (rewriteImage) {
+      for (const input of step.inputs ?? []) {
+        if (typeof input.image === "string" && UPSTREAM_RAILPACK_BUILDER_RE.test(input.image)) {
+          input.image = builderImage;
+          replaced = true;
+        }
+      }
+      if (step.name === "packages:mise") {
+        const commands = step.commands ?? [];
+        const installIndex = commands.findIndex((command) => command.cmd === "mise install");
+        if (installIndex !== -1 && !commands.some((command) => command.cmd === "mise prune --yes")) {
+          commands.push({ cmd: "mise prune --yes", customName: "prune unused runtimes" });
+          replaced = true;
+        }
+      }
+    }
+
+    if (cacheKey && typeof step.name === "string" && !step.name.startsWith("packages:")) {
+      const markerName = `cloudisy-nocache:${cacheKey}`;
+      const commands = step.commands ?? [];
+      if (!commands.some((command) => command.customName === markerName)) {
+        commands.unshift({ cmd: `true # ${markerName}`, customName: markerName });
+        step.commands = commands;
         replaced = true;
       }
     }
-    if (step.name !== "packages:mise") continue;
-
-    const commands = step.commands ?? [];
-    const installIndex = commands.findIndex((command) => command.cmd === "mise install");
-    if (installIndex === -1) continue;
-    if (commands.some((command) => command.cmd === "mise prune --yes")) continue;
-
-    commands.push({ cmd: "mise prune --yes", customName: "prune unused runtimes" });
-    replaced = true;
   }
 
   if (!replaced) return null;
   await writeFile(planPath, JSON.stringify(plan));
-  log(`rewrote plan to use builder image ${builderImage} with runtime pruning`);
+  log(
+    `rewrote plan${rewriteImage ? ` to use builder image ${builderImage} with runtime pruning` : ""}${cacheKey ? ` with cacheKey ${cacheKey}` : ""}`,
+  );
   return plan;
 }
 
@@ -445,7 +470,7 @@ async function readDockerfilePort(filePath) {
   }
 }
 
-async function prepareRailpack(appDir, workDir, onLine) {
+async function prepareRailpack(appDir, workDir, onLine, cacheKey) {
   const planPath = path.join(workDir, "railpack-plan.json");
   const infoPath = path.join(workDir, "railpack-info.json");
 
@@ -468,7 +493,7 @@ async function prepareRailpack(appDir, workDir, onLine) {
     const retryable = result.code === 75 || result.code === null;
 
     if (result.code === 0 && info.success) {
-      await rewriteRailpackPlan(planPath, config.railpackBuilderImage);
+      await rewriteRailpackPlan(planPath, config.railpackBuilderImage, cacheKey);
       return { planPath, ...info };
     }
     if (retryable) {
@@ -685,7 +710,7 @@ async function runBuild(job) {
 
     while (true) {
       if (useRailpack) {
-        const prepared = await prepareRailpack(appDir, workDir, onLine);
+        const prepared = await prepareRailpack(appDir, workDir, onLine, job.deploymentId);
         for (const line of prepared.logs) sink.push("stdout", line);
         if (!prepared.success) {
           throw new Error(prepared.error ?? "Railpack could not plan this application.");
@@ -934,21 +959,35 @@ const server = http.createServer(async (request, response) => {
   json(response, 404, { error: "not_found" });
 });
 
-server.listen(config.port, "0.0.0.0", () => {
-  log(`listening on :${config.port}`);
-  log(
-    `mode: ${config.buildkitHost ? `buildctl (${config.buildkitHost})` : "docker buildx"}`,
-  );
-  if (!config.builderApiToken) log("WARNING: BUILDER_API_TOKEN is not set; all jobs will be rejected");
-  if (!config.registry) log("WARNING: OCI_REGISTRY is not set; image pushes will fail");
-  scheduleIdle();
-});
+const isMain = Boolean(
+  process.env.NODE_ENV !== "test" &&
+    process.argv[1] &&
+    fileURLToPath(import.meta.url) === path.resolve(process.argv[1]),
+);
 
-function shutdown(signal) {
-  log(`received ${signal}; shutting down`);
-  server.close();
-  if (!active) process.exit(0);
+if (isMain) {
+  server.listen(config.port, "0.0.0.0", () => {
+    log(`listening on :${config.port}`);
+    log(
+      `mode: ${config.buildkitHost ? `buildctl (${config.buildkitHost})` : "docker buildx"}`,
+    );
+    if (!config.builderApiToken) log("WARNING: BUILDER_API_TOKEN is not set; all jobs will be rejected");
+    if (!config.registry) log("WARNING: OCI_REGISTRY is not set; image pushes will fail");
+    scheduleIdle();
+  });
+
+  function shutdown(signal) {
+    log(`received ${signal}; shutting down`);
+    server.close();
+    if (!active) process.exit(0);
+  }
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+export {
+  rewriteRailpackPlan,
+  prepareRailpack,
+  UPSTREAM_RAILPACK_BUILDER_RE,
+};
