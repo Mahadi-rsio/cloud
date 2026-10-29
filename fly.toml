@@ -10,23 +10,39 @@ kill_signal = "SIGTERM"
   NODE_ENV = "production"
   ENABLE_BUILDKITD = "1"
   BUILD_WORKSPACE_DIR = "/home/builder/builds"
-  # Runtimes are baked into this image (builder/railpack/Dockerfile); BuildKit
-  # stays stateless (no volume). Base images are re-pulled on boot; the baked
-  # runtimes make the slowest part (toolchain installs) instant.
+  # BuildKit's content store lives on the buildkit_cache volume (see [mounts]).
+  # Only base images (Railpack builder/runtime/frontend) and generic OS layers
+  # persist; per-deployment exec cache mounts (npm/pip/uv) are pruned after every
+  # build, and user source/outputs are never stored outside a job's scratch dir.
+  BUILDKIT_ROOT = "/var/lib/buildkit"
   RAILPACK_BUILDER_IMAGE = "registry.fly.io/cloud-builder:railpack-builder-mise-2026.10.14"
+
+# Persist BuildKit's root so base images are not re-pulled on every boot. The
+# volume is 9 GB with GC capped at 7.5 GB. Create it once in the app's
+# primary_region (lax) before deploying:
+#   fly volumes create buildkit_cache --region lax --size 9 -a cloud-builder
+#   fly volumes update <volume-id> --snapshot-retention 1 -a cloud-builder
+# One volume attaches to exactly one machine; never mount it in two.
+[mounts]
+  source = "buildkit_cache"
+  destination = "/var/lib/buildkit"
 
 [http_service]
   internal_port = 8080
   force_https = true
+  # The builder self-stops after BUILD_IDLE_TIMEOUT_MS of no work (see
+  # builder/server.mjs) and is woken by the control plane before dispatch.
+  # min_machines_running = 0 also stops `fly deploy` from creating a second
+  # machine for HA — the buildkit_cache volume can only attach to one machine.
   auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
   processes = ["app"]
 
 [[vm]]
   # Layer compression and installs are CPU-bound; 4 vCPU roughly halves the
   # cold-build time versus 2.
-  memory = "8gb"
+  memory = "6gb"
   cpu_kind = "shared"
   cpus = 4
 

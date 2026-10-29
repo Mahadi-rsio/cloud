@@ -7,28 +7,52 @@ mkdir -p "$BUILD_WORKSPACE_DIR" "$XDG_RUNTIME_DIR" "$BUILDKIT_ROOT" "$(dirname "
 chmod 700 "$XDG_RUNTIME_DIR"
 
 if [ "${ENABLE_BUILDKITD:-1}" = "1" ]; then
-  echo "[entrypoint] starting buildkitd (fuse-overlayfs snapshotter, root $BUILDKIT_ROOT)"
-  # This is a dedicated, ephemeral build VM, so buildkitd runs as root and uses
-  # the FUSE overlay snapshotter: it avoids copying every layer (which exhausts
-  # the small root disk and is very slow) and does not require a user namespace.
-  buildkitd \
-    --root "$BUILDKIT_ROOT" \
-    --addr "$BUILDKIT_HOST" \
-    --oci-worker-snapshotter fuse-overlayfs \
-    >"$HOME/buildkitd.log" 2>&1 &
+  snapshotter="${BUILDKIT_SNAPSHOTTER:-fuse-overlayfs}"
+  echo "[entrypoint] starting buildkitd ($snapshotter snapshotter, root $BUILDKIT_ROOT)"
 
-  ready=0
-  for _ in $(seq 1 30); do
-    if buildctl --addr "$BUILDKIT_HOST" debug workers >/dev/null 2>&1; then
-      ready=1
-      break
-    fi
-    sleep 1
-  done
+  # This is a dedicated build VM, so buildkitd runs as root and uses the FUSE
+  # overlay snapshotter by default: it avoids copying every layer (which
+  # exhausts the small root disk and is very slow) and does not require a user
+  # namespace. Set BUILDKIT_SNAPSHOTTER=overlayfs to test the native snapshotter
+  # on a single build.
+  #
+  # The root is the buildkit_cache volume, so base images survive stop/start.
+  # GC keeps total usage within the 9 GB volume (7.5 GB budget).
+  start_buildkitd() {
+    buildkitd \
+      --root "$BUILDKIT_ROOT" \
+      --addr "$BUILDKIT_HOST" \
+      --oci-worker-snapshotter "$snapshotter" \
+      --oci-worker-gc=true \
+      --oci-worker-gc-keepstorage=7500 \
+      >>"$HOME/buildkitd.log" 2>&1 &
+    buildkitd_pid=$!
+  }
 
-  if [ "$ready" != "1" ]; then
-    echo "[entrypoint] buildkitd did not become ready; see $HOME/buildkitd.log" >&2
+  wait_for_buildkit() {
+    for _ in $(seq 1 30); do
+      if buildctl --addr "$BUILDKIT_HOST" debug workers >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep 1
+    done
+    return 1
+  }
+
+  start_buildkitd
+  if ! wait_for_buildkit; then
+    # A crash can leave the on-volume content store corrupt. Wipe it once and
+    # retry so a bad cache does not keep the builder permanently down.
+    echo "[entrypoint] buildkitd did not become ready; wiping $BUILDKIT_ROOT and retrying once (cache may be corrupt)" >&2
     tail -n 50 "$HOME/buildkitd.log" >&2 || true
+    kill "$buildkitd_pid" 2>/dev/null || true
+    wait "$buildkitd_pid" 2>/dev/null || true
+    rm -rf "${BUILDKIT_ROOT:?}"/* 2>/dev/null || true
+    start_buildkitd
+    if ! wait_for_buildkit; then
+      echo "[entrypoint] buildkitd still not ready after wipe; see $HOME/buildkitd.log" >&2
+      tail -n 50 "$HOME/buildkitd.log" >&2 || true
+    fi
   fi
 fi
 
@@ -48,12 +72,14 @@ fi
 # Warm the Railpack base images into the BuildKit content store so a build
 # after a boot does not cold-pull them.
 #
-# There is no persistent volume anymore: the default runtimes are baked into
-# our custom builder image (builder/railpack/Dockerfile), so the only images to
-# pre-pull are that builder image (with the runtimes already installed), the
-# Railpack runtime image, and the gateway frontend. BuildKit has no image-pull
-# command, so we import each base image with a trivial `FROM` build through the
-# built-in dockerfile.v0 frontend; the layers land in the local BuildKit cache.
+# BuildKit's root is the buildkit_cache volume, so after the first boot these
+# imports are cheap no-ops: only base images and generic OS layers persist. The
+# default runtimes are baked into our custom builder image
+# (builder/railpack/Dockerfile), so the images to pre-pull are that builder
+# image (runtimes already installed), the Railpack runtime image, and the
+# gateway frontend. BuildKit has no image-pull command, so we import each base
+# image with a trivial `FROM` build through the built-in dockerfile.v0 frontend;
+# the layers land in the persistent BuildKit cache.
 #
 # Runs in the background: when already cached these are fast no-ops.
 warm_images() {
