@@ -625,52 +625,34 @@ async function buildImage({ strategy, appDir, workDir, planPath, imageRef, cache
 /* ------------------------------------------------------------------ */
 
 /**
- * Drop per-deployment caches from the BuildKit volume after every build:
+ * Drop per-deployment exec cache mounts (npm/pnpm/yarn/pip/uv, apt, etc.)
+ * after a build. The `cache-key` build arg already namespaces them per
+ * deployment, but they would otherwise accumulate on the persistent volume.
  *
- * 1. Exec cache mounts (npm/pnpm/yarn/pip/uv, apt, etc.) — isolated per
- *    deployment by `cache-key`, but accumulate on the volume indefinitely.
- *    Pruned with `--filter type==exec.cachemount`.
- *
- * 2. Reclaimable layer blobs — user app layers (`npm install`, `node_modules`,
- *    `build` output) are never reused across deployments (the per-deployment
- *    `cloudisy-nocache:<deploymentId>` marker ensures a fresh hash every time),
- *    so they become reclaimable the moment the build finishes. A plain
- *    `buildctl prune` (no `--all`) reclaims only those reclaimable blobs and
- *    leaves the still-referenced base image / mise / apt layers intact.
+ * We do NOT run a blanket `buildctl prune` here. Doing so would also evict
+ * the `packages:mise` and `packages:apt` layer snapshots (they become
+ * reclaimable the moment the build finishes and no active build holds them),
+ * forcing mise/apt to reinstall on every deployment. Instead, BuildKit's own
+ * GC (`--oci-worker-gc-keepstorage`) handles volume pressure automatically.
+ * User app layers (`install`, `build`) are never reused across deployments
+ * because the per-deployment `cloudisy-nocache:<deploymentId>` marker gives
+ * each build a unique hash — no explicit prune is needed for them.
  *
  * Best-effort: failures are logged and never fail a build.
  */
 async function pruneBuildCache() {
   if (!config.buildkitHost) return;
-
-  // Step 1: prune exec cache mounts (Railpack download caches).
-  const mountResult = await runCommand(
+  const result = await runCommand(
     "buildctl",
     ["--addr", config.buildkitHost, "prune", "--filter", "type==exec.cachemount"],
     { timeoutMs: 120_000 },
   );
-  if (mountResult.error) {
-    log(`warning: could not prune BuildKit exec cache mounts: ${mountResult.error.message}`);
-  } else if (mountResult.code !== 0) {
-    log(`warning: BuildKit exec cache prune exited ${mountResult.code ?? mountResult.signal}`);
+  if (result.error) {
+    log(`warning: could not prune BuildKit exec cache mounts: ${result.error.message}`);
+  } else if (result.code !== 0) {
+    log(`warning: BuildKit exec cache prune exited ${result.code ?? result.signal}`);
   } else {
     log("pruned BuildKit exec cache mounts");
-  }
-
-  // Step 2: prune all reclaimable layer blobs (user app install/build layers).
-  // `buildctl prune` without --all only reclaims blobs that are no longer
-  // referenced by any cached snapshot, so base images stay warm.
-  const layerResult = await runCommand(
-    "buildctl",
-    ["--addr", config.buildkitHost, "prune"],
-    { timeoutMs: 180_000 },
-  );
-  if (layerResult.error) {
-    log(`warning: could not prune BuildKit layer cache: ${layerResult.error.message}`);
-  } else if (layerResult.code !== 0) {
-    log(`warning: BuildKit layer prune exited ${layerResult.code ?? layerResult.signal}`);
-  } else {
-    log("pruned BuildKit reclaimable layer blobs");
   }
 }
 
