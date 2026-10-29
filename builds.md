@@ -68,7 +68,9 @@ These are bound as **secrets** (`bindings.secret()`) in the Workers configuratio
 3. **Railpack build** (BuildKit, BuildKit frontend):
    - Run `railpack prepare <dir> --plan-out railpack-plan.json --info-out railpack-info.json`.
    - `classifyPrepareExit` treats exit `0` as success, `75`/null/undefined as transient retry, anything else as permanent failure.
-   - On success the generated plan is rewritten (`rewriteRailpackPlan` in `lib/build/railpack.ts` / `builder/server.mjs`): every step image matching the upstream `ghcr.io/railwayapp/railpack-builder:*` is pointed at `RAILPACK_BUILDER_IMAGE`, and the `packages:mise` step gets `mise prune --yes` appended after `mise install` (idempotent, skips plans with no mise step, no-op upstream).
+   - On success the generated plan is rewritten (`rewriteRailpackPlan` in `builder/server.mjs`):
+     - Every step image matching the upstream `ghcr.io/railwayapp/railpack-builder:*` is pointed at `RAILPACK_BUILDER_IMAGE`, and the `packages:mise` step gets `mise prune --yes` appended after `mise install` (idempotent, skips plans with no mise step, no-op upstream).
+     - Every user step (non-`packages:*` steps such as `install` and `build`) gets a unique marker command `true # cloudisy-nocache:<cacheKey>` prepended as its first command. This invalidates BuildKit's content-addressed layer cache for user steps on every deployment while preserving caching for generic `packages:*` layers. Note that `cache-key=<deploymentId>` only isolates Railpack cache mounts (download caches), so this step marker is essential to stop user layer reuse.
    - Run `docker buildx build --build-arg BUILDKIT_SYNTAX=${RAILPACK_FRONTEND_IMAGE} -f railpack-plan.json --push -t <imageRef> <dir>` OR via `buildctl` when `BUILDKIT_HOST` is set.
    - The image tag is `${OCI_REGISTRY}/<app>:b${buildNumber}` (lowercase), where `<app>` is the deployment's Fly app (`dep-<deploymentId>` truncated). The app is created by the control plane before the build is dispatched.
 4. **Plain Dockerfile build** (when a Dockerfile is used):
@@ -138,15 +140,23 @@ cache).
 
 The `buildkit_cache` volume caches **only** base images and generic OS layers:
 
-- **Cached:** the Railpack builder (custom baked image), runtime, and frontend
-  images, plus generic apt/mise layers shared by all builds.
-- **Never cached between deployments:** user source, `node_modules`, build
-  outputs, and package-manager caches. Each job clones into
-  `BUILD_WORKSPACE_DIR/<deploymentId>` and the directory is removed in a
-  `finally` block. Railpack cache mounts are namespaced with
-  `cache-key=<deploymentId>`, and after every build (success or failure) the
-  builder runs `buildctl prune --filter type==exec.cachemount` so no npm/pip/uv
-  cache content persists.
+- **Cached on purpose:** the Railpack builder (custom baked image), runtime, and frontend
+  images, plus generic `packages:*` layers (`apt`, `mise` runtime installs) shared by all builds.
+  Keeping these cached is what brings build times down from ~10 min to ~1.5 min.
+- **Never cached between deployments:** user source, `node_modules`, build outputs, and
+  package-manager caches.
+  - Railpack cache mounts (npm/pip download cache) are isolated per deployment using
+    `cache-key=<deploymentId>` in `railpackOpts`, and after every build the builder runs
+    `buildctl prune --filter type==exec.cachemount`.
+  - BuildKit's content-addressed layer cache would otherwise reuse identical user layers
+    (e.g. `npm install` and `node_modules` when `package.json` matches). Layer reuse is blocked
+    for all user steps by prepending a unique per-deployment marker command
+    (`true # cloudisy-nocache:<deploymentId>`) as the first command of every non-`packages:`
+    step in `rewriteRailpackPlan`. Because BuildKit invalidates all downstream steps when a
+    step's command changes, this guarantees fresh installations and builds on every deployment
+    without needing `--no-cache` (which would invalidate generic OS and runtime layers). Each
+    job clones into `BUILD_WORKSPACE_DIR/<deploymentId>` and the directory is removed in a
+    `finally` block.
 
 The volume is **9 GB** and GC keeps total usage under **7.5 GB**
 (`--oci-worker-gc-keepstorage=7500`). One volume attaches to exactly one
