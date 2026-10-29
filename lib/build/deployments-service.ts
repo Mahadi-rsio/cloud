@@ -6,13 +6,16 @@ import {
   allocateSharedIpv4,
   createFlyApp,
   createFlyMachine,
+  execInFlyMachine,
   getFlyMachine,
   isFlyNotFound,
   listFlyMachines,
   mergeMachineConfig,
+  startFlyMachine,
   updateFlyMachine,
   type FlyMachine,
 } from "@/lib/fly/client";
+import { decidePort, parseListeningPorts } from "@/lib/fly/port-detection";
 import { HttpError } from "@/lib/http";
 import {
   canTransition,
@@ -220,15 +223,173 @@ export type DeployImageResult = {
   publicUrl: string;
 };
 
+// ---------------------------------------------------------------------------
+// Port verification (once per deployment)
+// ---------------------------------------------------------------------------
+
+const PORT_POLL_INTERVAL_MS = 5_000;
+const PORT_POLL_TIMEOUT_MS = 90_000;
+const PORT_EXEC_TIMEOUT_S = 8;
+
+/**
+ * After a machine is running, poll /proc/net/tcp[6] to discover which port
+ * the app actually listens on and reconcile it with the configured
+ * `internalPort`.
+ *
+ * - Configured port reachable  → done, nothing to update.
+ * - Other reachable port found → update machine services + PORT env var,
+ *   restart once.
+ * - Loopback-only              → throw with a clear user-facing message.
+ * - Nothing after timeout      → throw with a clear user-facing message.
+ * - exec not available         → log a warning and return (graceful degrade).
+ *
+ * When `skipDetection` is true (user has explicitly set `internalPort` via
+ * application runtime settings) we skip re-detection but still log a warning
+ * if nothing answers on the configured port.
+ */
+async function verifyAndCorrectPort(input: {
+  deploymentId: string;
+  appName: string;
+  machineId: string;
+  configuredPort: number;
+  skipDetection: boolean;
+  region: string;
+}): Promise<void> {
+  const { deploymentId, appName, machineId, configuredPort, skipDetection, region } = input;
+
+  await appendSystemLog(deploymentId, "Waiting for the app to listen on a port…");
+
+  // Ensure the machine is started.
+  const initial = await getFlyMachine(appName, machineId).catch(() => null);
+  if (initial?.state === "stopped" || initial?.state === "created") {
+    await startFlyMachine(appName, machineId).catch(() => undefined);
+  }
+
+  const deadline = Date.now() + PORT_POLL_TIMEOUT_MS;
+  let lastPorts: { reachable: number[]; loopbackOnly: number[] } = {
+    reachable: [],
+    loopbackOnly: [],
+  };
+
+  while (Date.now() < deadline) {
+    // Wait for the machine to reach 'started' before exec.
+    const machine = await getFlyMachine(appName, machineId).catch(() => null);
+    if (!machine) break;
+
+    if (machine.state !== "started" && machine.state !== "running") {
+      await new Promise((r) => setTimeout(r, PORT_POLL_INTERVAL_MS));
+      continue;
+    }
+
+    const execResult = await execInFlyMachine(
+      appName,
+      machineId,
+      ["sh", "-c", "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null || true"],
+      PORT_EXEC_TIMEOUT_S,
+    );
+
+    if (execResult === null) {
+      // exec API unavailable; degrade gracefully.
+      await appendSystemLog(
+        deploymentId,
+        "Port detection unavailable (exec not supported). Using configured port " +
+          configuredPort +
+          ".",
+      );
+      return;
+    }
+
+    lastPorts = parseListeningPorts(execResult.stdout ?? "");
+
+    if (lastPorts.reachable.length > 0 || lastPorts.loopbackOnly.length > 0) {
+      break; // Got a definitive answer; stop polling.
+    }
+
+    // Nothing yet — app may still be starting.
+    await new Promise((r) => setTimeout(r, PORT_POLL_INTERVAL_MS));
+  }
+
+  const decision = decidePort({
+    configured: configuredPort,
+    reachable: lastPorts.reachable,
+    loopbackOnly: lastPorts.loopbackOnly,
+  });
+
+  switch (decision.action) {
+    case "ok":
+      await appendSystemLog(
+        deploymentId,
+        `App is listening on port ${decision.port}. Port configuration confirmed.`,
+      );
+      return;
+
+    case "update": {
+      if (skipDetection) {
+        // User explicitly set a port; trust it but warn.
+        await appendSystemLog(
+          deploymentId,
+          `Warning: app listens on port ${decision.port} but configured port is ${configuredPort}. ` +
+            `Using configured port (manual override is set).`,
+        );
+        return;
+      }
+
+      const detectedPort = decision.port;
+      await appendSystemLog(
+        deploymentId,
+        `Detected listening port ${detectedPort}; updating routing (was ${configuredPort}).`,
+      );
+
+      // Re-fetch current machine state for version + existing config.
+      const current = await getFlyMachine(appName, machineId);
+      const updatedConfig = mergeMachineConfig(current.config, {
+        internalPort: detectedPort,
+        env: { PORT: String(detectedPort) },
+      });
+      await updateFlyMachine(appName, machineId, {
+        config: updatedConfig,
+        currentVersion: current.version,
+        region: current.region ?? region,
+      });
+      await appendSystemLog(
+        deploymentId,
+        `Routing updated to port ${detectedPort}. Machine restarting.`,
+      );
+      return;
+    }
+
+    case "fail-loopback": {
+      const ports = decision.ports.join(", ");
+      throw new Error(
+        `App listens only on 127.0.0.1:${ports}. ` +
+          `It must listen on 0.0.0.0 (use the PORT environment variable, PORT=${configuredPort}).`,
+      );
+    }
+
+    case "fail-none":
+      throw new Error(
+        `No open port detected after ${PORT_POLL_TIMEOUT_MS / 1000}s. ` +
+          `The app must listen on 0.0.0.0:$PORT (PORT=${configuredPort}).`,
+      );
+  }
+}
+
 /**
  * Deploy a freshly pushed OCI image to Fly. Creates the app and machine on the
  * first deploy and rolls the machine to the new image on subsequent builds.
  * Only the control plane holds Fly credentials — the builder never sees them.
+ *
+ * After the machine is running, verifies (once per deployment) that the app
+ * actually listens on the expected port.  If it listens elsewhere, the machine
+ * services config is updated automatically.  If nothing listens, the
+ * deployment is failed with a clear message before it is marked active.
  */
 export async function deployImageToFly(input: {
   deployment: Deployment;
   imageRef: string;
   internalPort: number;
+  /** True when the user explicitly configured internalPort (skip auto-detect). */
+  skipPortDetection?: boolean;
 }): Promise<DeployImageResult> {
   const env = await getEnv();
   const region = env.FLY_DEFAULT_REGION ?? "sin";
@@ -287,6 +448,18 @@ export async function deployImageToFly(input: {
       await allocateSharedIpv4(appName).catch(() => undefined);
     }
   }
+
+  // Once per deployment: verify the app actually listens on the expected port.
+  // This must complete before we mark the deployment active so users never see
+  // a live deployment that 502s due to a wrong port.
+  await verifyAndCorrectPort({
+    deploymentId: input.deployment.id,
+    appName,
+    machineId,
+    configuredPort: input.internalPort,
+    skipDetection: input.skipPortDetection ?? false,
+    region,
+  });
 
   return {
     flyAppId: appName,
