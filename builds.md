@@ -156,8 +156,11 @@ detaches the volume; stop it instead). Create the volume once in the app's
 
 ```bash
 fly volumes create buildkit_cache --region lax --size 9 -a cloud-builder
-fly volumes update <volume-id> --snapshot-retention 1 -a cloud-builder
+fly volumes update <volume-id> --scheduled-snapshots=false -a cloud-builder
 ```
+
+Automatic snapshots/backups are not needed — the volume only holds a
+regenerable BuildKit cache.
 
 To wipe the cache, stop the machine, remove the volume contents (or destroy and
 recreate the volume), then start it again; the entrypoint re-imports the base

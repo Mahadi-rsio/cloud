@@ -21,7 +21,9 @@ kill_signal = "SIGTERM"
 # volume is 9 GB with GC capped at 7.5 GB. Create it once in the app's
 # primary_region (lax) before deploying:
 #   fly volumes create buildkit_cache --region lax --size 9 -a cloud-builder
-#   fly volumes update <volume-id> --snapshot-retention 1 -a cloud-builder
+#   fly volumes update <volume-id> --scheduled-snapshots=false -a cloud-builder
+# Automatic snapshots/backups are not needed: the volume only holds a
+# regenerable BuildKit cache, so it is cheaper to disable them.
 # One volume attaches to exactly one machine; never mount it in two.
 [mounts]
   source = "buildkit_cache"
