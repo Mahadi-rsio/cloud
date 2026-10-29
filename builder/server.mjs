@@ -599,6 +599,29 @@ async function buildImage({ strategy, appDir, workDir, planPath, imageRef, cache
 /* Job orchestration                                                   */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Drop per-deployment exec cache mounts (npm/pnpm/yarn/pip/uv, apt, etc.)
+ * after a build. The `cache-key` build arg already namespaces them per
+ * deployment, but they would otherwise accumulate on the persistent volume.
+ * The filter only targets exec cache mounts, so base images and generic OS
+ * layers stay cached. Best-effort: failures are logged and never fail a build.
+ */
+async function pruneBuildCache() {
+  if (!config.buildkitHost) return;
+  const result = await runCommand(
+    "buildctl",
+    ["--addr", config.buildkitHost, "prune", "--filter", "type==exec.cachemount"],
+    { timeoutMs: 120_000 },
+  );
+  if (result.error) {
+    log(`warning: could not prune BuildKit exec cache mounts: ${result.error.message}`);
+  } else if (result.code !== 0) {
+    log(`warning: BuildKit exec cache prune exited ${result.code ?? result.signal}`);
+  } else {
+    log("pruned BuildKit exec cache mounts");
+  }
+}
+
 const queue = [];
 let active = null;
 let idleTimer = null;
@@ -729,6 +752,12 @@ async function runBuild(job) {
     clearInterval(heartbeat);
     await sink.close();
     await rm(jobDir, { recursive: true, force: true }).catch(() => {});
+    // Never let user package/source caches persist on the volume between
+    // deployments; the workspace dir above already holds the clone only for
+    // the duration of this job.
+    await pruneBuildCache().catch((error) => {
+      log(`warning: BuildKit prune failed: ${error?.message ?? error}`);
+    });
   }
 }
 
@@ -858,6 +887,23 @@ const server = http.createServer(async (request, response) => {
       queued: queue.length,
       uptimeSeconds: Math.floor(process.uptime()),
     });
+    return;
+  }
+
+  // Readiness probe used by the control plane before dispatching a job. It
+  // verifies BuildKit itself is reachable, not just this HTTP server, so a job
+  // is never handed to a machine whose buildkitd is still starting.
+  if (request.method === "GET" && url.pathname === "/ready") {
+    let buildkitReady = true;
+    if (config.buildkitHost) {
+      const result = await runCommand(
+        "buildctl",
+        ["--addr", config.buildkitHost, "debug", "workers"],
+        { timeoutMs: 5_000 },
+      );
+      buildkitReady = !result.error && result.code === 0;
+    }
+    json(response, buildkitReady ? 200 : 503, { ready: buildkitReady });
     return;
   }
 
