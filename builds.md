@@ -223,3 +223,74 @@ With `BUILD_STRATEGY` unset (default `auto`), a repo with no Dockerfile is built
 - [`todo.md`](./todo.md) — engineering checklist with deployment items.
 - [`prd.md`](./prd.md) — product requirements.
 - [`architecture.md`](./architecture.md) — overall system architecture.
+
+## Port Detection and Verification
+
+After every deployment Cloudisy verifies that the app is actually reachable on
+the expected port before marking the deployment `active`.  This prevents the
+common failure mode where the app ignores `PORT` and listens on a hardcoded
+port, causing every request to return **502 Bad Gateway**.
+
+### How the port is chosen
+
+| Source | Priority | When used |
+|---|---|---|
+| `internalPort` field in `application.runtime` | Highest | User explicitly set a port in app settings |
+| Builder reports it (Dockerfile `EXPOSE` or `railpack-info.json`) | High | Framework / Dockerfile declares its port |
+| `BUILD_DEFAULT_INTERNAL_PORT` env (default `8080`) | Fallback | Nothing else is known |
+
+The chosen port is passed to the Fly machine as both `services[].internal_port`
+(what Fly's proxy forwards to) and the `PORT` environment variable.
+
+### Automatic detection and correction
+
+After the machine starts, the control plane polls `/proc/net/tcp` and
+`/proc/net/tcp6` inside the machine via the Fly exec API every **5 s** for up
+to **90 s**.  It distinguishes between:
+
+- **Reachable** — bound to `0.0.0.0` / `::` (all interfaces).  Fly's proxy
+  can forward traffic here.
+- **Loopback-only** — bound to `127.0.0.1` / `::1` only.  Traffic from the
+  proxy cannot reach these.
+
+The outcome of the check is one of:
+
+| Detected | Action |
+|---|---|
+| Configured port is reachable | Log confirmation, mark deployment `active`. |
+| Different reachable port found | Update `services[].internal_port` and `PORT` env to the detected port; machine restarts once, then deployment is marked `active`. |
+| Only loopback listeners | Fail the deployment with: `App listens only on 127.0.0.1:<port>. It must listen on 0.0.0.0 (use the PORT environment variable, PORT=<configured>).` |
+| Nothing after 90 s | Fail the deployment with: `No open port detected after 90s. The app must listen on 0.0.0.0:$PORT (PORT=<configured>).` |
+| exec API unavailable | Log a warning, keep configured port, mark `active` (graceful degradation). |
+
+Detection runs **once per deployment**, not on every machine start.  Fly
+`autostart` handles waking machines on subsequent requests without re-running
+detection.
+
+### Manual override
+
+Set `runtime.internalPort` on the application (via the API's `PATCH
+/api/v1/applications/:id` endpoint or the UI's Runtime settings) to fix the
+port permanently.  When a manual override is present, auto-detection is skipped
+and the configured port is trusted as-is.  A warning is still logged if the
+app does not listen on that port.
+
+### The `0.0.0.0` requirement
+
+The app **must** bind to `0.0.0.0` (not `127.0.0.1`).  Fly's network proxy
+sends traffic from outside the machine's loopback, so a server on `127.0.0.1`
+is unreachable.
+
+Most frameworks respect the `PORT` environment variable and bind `0.0.0.0` by
+default.  If yours does not, pass `--host 0.0.0.0` or equivalent to the start
+command.
+
+### Implementation
+
+| File | Role |
+|---|---|
+| `lib/fly/client.ts` — `execInFlyMachine` | Calls `POST /v1/apps/{app}/machines/{id}/exec` with `command` array, returns `null` on failure |
+| `lib/fly/port-detection.ts` — `parseListeningPorts` | Parses `/proc/net/tcp[6]` text; returns `{ reachable, loopbackOnly }` |
+| `lib/fly/port-detection.ts` — `decidePort` | Pure decision function; returns `ok / update / fail-loopback / fail-none` |
+| `lib/build/deployments-service.ts` — `verifyAndCorrectPort` | Orchestrates polling + decision + machine update / failure |
+| `tests/fly-port-detection.test.ts` | Unit tests for `parseListeningPorts` and `decidePort` (17 cases) |
