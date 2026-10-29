@@ -81,6 +81,12 @@ fi
 # image with a trivial `FROM` build through the built-in dockerfile.v0 frontend;
 # the layers land in the persistent BuildKit cache.
 #
+# The exporter matters: `type=image,push=false` is optimized to reference the
+# registry blobs and does NOT download layer content, so it warms nothing. The
+# OCI exporter must write every layer, which pulls the compressed blobs into the
+# content store without unpacking them into snapshots (unlike `type=tar`). We
+# stream the tarball to /dev/null so no temp disk is used.
+#
 # Runs in the background: when already cached these are fast no-ops.
 warm_images() {
   local warm_dir="$HOME/warmup/base"
@@ -98,7 +104,7 @@ warm_images() {
       --local "context=$warm_dir" \
       --local "dockerfile=$warm_dir" \
       --frontend=dockerfile.v0 \
-      --output "type=image,name=example.com/railpack-warmup/base:latest,push=false,compression=gzip,compression-level=1" \
+      --output "type=oci,dest=/dev/null" \
       >/dev/null 2>&1 \
       || echo "[entrypoint] warmup: $image did not finish (layers may still be cached)" >&2
     echo "[entrypoint] warmup: $image done"

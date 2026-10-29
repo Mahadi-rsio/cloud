@@ -125,8 +125,12 @@ images without relying on the loopback registry — it imports `railpack-builder
 (the custom baked image), `railpack-runtime` (`mise-<date>` tags track the
 Railpack release), and `railpack-frontend` into the BuildKit content store using
 `buildctl` with the built-in `dockerfile.v0` frontend (`FROM <image>` builds
-with `--output type=image,push=false`). With the volume this is a fast no-op
-after the first boot. If buildkitd fails to become ready the entrypoint wipes
+exported with `--output type=oci,dest=/dev/null`). The OCI exporter is required
+here: `type=image,push=false` only references the registry blobs and downloads
+no layer content, while OCI must write every layer, pulling the compressed
+blobs into the content store without unpacking them into snapshots. With the
+volume this is a fast no-op after the first boot. If buildkitd fails to become
+ready the entrypoint wipes
 the volume's content store once and restarts it (recovering from a corrupt
 cache).
 
