@@ -8,6 +8,7 @@ import {
   setDeploymentStatus,
 } from "@/lib/build/deployments-service";
 import { enqueueDeployJob } from "@/lib/build/process-job";
+import { wakeBuilder } from "@/lib/build/builder-client";
 import { canRetry } from "@/lib/build/status";
 import { errorResponse, HttpError, jsonOk } from "@/lib/http";
 import { assertRateLimit, clientIp } from "@/lib/rate-limit";
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest, ctx: RouteContext) {
       deployment.id,
       `Retry requested for ${deployment.repoOwner}/${deployment.repoName}@${deployment.branch}.`,
     );
+    await wakeBuilder();
     await enqueueDeployJob({ type: "deploy-build", deploymentId: deployment.id });
 
     return jsonOk({ deployment: updated });

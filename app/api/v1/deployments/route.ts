@@ -8,6 +8,7 @@ import {
   resolveGitHubHeadSha,
 } from "@/lib/build/github";
 import { enqueueDeployJob } from "@/lib/build/process-job";
+import { wakeBuilder } from "@/lib/build/builder-client";
 import { getDb } from "@/lib/db";
 import { deployments } from "@/lib/db/product-schema";
 import { getEnv } from "@/lib/env";
@@ -67,6 +68,9 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    // Boot the builder as soon as the deploy request arrives, before the job is
+    // queued, so a cold start overlaps with request processing.
+    await wakeBuilder();
     await enqueueDeployJob({ type: "deploy-build", deploymentId: deployment.id });
 
     return jsonOk({ deployment: deployment }, 201);

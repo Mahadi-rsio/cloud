@@ -34,29 +34,50 @@ export function buildImageRef(input: {
 }
 
 /**
- * Wake the shared builder machine and wait until its health endpoint answers.
- * The machine is explicitly started here (not via Fly Proxy autostop) and is
- * stopped by its own idle timer once it has been quiet for long enough.
+ * Best-effort start of the shared builder machine. Called as soon as a deploy
+ * request arrives (before the job is queued) so the machine boots while the
+ * request is still being processed. Never throws.
+ */
+export async function wakeBuilder(): Promise<void> {
+  const env = await getEnv();
+  if (!env.BUILDER_URL) return;
+  if (!env.BUILDER_APP_NAME || !env.BUILDER_MACHINE_ID) return;
+  try {
+    await startFlyMachine(env.BUILDER_APP_NAME, env.BUILDER_MACHINE_ID);
+  } catch {
+    // Already running, or not permitted to start — the readiness probe decides.
+  }
+}
+
+/**
+ * Wake the shared builder machine and wait until it is ready to accept work.
+ * Readiness means BuildKit itself answers (`/ready` runs `buildctl debug
+ * workers`), not just that the HTTP server is up, so a job is never handed to a
+ * machine whose buildkitd is still starting. The machine is explicitly started
+ * here (not via Fly Proxy autostop) and is stopped by its own idle timer once
+ * it has been quiet for long enough.
  */
 export async function ensureBuilderAwake(): Promise<void> {
   const env = await getEnv();
   if (!env.BUILDER_URL) return;
 
-  if (env.BUILDER_APP_NAME && env.BUILDER_MACHINE_ID) {
-    try {
-      await startFlyMachine(env.BUILDER_APP_NAME, env.BUILDER_MACHINE_ID);
-    } catch {
-      // Already running, or not permitted to start — the health probe decides.
-    }
-  }
+  await wakeBuilder();
 
-  const deadline = Date.now() + 60_000;
+  const base = builderBaseUrl(env.BUILDER_URL);
+  const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${builderBaseUrl(env.BUILDER_URL)}/health`, {
+      const ready = await fetch(`${base}/ready`, {
         signal: AbortSignal.timeout(5_000),
       });
-      if (response.ok) return;
+      if (ready.ok) return;
+      if (ready.status === 404) {
+        // Older builder without /ready: fall back to the liveness endpoint.
+        const health = await fetch(`${base}/health`, {
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (health.ok) return;
+      }
     } catch {
       // not reachable yet
     }
