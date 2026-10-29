@@ -1,9 +1,10 @@
 # Cloudisy build worker image.
 #
 # One build at a time, isolated on a dedicated Fly machine. BuildKit runs as
-# root with the FUSE overlay snapshotter (see entrypoint.sh); it is stateless
-# by design — runtimes are baked into the Railpack builder image
-# (builder/railpack/Dockerfile) so nothing needs to survive a reboot. The
+# root with the FUSE overlay snapshotter (see entrypoint.sh); its content store
+# lives on the buildkit_cache volume at /var/lib/buildkit so base images survive
+# a stop/start. Runtimes are baked into the Railpack builder image
+# (builder/railpack/Dockerfile) so most builds need no network install. The
 # service talks to BuildKit with `buildctl`; set BUILDKIT_HOST to point at an
 # external BuildKit if you prefer to run the daemon separately.
 
