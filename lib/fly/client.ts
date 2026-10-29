@@ -299,6 +299,38 @@ export async function startFlyMachine(appName: string, machineId: string) {
   );
 }
 
+export type FlyExecResult = {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  exit_signal?: number;
+};
+
+/**
+ * Execute a command inside a running Fly Machine via the Machines exec API.
+ * Uses a short timeout appropriate for port-sniffing (cat /proc/net/tcp*).
+ * Returns null when exec is unavailable or the machine is not running rather
+ * than throwing, so callers can degrade gracefully.
+ */
+export async function execInFlyMachine(
+  appName: string,
+  machineId: string,
+  command: string[],
+  timeoutSeconds = 10,
+): Promise<FlyExecResult | null> {
+  try {
+    return await flyFetch<FlyExecResult>(
+      `/v1/apps/${encodeURIComponent(appName)}/machines/${encodeURIComponent(machineId)}/exec`,
+      {
+        method: "POST",
+        body: JSON.stringify({ command, timeout: timeoutSeconds }),
+      },
+    );
+  } catch {
+    return null;
+  }
+}
+
 export function isFlyNotFound(error: unknown) {
   return error instanceof FlyApiError && error.providerStatus === 404;
 }
