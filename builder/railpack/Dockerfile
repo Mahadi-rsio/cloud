@@ -3,9 +3,11 @@
 # Railpack's `packages:mise` build step starts from this image and runs
 # `mise install` (mise_step_builder.go); the `install_bin` helper used by the
 # staticfile/node-SPA providers starts from it too (install_bin_builder.go).
-# Apps resolve their runtime versions through `mise` (node default "lts",
-# python "3.13", go "1.25"), so the image bakes in those defaults plus the
-# previous LTS/minor so the normal `mise install` step is a no-op.
+# Only Node.js and Python are baked in. Apps resolve their runtime versions
+# through `mise` (node default "lts", python "3.13"), so the image bakes those
+# defaults plus the previous LTS/minor so the normal `mise install` step is a
+# no-op. Any other runtime (Go, Ruby, etc.) is installed on demand by
+# `mise install` during the build — no special handling needed.
 #
 # The worker (server.mjs) rewrites every generated build plan to point at this
 # image instead of ghcr.io/railwayapp/railpack-builder:<tag> and appends
@@ -23,7 +25,6 @@ FROM ghcr.io/railwayapp/railpack-builder:mise-2026.10.14
 # Bake the runtimes every app type in this workspace is likely to pin:
 #   node   <lts>    -> 24.22.0   (also keep the previous LTS, 22.x)
 #   python <3.13>   -> 3.13.16   (also keep the previous minor, 3.12.x)
-#   go     <1.25>   -> 1.25.14   (also keep the previous minor, 1.24.x)
 #
 # Versions are pinned explicitly so this image is reproducible, and `mise
 # install <tool>@<version>` ignores whatever /etc/mise/config.toml an app
@@ -38,8 +39,6 @@ RUN set -eu \
   && mise install node@24.22.0 \
   && mise install python@3.12.15 \
   && mise install python@3.13.16 \
-  && mise install go@1.24.13 \
-  && mise install go@1.25.14 \
   && mise reshim
 
 # Record what was baked for debugging, and let the plan rewrite verify at a
@@ -56,13 +55,12 @@ RUN /usr/local/bin/mise ls --json \
 # every baked version one at a time the way a plan will, then removes the file.
 RUN set -eu \
   && mkdir -p /etc/mise \
-  && for spec in node@22.23.3 node@24.22.0 python@3.12.15 python@3.13.16 go@1.24.13 go@1.25.14; do \
+  && for spec in node@22.23.3 node@24.22.0 python@3.12.15 python@3.13.16; do \
        tool="${spec%@*}"; ver="${spec#*@}"; \
        printf '[tools]\n  %s = "%s"\n' "$tool" "$ver" > /etc/mise/config.toml; \
        case "$tool" in \
          node)   [ "$(node --version)" = "v$ver" ] ;; \
          python) [ "$(python3 --version)" = "Python $ver" ] ;; \
-         go)     go version | grep -q "go$ver " ;; \
        esac \
          || { echo "smoke test failed for $spec"; exit 1; }; \
      done \
