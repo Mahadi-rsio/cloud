@@ -12,11 +12,11 @@ The builder is designed to build **any** public GitHub repository: if the repo h
 4. A **build-jobs** queue message (`BuildJobPayload`) is enqueued.
 5. **Queue worker** (`entrypoints/worker.ts`) runs `processDeployJob`:
    - Creates the deployment's Fly app (idempotent, `ensureDeploymentFlyApp`) and persists `fly_app_id` **before** the build starts, so the app-scoped registry namespace (`registry.fly.io/<app>:<tag>`) exists when the builder pushes — Fly's registry rejects repositories that do not match a real app.
-   - Calls `ensureBuilderAwake()` which best-effort starts the Fly builder machine via `startFlyMachine` and then polls `GET /health` up to 60s (2s interval).
+   - Calls `ensureBuilderAwake()` which best-effort starts the Fly builder machine via `startFlyMachine` and then polls `GET /ready` (BuildKit reachable via `buildctl debug workers`) up to 90s (2s interval), falling back to `GET /health` for older builders. The deploy/retry API routes also call `wakeBuilder()` as soon as the request arrives, before the job is queued.
    - On success, `dispatchBuild()` POSTs to `{BUILDER_URL}/builds` with Bearer `BUILDER_API_TOKEN`, 20s timeout.
    - If dispatch throws, the consumer retries based on `message.attempts`; after `BUILD_MAX_ATTEMPTS` the deployment status is marked `failed`.
    - On success the deployment status is advanced to `preparing`, `building`, `pushing`, `deploying`, then `active` after the builder reports completion via the internal `complete` endpoint.
-6. **Builder** (`builder/server.mjs`) runs on a shared Fly machine (4 GB RAM, see `fly.toml`). It receives the build job, clones the repo, detects the build strategy, runs `railpack prepare`, then builds the image via BuildKit (using the Railpack BuildKit frontend) or plain `docker buildx build --push`. The builder streams live log lines via EventSource back to the control plane (`/api/v1/deployments/:id/logs`), polls deployment status every 60s (heartbeat), and exits with `process.exit(0)` when idle for the configured grace period (`BUILD_IDLE_TIMEOUT_MS`, default 600000 ms / 10 min).
+6. **Builder** (`builder/server.mjs`) runs on a shared Fly machine (6 GB RAM, 4 vCPU, see `fly.toml`). It receives the build job, clones the repo, detects the build strategy, runs `railpack prepare`, then builds the image via BuildKit (using the Railpack BuildKit frontend) or plain `docker buildx build --push`. The builder streams live log lines via EventSource back to the control plane (`/api/v1/deployments/:id/logs`), polls deployment status every 60s (heartbeat), and exits with `process.exit(0)` when idle for the configured grace period (`BUILD_IDLE_TIMEOUT_MS`, default 600000 ms / 10 min). Exiting **stops** the machine (it is never destroyed, so the `buildkit_cache` volume stays attached); the control plane starts it again when the next deploy request arrives.
 7. The **control plane** receives builder callbacks:
    - `POST /api/v1/internal/deployments/:id/logs` — appends log lines to the deployment.
    - `POST /api/v1/internal/deployments/:id/status` — idempotent status refresh (same-status updates refresh `updatedAt`).
@@ -76,7 +76,7 @@ These are bound as **secrets** (`bindings.secret()`) in the Workers configuratio
    - If this build fails in `auto` mode, emit a log line and fall back to the Railpack flow (steps 3) for the same image tag.
 5. **Registry auth** — `ensureRegistryAuth` writes `~/.docker/config.json` with the registry username/password (if using Dockerfile build without BuildKit). With BuildKit, the registry creds are passed as build args/secrets via the frontend; customer code never sees them.
 6. **Log streaming** — lines from railpack prepare/stdout/stderr are emitted as SSE events (`event: log`, `data: [...]`); the builder heartbeat (`event: heartbeat`) updates the deployment `updatedAt` every 60s.
-7. **Idle handling** — after the build completes, the builder waits `BUILD_IDLE_TIMEOUT_MS` (default 10 min) with no new jobs; if no new job arrives, `process.exit(0)`.
+7. **Idle handling** — after the build completes, the builder waits `BUILD_IDLE_TIMEOUT_MS` (default 10 min, within the 10–15 min target) with no new jobs; if no new job arrives, `process.exit(0)` stops the machine. It is never destroyed, so the volume remains attached. The control plane calls `startFlyMachine` as soon as a deploy/retry request arrives (before queueing) and then waits for `/ready` (which runs `buildctl debug workers`) before dispatching the job.
 8. **Crash / signal handling** — SIGTERM/SIGINT trigger a graceful exit: close EventSource, flush buffered logs, `process.exit(0)`.
 9. **/health endpoint** — `GET /health` returns `{ status: "ok" }`. Used by `ensureBuilderAwake()` to determine whether the builder needs restarting.
 10. **/builds endpoint** — `POST /builds` validates a single job object, spawns the detached build child process, returns `{ jobId }`. Single-active-build guard: only one build runs at a time. On fatal error, the builder exits(1) and the queue consumer marks the deployment failed after max attempts.
@@ -85,9 +85,10 @@ These are bound as **secrets** (`bindings.secret()`) in the Workers configuratio
 
 The worker deploys with a custom Railpack builder image
 (`builder/railpack/Dockerfile`) instead of pulling toolchains from the network
-on every build. It bakes pinned runtimes (Node 22/24, Python 3.12/3.13, Go
-1.24/1.25 — no PHP, which uses its own `dunglas/frankenphp` step) into
-`/mise/installs` and ships metadata in `/etc/baked-runtimes.json`/`.txt`. PHP
+on every build. It bakes pinned runtimes (Node 22/24, Python 3.12/3.13 — no PHP,
+which uses its own `dunglas/frankenphp` step) into `/mise/installs` and ships
+metadata in `/etc/baked-runtimes.json`/`.txt`. Any other runtime (Go, Ruby,
+etc.) is installed on demand by Railpack's `mise install` during the build. PHP
 plans have no `packages:mise` step and are left untouched by the rewrite.
 
 Builds use `RAILPACK_BUILDER_IMAGE` when available and fall back to the
@@ -98,28 +99,65 @@ image keeps only the app's requested runtime (node/python plans copy the whole
 
 ### BuildKit setup on the Fly machine
 
-The builder runs on a dedicated, ephemeral Fly microVM, so it does **not** use
-rootless BuildKit (user-namespace mapping and the native snapshotter are both
-unreliable there: `newuidmap` rejects overlapping subuid ranges, and copying
-every layer exhausts the ~8 GB root disk). Instead `builder/entrypoint.sh`
-starts buildkitd as root with the FUSE overlay snapshotter, which stores layers
-once and needs no user namespace:
+The builder runs on a dedicated Fly microVM, so it does **not** use rootless
+BuildKit (user-namespace mapping and the native snapshotter are both unreliable
+there: `newuidmap` rejects overlapping subuid ranges, and copying every layer
+exhausts the ~8 GB root disk). Instead `builder/entrypoint.sh` starts buildkitd
+as root with the FUSE overlay snapshotter by default, which stores layers once
+and needs no user namespace:
 
 ```
 buildkitd \
+  --root /var/lib/buildkit \
   --addr unix:///home/builder/.run/buildkit/buildkitd.sock \
-  --oci-worker-snapshotter fuse-overlayfs
+  --oci-worker-snapshotter fuse-overlayfs \
+  --oci-worker-gc=true \
+  --oci-worker-gc-keepstorage=7500
 ```
 
-BuildKit is **stateless by default** (no persistent volume): `/tmp/buildkitd`
-holds its content store. On boot `builder/entrypoint.sh` also pre-warms the
-Railpack base images without relying on the loopback registry — it imports
-`railpack-builder` (the custom baked image), `railpack-runtime`
-(`mise-<date>` tags track the Railpack release), and `railpack-frontend` into
-the BuildKit content store using `buildctl` with the built-in `dockerfile.v0`
-frontend (`FROM <image>` builds with `--output type=image,push=false`). The
-image tags are resolved from a real `railpack prepare` plan, so they stay
-correct when Railpack bumps the pinned mise version.
+Set `BUILDKIT_SNAPSHOTTER=overlayfs` to try the native snapshotter on a single
+build; `fuse-overlayfs` stays the default.
+
+BuildKit's root is the `buildkit_cache` **volume** mounted at
+`/var/lib/buildkit` (see `fly.toml`), so base images survive a machine
+stop/start. On boot `builder/entrypoint.sh` also pre-warms the Railpack base
+images without relying on the loopback registry — it imports `railpack-builder`
+(the custom baked image), `railpack-runtime` (`mise-<date>` tags track the
+Railpack release), and `railpack-frontend` into the BuildKit content store using
+`buildctl` with the built-in `dockerfile.v0` frontend (`FROM <image>` builds
+with `--output type=image,push=false`). With the volume this is a fast no-op
+after the first boot. If buildkitd fails to become ready the entrypoint wipes
+the volume's content store once and restarts it (recovering from a corrupt
+cache).
+
+### Builder cache
+
+The `buildkit_cache` volume caches **only** base images and generic OS layers:
+
+- **Cached:** the Railpack builder (custom baked image), runtime, and frontend
+  images, plus generic apt/mise layers shared by all builds.
+- **Never cached between deployments:** user source, `node_modules`, build
+  outputs, and package-manager caches. Each job clones into
+  `BUILD_WORKSPACE_DIR/<deploymentId>` and the directory is removed in a
+  `finally` block. Railpack cache mounts are namespaced with
+  `cache-key=<deploymentId>`, and after every build (success or failure) the
+  builder runs `buildctl prune --filter type==exec.cachemount` so no npm/pip/uv
+  cache content persists.
+
+The volume is **9 GB** and GC keeps total usage under **7.5 GB**
+(`--oci-worker-gc-keepstorage=7500`). One volume attaches to exactly one
+machine — never mount it in two, and never destroy the machine (destroying
+detaches the volume; stop it instead). Create the volume once in the app's
+`primary_region` before deploying:
+
+```bash
+fly volumes create buildkit_cache --region lax --size 9 -a cloud-builder
+fly volumes update <volume-id> --snapshot-retention 1 -a cloud-builder
+```
+
+To wipe the cache, stop the machine, remove the volume contents (or destroy and
+recreate the volume), then start it again; the entrypoint re-imports the base
+images on boot.
 
 ### Retry and staleness behavior
 
@@ -146,12 +184,10 @@ With `BUILD_STRATEGY` unset (default `auto`), a repo with no Dockerfile is built
 1. **Provision a shared Fly builder machine** (4 GB RAM, shared CPU, any region; see `fly.toml` for the app config, default region `FLY_DEFAULT_REGION ?? "sin"`).
 2. **Start the builder** — either run `builder/server.mjs` directly, or configure Fly to auto-start the Docker/Node process on machine creation.
 3. **Set Cloudflare secret bindings** (see `cloudflare.config.ts`): `BUILDER_URL`, `BUILDER_API_TOKEN`, `BUILDER_APP_NAME`, `BUILDER_MACHINE_ID`, `INTERNAL_API_TOKEN`, `CONTROL_PLANE_URL`, `OCI_REGISTRY`, `OCI_REGISTRY_USERNAME`, `OCI_REGISTRY_PASSWORD`, `BUILD_IDLE_TIMEOUT_MS`, `BUILD_MAX_ATTEMPTS`, `BUILD_WORKSPACE_DIR`, `BUILD_DEFAULT_INTERNAL_PORT`, optionally `GITHUB_API_TOKEN`, `BUILD_MAX_DURATION_MS`.
-4. **Deploy the builder Docker image** — `builder/Dockerfile` (node:22-bookworm-slim) with `builder/entrypoint.sh`; `fly.toml` ships the app config (build path, `http_service`, VM sizing, autostop off). Push to a registry reachable from the Fly network. Set the builder-only vars (`BUILD_STRATEGY`, `RAILPACK_BIN`, `BUILDKIT_HOST`, `ENABLE_BUILDKITD`) as Fly secrets/env on the builder app, not on the control plane.
-5. **Verify health** — `curl /health` on the builder URL should return `{"status":"ok"}`.
+4. **Deploy the builder Docker image** — `builder/Dockerfile` (node:22-bookworm-slim) with `builder/entrypoint.sh`; `fly.toml` ships the app config (build path, `http_service`, VM sizing, autostop off, the `buildkit_cache` mount). Create the volume first (see [Builder cache](#builder-cache)) and deploy with `fly deploy --ha=false` so only one machine mounts it. Push to a registry reachable from the Fly network. Set the builder-only vars (`BUILD_STRATEGY`, `RAILPACK_BIN`, `BUILDKIT_HOST`, `ENABLE_BUILDKITD`, `BUILDKIT_SNAPSHOTTER`) as Fly secrets/env on the builder app, not on the control plane.
+5. **Verify health** — `curl /health` on the builder URL should return `{"ok":true,...}` and `/ready` should return `{"ready":true}` once buildkitd is up.
 6. **Test a deployment** — create a GitHub deployment from a public repo; watch the live log stream and the status transition through the pipeline.
 7. **Monitor staleness** — the scheduled `*/5 * * * *` cron triggers `recoverStaleDeployments`; verify it fires after 10 min of inactivity.
-
-> **Retired volume**: the pre-stateless deployments used a `buildkit_cache` volume (`vol_rkgdd0m66qq1zjw4`, 30 GB) mounted at `/data/buildkit`. It is no longer referenced by `fly.toml`; once the new image has been deployed and verified, remove it manually with `fly volumes destroy vol_rkgdd0m66qq1zjw4 -a cloud-builder`.
 
 ## Troubleshooting
 
