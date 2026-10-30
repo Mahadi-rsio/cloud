@@ -104,11 +104,11 @@ export function DeploymentDetailPage({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="flex min-w-0 flex-col gap-1">
           <a
-            href="/github"
+            href="/apps"
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
-            Back to GitHub
+            Back to Apps
           </a>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
             <GitBranch className="size-6 text-muted-foreground" />
