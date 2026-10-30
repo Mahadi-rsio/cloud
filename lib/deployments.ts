@@ -33,6 +33,43 @@ export interface Deployment {
   finishedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  rootDirectory?: string | null;
+  framework?: string | null;
+  language?: string | null;
+  runtime?: string | null;
+  packageManager?: string | null;
+}
+
+export interface DiscoveredProjectCandidate {
+  id: string;
+  name: string;
+  rootDirectory: string;
+  framework: string | null;
+  frameworkName: string | null;
+  language: string | null;
+  runtime: string | null;
+  packageManager: string | null;
+  packageManagerVersion?: string;
+  detectedVersion?: string;
+  dockerfilePath?: string;
+  configFiles?: string[];
+  confidence: number;
+  warnings?: string[];
+  isDeployable: boolean;
+}
+
+export interface DiscoveredRepositoryResult {
+  repository: {
+    name: string;
+    branch: string;
+    commitSha: string;
+  };
+  monorepo: boolean;
+  candidates: DiscoveredProjectCandidate[];
+  recommendedRootDirectory: string | null;
+  requiresUserSelection: boolean;
+  discoveryVersion: string;
+  warnings?: string[];
 }
 
 export interface DeploymentLogEntry {
@@ -140,5 +177,16 @@ export async function getDeploymentLogs(
       ...(params.limit ? { limit: String(params.limit) } : {}),
     },
   });
+  return data.data;
+}
+
+export async function discoverRepository(input: {
+  url: string;
+  branch?: string;
+}): Promise<{ discovery: DiscoveredRepositoryResult; commitSha: string | null }> {
+  const { data } = await apiV1.post<{
+    success: true;
+    data: { discovery: DiscoveredRepositoryResult; commitSha: string | null };
+  }>("/deployments/discover", input);
   return data.data;
 }

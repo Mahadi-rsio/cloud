@@ -16,6 +16,20 @@ const repositoryUrl = z
       "Enter a valid GitHub repository URL, e.g. https://github.com/username/repository",
   });
 
+/** Validates a root directory override: relative POSIX path, no traversal, no absolute. */
+export const rootDirectorySchema = z
+  .string()
+  .trim()
+  .max(500)
+  .refine(
+    (v) => !v.startsWith("/") && !v.includes("..") && !/[\\]/.test(v),
+    {
+      message:
+        "rootDirectory must be a relative POSIX path without traversal (e.g. 'apps/web' or '.').",
+    },
+  )
+  .optional();
+
 export const createDeploymentSchema = z
   .object({
     url: repositoryUrl,
@@ -26,6 +40,13 @@ export const createDeploymentSchema = z
       .max(250)
       .regex(/^[A-Za-z0-9._\-\/]+$/, "branch contains unsupported characters.")
       .optional(),
+    /** Root directory relative to the repo root; comes from discovery or user override. */
+    rootDirectory: rootDirectorySchema,
+    commitSha: z.string().trim().max(100).optional(),
+    framework: z.string().trim().max(100).optional(),
+    language: z.string().trim().max(100).optional(),
+    runtime: z.string().trim().max(100).optional(),
+    packageManager: z.string().trim().max(100).optional(),
   })
   .strict();
 
@@ -71,3 +92,19 @@ export const internalCompleteSchema = z
     commitSha: z.string().trim().max(100).optional(),
   })
   .strict();
+
+/** Schema for the /discover endpoint on the builder */
+export const discoverSchema = z
+  .object({
+    repositoryUrl: repositoryUrl,
+    branch: z
+      .string()
+      .trim()
+      .min(1)
+      .max(250)
+      .regex(/^[A-Za-z0-9._\-\/]+$/, "branch contains unsupported characters."),
+    commitSha: z.string().trim().max(100).optional(),
+  })
+  .strict();
+
+export type DiscoverInput = z.infer<typeof discoverSchema>;

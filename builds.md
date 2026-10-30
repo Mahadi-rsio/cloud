@@ -7,20 +7,74 @@ The builder is designed to build **any** public GitHub repository: if the repo h
 ## Build Pipeline Overview
 
 1. **User** submits a public GitHub repository URL (or a repository with an explicit Dockerfile).
-2. **Control plane** validates the repo via the GitHub API (public check, no PAT required; 404 → missing repo, 403/429 → rate limited, private → reject).
-3. A **deployment record** is inserted with status `queued`, `build_number = 1`.
-4. A **build-jobs** queue message (`BuildJobPayload`) is enqueued.
-5. **Queue worker** (`entrypoints/worker.ts`) runs `processDeployJob`:
+2. **Repository Analysis & Automatic Project Discovery (Optional preview / Pre-deploy)**:
+   - User or UI invokes `POST /api/v1/deployments/discover` with repository URL and optional branch.
+   - The control plane wakes the shared Fly builder machine (`ensureBuilderAwake()`) and delegates to the builder's authenticated `POST /discover` endpoint.
+   - The builder clones the repository into an ephemeral directory, resolves the head commit SHA, and scans the repository using the deterministic discovery engine.
+   - The discovery engine uses `@vercel/frameworks` (framework definitions and metadata) and `@vercel/fs-detectors` (filesystem detection rules and package manager resolvers) together with custom ecosystem detectors to identify deployable applications, monorepo structures (pnpm, npm, Yarn, Turborepo, Nx, Lerna, Cargo, Go), framework names, runtimes, package managers, and root directories.
+   - The user receives candidate applications, can pick an application or override the `rootDirectory`, and initiates deployment with the pinned commit SHA.
+3. **Control plane** validates the repo via the GitHub API (public check, no PAT required; 404 → missing repo, 403/429 → rate limited, private → reject).
+4. A **deployment record** is inserted with status `queued`, `build_number = 1`, and persisted discovery fields (`root_directory`, `framework`, `language`, `runtime`, `package_manager`, `commit_sha`).
+5. A **build-jobs** queue message (`BuildJobPayload`) is enqueued, carrying `rootDirectory` and `commitSha`.
+6. **Queue worker** (`entrypoints/worker.ts`) runs `processDeployJob`:
    - Creates the deployment's Fly app (idempotent, `ensureDeploymentFlyApp`) and persists `fly_app_id` **before** the build starts, so the app-scoped registry namespace (`registry.fly.io/<app>:<tag>`) exists when the builder pushes — Fly's registry rejects repositories that do not match a real app.
    - Calls `ensureBuilderAwake()` which best-effort starts the Fly builder machine via `startFlyMachine` and then polls `GET /ready` (BuildKit reachable via `buildctl debug workers`) up to 90s (2s interval), falling back to `GET /health` for older builders. The deploy/retry API routes also call `wakeBuilder()` as soon as the request arrives, before the job is queued.
    - On success, `dispatchBuild()` POSTs to `{BUILDER_URL}/builds` with Bearer `BUILDER_API_TOKEN`, 20s timeout.
    - If dispatch throws, the consumer retries based on `message.attempts`; after `BUILD_MAX_ATTEMPTS` the deployment status is marked `failed`.
    - On success the deployment status is advanced to `preparing`, `building`, `pushing`, `deploying`, then `active` after the builder reports completion via the internal `complete` endpoint.
-6. **Builder** (`builder/server.mjs`) runs on a shared Fly machine (6 GB RAM, 4 vCPU, see `fly.toml`). It receives the build job, clones the repo, detects the build strategy, runs `railpack prepare`, then builds the image via BuildKit (using the Railpack BuildKit frontend) or plain `docker buildx build --push`. The builder streams live log lines via EventSource back to the control plane (`/api/v1/deployments/:id/logs`), polls deployment status every 60s (heartbeat), and exits with `process.exit(0)` when idle for the configured grace period (`BUILD_IDLE_TIMEOUT_MS`, default 600000 ms / 10 min). Exiting **stops** the machine (it is never destroyed, so the `buildkit_cache` volume stays attached); the control plane starts it again when the next deploy request arrives.
-7. The **control plane** receives builder callbacks:
+7. **Builder** (`builder/server.mjs`) runs on a shared Fly machine (6 GB RAM, 4 vCPU, see `fly.toml`):
+   - Clones the repository revision pinned by `commitSha` (or branch).
+   - Validates and resolves the application root directory (`resolveAppRoot`) to ensure no path traversal (`..`) or symlink escapes exist.
+   - Emits structured discovery logs: `[Discovery] Scanning repository...`, `[Discovery] Monorepo detected.`, `[Discovery] Framework: <name>`, `[Discovery] Root directory: <path>`.
+   - Detects the build strategy (Dockerfile or Railpack) relative to `buildRoot`.
+   - Runs `railpack prepare <buildRoot> --plan-out ... --info-out ...` (or uses Dockerfile).
+   - Builds the image via BuildKit with `context=<buildRoot>` and pushes to the OCI registry.
+   - Calls the control plane `/api/v1/internal/deployments/:id/complete` callback with image reference and detected listening port.
+8. The **control plane** receives builder callbacks:
    - `POST /api/v1/internal/deployments/:id/logs` — appends log lines to the deployment.
    - `POST /api/v1/internal/deployments/:id/status` — idempotent status refresh (same-status updates refresh `updatedAt`).
    - `POST /api/v1/internal/deployments/:id/complete` — trusted internal endpoint: advances to `deploying`, calls `deployImageToFly` (creates/app updates Fly app + machine with PORT env, allocates shared IPv4 if needed), then sets status `active`.
+
+## Automatic Project Discovery Engine
+
+### Package Responsibilities & Boundaries
+
+The project discovery system uses official Vercel detection libraries as detection primitives without importing private internals or using `@vercel/build-utils`:
+
+1. **`@vercel/frameworks`**:
+   - Provides canonical framework definitions, identifiers (`slug`), human-readable display names, and configuration matchers.
+   - Supports 70+ web frameworks (Next.js, Vite, Astro, SvelteKit, Nuxt, Remix, Angular, etc.).
+2. **`@vercel/fs-detectors`**:
+   - `LocalFileSystemDetector`: Abstract filesystem reader providing deterministic dependency checks without running customer code.
+   - `detectFramework`: Matches repository files against `frameworkList`.
+   - `packageManagers`: Identifies npm, pnpm, yarn, bun based on lockfiles and manifest declarations.
+   - `getWorkspaces`: Extracts workspace topology from `pnpm-workspace.yaml`, `package.json`, etc.
+
+### Non-JS/TS Ecosystem Detectors
+
+For languages and frameworks outside `@vercel/frameworks`:
+- **Python**: Django (`manage.py`, `requirements.txt`), FastAPI (`fastapi` entrypoints), Flask (`flask`).
+- **Go**: Gin, Echo, Fiber, Chi, standard library HTTP (`go.mod`, `go.work`).
+- **Rust**: Axum, Actix-Web, Rocket (`Cargo.toml`).
+- **PHP**: Laravel (`artisan`, `composer.json`), Symfony (`symfony/framework-bundle`).
+- **Ruby**: Ruby on Rails (`Gemfile`, `config.ru`), Sinatra.
+- **Elixir**: Phoenix (`mix.exs`).
+- **Java & .NET**: Spring Boot (`pom.xml`, `build.gradle`), ASP.NET Core (`*.csproj`, `*.sln`).
+
+### Monorepo & Workspace Support
+
+- **JavaScript / TypeScript**: pnpm workspaces (`pnpm-workspace.yaml`), npm/Yarn workspaces (`package.json`), Turborepo (`turbo.json`), Nx (`nx.json`), Lerna (`lerna.json`).
+- **Rust**: Cargo workspaces (`[workspace]` members).
+- **Go**: Go multi-module workspaces (`go.work`).
+- **Shared Package Filtering**: Excludes internal utility packages (`packages/ui`, `packages/config`, `packages/eslint-config`) from standalone deployable targets unless they contain an independent runnable web framework or Dockerfile.
+
+### Security & Path Validation Rules
+
+1. **Zero Customer Code Execution**: Discovery only reads metadata files (`package.json`, lockfiles, config files, `requirements.txt`, `go.mod`, `Cargo.toml`). It never invokes `npm install`, `python`, `node`, `go`, or arbitrary scripts.
+2. **Path Sanitization**: Root directory paths are normalized to POSIX format, stripped of leading/trailing slashes, and checked for path traversal (`..`) and absolute path attempts.
+3. **Symlink Escape Protection**: Validates that `realpath(targetPath)` resides strictly inside `realpath(repoRoot)`.
+4. **Limits**: Maximum recursion depth (5 levels), maximum files scanned (5,000 files), and file size reading caps protect the builder from oversized repositories and symlink loops.
+5. **Exact Commit Consistency**: Pinning `commitSha` during discovery guarantees that the build compiles the exact same commit that was analyzed.
 
 ## Environment Variables
 

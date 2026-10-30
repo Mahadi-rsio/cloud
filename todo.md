@@ -25,7 +25,16 @@
 - [ ] Add email verification or explicit product decision to keep disabled (`lib/auth/index.ts`, `requireEmailVerification: false`)
 
 ### Deployments (GitHub) — implemented end-to-end
-- [x] `deployments` + `deployment_logs` tables and migration `drizzle/0002_add_deployments_and_deployment_logs.sql` (`lib/db/product-schema.ts`)
+- [x] `deployments` + `deployment_logs` tables and migrations `drizzle/0002_add_deployments_and_deployment_logs.sql` & `drizzle/0003_acoustic_kate_bishop.sql` (`lib/db/product-schema.ts`)
+- [x] Automatic Project Discovery Engine (`lib/project-discovery/**`) using `@vercel/frameworks` and `@vercel/fs-detectors` with deterministic multi-ecosystem fallback detectors
+- [x] Recursive repository scanner with safety limits, symlink escape detection, and POSIX path normalization (`lib/project-discovery/scanner.ts`, `lib/project-discovery/path-validation.ts`)
+- [x] Monorepo & workspace topology discovery (pnpm, npm, Yarn, Turborepo, Nx, Lerna, Cargo, Go) with shared package exclusion (`lib/project-discovery/workspace-discovery.ts`, `lib/project-discovery/candidate-ranking.ts`)
+- [x] Runtime & package manager version extraction from `.nvmrc`, lockfiles, manifests (`lib/project-discovery/runtime-detection.ts`)
+- [x] Discovery API endpoint `POST /api/v1/deployments/discover` + builder endpoint `POST /discover`
+- [x] Builder integration with `resolveAppRoot`, nested application build contexts, and structured discovery logs (`builder/server.mjs`)
+- [x] Exact `commitSha` consistency pinning discovery revision to deployment compilation
+- [x] Discovery preview UI with application selector, framework badges, and manual root directory override in app creation flow (`components/apps/create-application-page.tsx`)
+- [x] Comprehensive 23-fixture test suite (`tests/project-discovery.test.ts`) covering mono-repos, polyglot frameworks, path safety, and legacy compatibility
 - [x] GitHub URL parsing and public-repo check (`lib/build/github.ts`; no PAT required)
 - [x] Deployment status model + transitions (`lib/build/status.ts`): queued → preparing → building → pushing → deploying → active; terminal → retry
 - [x] Build strategy abstraction (`lib/build/strategy.ts`) and Railpack integration (`lib/build/railpack.ts`)

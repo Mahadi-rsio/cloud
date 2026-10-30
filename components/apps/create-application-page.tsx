@@ -42,7 +42,14 @@ import {
   createApplication,
   FLY_REGIONS,
 } from "@/lib/applications";
-import { createDeployment, validateDeployment, type ValidatedRepository } from "@/lib/deployments";
+import {
+  createDeployment,
+  validateDeployment,
+  discoverRepository,
+  type ValidatedRepository,
+  type DiscoveredRepositoryResult,
+  type DiscoveredProjectCandidate,
+} from "@/lib/deployments";
 import { parseDockerInput, type ParsedDockerImage } from "@/lib/docker";
 import { extractErrorMessage } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
@@ -77,6 +84,14 @@ function CreateApplicationContent() {
   const [isValidatingRepo, setIsValidatingRepo] = useState(false);
   const [repoPreview, setRepoPreview] = useState<ValidatedRepository | null>(null);
   const [repoError, setRepoError] = useState<string | null>(null);
+
+  // GitHub Project Discovery State
+  const [isAnalyzingRepo, setIsAnalyzingRepo] = useState(false);
+  const [discoveryResult, setDiscoveryResult] = useState<DiscoveredRepositoryResult | null>(null);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [customRootDirectory, setCustomRootDirectory] = useState<string>(".");
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [discoverySha, setDiscoverySha] = useState<string | null>(null);
 
   // Docker Source State
   const [dockerInputRaw, setDockerInputRaw] = useState("");
@@ -137,6 +152,8 @@ function CreateApplicationContent() {
     if (!targetUrl) {
       setRepoPreview(null);
       setRepoError(null);
+      setDiscoveryResult(null);
+      setDiscoveryError(null);
       return;
     }
 
@@ -162,6 +179,61 @@ function CreateApplicationContent() {
       setRepoError(extractErrorMessage(err));
     } finally {
       setIsValidatingRepo(false);
+    }
+  };
+
+  // Analyze repository for automatic project and framework discovery
+  const handleAnalyzeRepo = async () => {
+    const targetUrl = repoUrl.trim();
+    if (!targetUrl) return;
+
+    setIsAnalyzingRepo(true);
+    setDiscoveryError(null);
+    try {
+      let branchToUse = repoBranch.trim();
+      if (!repoPreview) {
+        const check = await validateDeployment({ url: targetUrl });
+        if (check.valid) {
+          setRepoPreview(check.repository);
+          if (!branchToUse) {
+            branchToUse = check.repository.defaultBranch;
+            setRepoBranch(branchToUse);
+          }
+          if (!name.trim()) {
+            setName(check.repository.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+          }
+        }
+      }
+      if (!branchToUse) {
+        branchToUse = repoPreview?.defaultBranch || "main";
+      }
+
+      const res = await discoverRepository({ url: targetUrl, branch: branchToUse });
+      setDiscoveryResult(res.discovery);
+      setDiscoverySha(res.commitSha);
+
+      // Auto-select candidate if single or recommended
+      if (res.discovery.candidates && res.discovery.candidates.length > 0) {
+        const recommendedRoot = res.discovery.recommendedRootDirectory;
+        const matching =
+          res.discovery.candidates.find((c) => c.rootDirectory === recommendedRoot) ??
+          res.discovery.candidates.find((c) => c.isDeployable) ??
+          res.discovery.candidates[0];
+
+        if (matching) {
+          setSelectedCandidateId(matching.id);
+          setCustomRootDirectory(matching.rootDirectory);
+          if (!name.trim() && matching.name) {
+            setName(matching.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+          }
+        }
+      } else {
+        setCustomRootDirectory(".");
+      }
+    } catch (err) {
+      setDiscoveryError(extractErrorMessage(err));
+    } finally {
+      setIsAnalyzingRepo(false);
     }
   };
 
@@ -219,10 +291,23 @@ function CreateApplicationContent() {
         if (!trimmedUrl) {
           throw new Error("Please enter a GitHub repository URL.");
         }
-        // Deploy via GitHub build pipeline
+        const selectedCandidate = discoveryResult?.candidates.find(
+          (c) => c.id === selectedCandidateId,
+        );
+        const finalRoot = customRootDirectory.trim() || selectedCandidate?.rootDirectory || ".";
+
+        // Deploy via GitHub build pipeline with discovery metadata
         const deployment = await createDeployment({
           url: trimmedUrl,
           ...(repoBranch.trim() ? { branch: repoBranch.trim() } : {}),
+          ...(finalRoot ? { rootDirectory: finalRoot } : {}),
+          ...(discoverySha ? { commitSha: discoverySha } : {}),
+          ...(selectedCandidate?.framework ? { framework: selectedCandidate.framework } : {}),
+          ...(selectedCandidate?.language ? { language: selectedCandidate.language } : {}),
+          ...(selectedCandidate?.runtime ? { runtime: selectedCandidate.runtime } : {}),
+          ...(selectedCandidate?.packageManager
+            ? { packageManager: selectedCandidate.packageManager }
+            : {}),
         });
         return { type: "github" as const, deploymentId: deployment.id };
       }
@@ -511,6 +596,149 @@ function CreateApplicationContent() {
                     Leave blank to deploy the repository's default branch ({repoPreview?.defaultBranch || "main"}).
                   </p>
                 </div>
+
+                {/* Automatic Project Discovery Action */}
+                <div className="flex items-center gap-3 pt-1">
+                  <Button
+                    type="button"
+                    variant={discoveryResult ? "outline" : "default"}
+                    onClick={() => void handleAnalyzeRepo()}
+                    disabled={isAnalyzingRepo || !repoUrl.trim()}
+                    className="gap-2 text-xs font-medium"
+                  >
+                    <Sparkles className="size-3.5" />
+                    {isAnalyzingRepo ? "Analyzing Repository…" : "Analyze Repository"}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {discoveryResult
+                      ? `Discovered ${discoveryResult.candidates.length} application${discoveryResult.candidates.length === 1 ? "" : "s"}`
+                      : "Automatically scans frameworks, monorepos, and deployable paths"}
+                  </span>
+                </div>
+
+                {discoveryError && (
+                  <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
+                    <AlertCircle className="size-4 shrink-0" />
+                    <span>{discoveryError}</span>
+                  </div>
+                )}
+
+                {/* Discovery Preview / Application Selection */}
+                {discoveryResult && (
+                  <div className="flex flex-col gap-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FolderGit2 className="size-4 text-primary" />
+                        <span className="text-sm font-semibold text-foreground">
+                          Detected Applications ({discoveryResult.candidates.length})
+                        </span>
+                      </div>
+                      {discoveryResult.monorepo && (
+                        <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+                          Monorepo Workspace
+                        </span>
+                      )}
+                    </div>
+
+                    {discoveryResult.candidates.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No standard application framework detected. Railpack will attempt automated zero-config build at root.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-2.5">
+                        {discoveryResult.candidates.map((cand) => {
+                          const isSelected = selectedCandidateId === cand.id;
+                          return (
+                            <button
+                              key={cand.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedCandidateId(cand.id);
+                                setCustomRootDirectory(cand.rootDirectory);
+                                if (!name.trim() && cand.name) {
+                                  setName(cand.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+                                }
+                              }}
+                              className={`flex flex-col gap-2 rounded-lg border p-3 text-left transition-all ${
+                                isSelected
+                                  ? "border-primary bg-background shadow-xs ring-1 ring-primary/30"
+                                  : "border-border/60 bg-background/60 hover:border-border hover:bg-background"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`flex size-4 items-center justify-center rounded-full border ${
+                                      isSelected
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-muted-foreground/40"
+                                    }`}
+                                  >
+                                    {isSelected && <Check className="size-2.5 stroke-[3]" />}
+                                  </div>
+                                  <span className="font-medium text-sm text-foreground">
+                                    {cand.name}
+                                  </span>
+                                </div>
+                                <span className="font-mono text-[11px] text-muted-foreground">
+                                  {cand.rootDirectory === "." ? "root (/)" : cand.rootDirectory}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-1.5 pl-6">
+                                {cand.frameworkName && (
+                                  <span className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                                    {cand.frameworkName}
+                                  </span>
+                                )}
+                                {cand.language && (
+                                  <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground uppercase">
+                                    {cand.language}
+                                  </span>
+                                )}
+                                {cand.runtime && (
+                                  <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                    {cand.runtime}
+                                  </span>
+                                )}
+                                {cand.packageManager && (
+                                  <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                    {cand.packageManager}
+                                  </span>
+                                )}
+                                {cand.dockerfilePath && (
+                                  <span className="rounded bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                                    Dockerfile
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Root Directory Override */}
+                    <div className="flex flex-col gap-1.5 pt-2 border-t border-border/40">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="root-directory" className="text-xs">
+                          Application Root Directory
+                        </Label>
+                        <span className="text-[11px] text-muted-foreground">
+                          Relative to repository root
+                        </span>
+                      </div>
+                      <Input
+                        id="root-directory"
+                        type="text"
+                        placeholder="."
+                        value={customRootDirectory}
+                        onChange={(e) => setCustomRootDirectory(e.target.value)}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Connect GitHub Account Section / Repos List Placeholder */}
                 <div className="mt-2 rounded-xl border border-dashed bg-muted/20 p-5 flex flex-col items-center justify-center gap-3 text-center">

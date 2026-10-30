@@ -48,6 +48,39 @@ graph TD
 - Session caching: `getAuth()`/`getDb()`/`getEnv()` use process-level singletons.
 - Queue: no explicit retry/DLQ configuration is set in code; behavior is Cloudflare Queue defaults. No idempotency is implemented.
 
+### 1.5 Automatic Project Discovery & Build Pipeline (implemented)
+
+Cloud includes an automated repository discovery and container image build pipeline:
+
+1. **Automatic Project Discovery Engine** (`lib/project-discovery/**`):
+   - Modular engine powered by `@vercel/frameworks` (framework catalogs and metadata) and `@vercel/fs-detectors` (filesystem detection rules, lockfile inspection, package managers).
+   - Custom deterministic detectors for non-JS ecosystems (Python, Go, Rust, PHP, Ruby, Elixir, Java, .NET).
+   - Monorepo & workspace detection (pnpm, npm, Yarn, Turborepo, Nx, Lerna, Cargo, Go).
+   - Candidate ranking and shared-package exclusion (filters `@repo/ui`, etc.).
+   - Path validation ensuring zero directory escapes and normalized POSIX root paths.
+2. **Build Architecture** (`builder/server.mjs`, `lib/build/**`):
+   - Shared Fly.io builder machine (`cloud-builder`).
+   - Isolated scratch workspace per build/discover task.
+   - Pinned `commitSha` guarantee: discovery resolves head SHA; deployment builds the exact same commit.
+   - Railpack zero-config planner & Docker BuildKit runner.
+   - Automatic listening port auto-detection via container network socket sniffing (`/proc/net/tcp[6]`).
+
+```mermaid
+graph TD
+  UI[User / Dashboard] -->|1. Enter Repo URL| CP[Control Plane]
+  CP -->|2. POST /discover| BLD[Fly Builder Machine]
+  BLD -->|3. Shallow clone & scan| DISC[Discovery Engine<br/>@vercel/frameworks + fs-detectors]
+  DISC -->|4. Return candidates| CP
+  CP -->|5. Preview & Select App| UI
+  UI -->|6. Deploy with rootDirectory + commitSha| CP
+  CP -->|7. Enqueue Build Job| Q[(build-jobs Queue)]
+  Q -->|8. Dispatch Build| BLD
+  BLD -->|9. railpack prepare buildRoot| RP[Railpack]
+  BLD -->|10. BuildKit compile & push| REG[(OCI Registry)]
+  BLD -->|11. Complete callback| CP
+  CP -->|12. Launch & verify port| FLY[Fly Machine]
+```
+
 ## 2. Proposed Target Architecture
 
 ### 2.1 Responsibilities split

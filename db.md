@@ -87,7 +87,7 @@ Indexes: unique partial `machines_application_id_active_idx` on `(application_id
 
 ### 1.4 Deployment tables (implemented)
 
-Source: `lib/db/product-schema.ts`; migration `drizzle/0002_add_deployments_and_deployment_logs.sql`.
+Source: `lib/db/product-schema.ts`; migrations `drizzle/0002_add_deployments_and_deployment_logs.sql` and `drizzle/0003_acoustic_kate_bishop.sql`.
 
 **`deployments`** — a GitHub-repository deployment (build + deploy run).
 
@@ -98,7 +98,7 @@ Source: `lib/db/product-schema.ts`; migration `drizzle/0002_add_deployments_and_
 | `repo_url` | text | not null |
 | `repo_owner` / `repo_name` | text | not null |
 | `branch` | text | not null |
-| `commit_sha` | text | nullable (resolved head before a build) |
+| `commit_sha` | text | nullable (resolved head before a build or pinned from discovery) |
 | `status` | text | not null, default `queued`; check `queued|preparing|building|pushing|deploying|active|failed|cancelled` |
 | `error_message` | text | nullable |
 | `image_ref` | text | nullable (OCI image reference of the last pushed build) |
@@ -107,6 +107,13 @@ Source: `lib/db/product-schema.ts`; migration `drizzle/0002_add_deployments_and_
 | `build_number` | integer | not null, default 1; incremented on each retry |
 | `started_at` / `finished_at` | timestamptz | nullable |
 | `created_at` / `updated_at` | timestamptz | not null |
+| `root_directory` | text | nullable (default `.` / root; relative POSIX path for nested apps) |
+| `framework` | text | nullable (detected framework slug e.g. `nextjs`, `vite`, `django`, `gin`) |
+| `language` | text | nullable (detected language e.g. `typescript`, `python`, `go`, `rust`) |
+| `runtime` | text | nullable (detected runtime e.g. `nodejs`, `python`, `go`) |
+| `package_manager` | text | nullable (detected package manager e.g. `pnpm`, `npm`, `yarn`, `bun`) |
+| `discovery_metadata` | jsonb | nullable (optional raw candidate discovery payload) |
+| `discovery_version` | text | nullable (discovery engine version e.g. `1.0.0`) |
 
 Indexes: `deployments_user_created_idx` on `(user_id, created_at)`, unique partial `deployments_fly_app_id_active_idx` on `(fly_app_id)` where `fly_app_id is not null`.
 

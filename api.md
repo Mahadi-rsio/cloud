@@ -214,7 +214,8 @@ Deployments build a public GitHub repository into an OCI image (Railpack or Dock
 
 | Endpoint | Auth | Body / Query | Success | Status |
 | --- | --- | --- | --- | --- |
-| `POST /api/v1/deployments` | session | `{ url }` | 201 `data.deployment` | Implemented |
+| `POST /api/v1/deployments` | session | `{ url, branch?, rootDirectory?, commitSha?, framework?, language?, runtime?, packageManager? }` | 201 `data.deployment` | Implemented |
+| `POST /api/v1/deployments/discover` | session | `{ url, branch? }` | 200 `data.discovery`, `data.commitSha` | Implemented |
 | `GET /api/v1/deployments` | session | `?cursor&limit` | `data.items`, `data.nextCursor` | Implemented |
 | `POST /api/v1/deployments/validate` | session | `{ url }` | `data.valid` + repo info or reason | Implemented |
 | `GET /api/v1/deployments/{id}` | session + owner | — | `data.deployment` | Implemented |
@@ -223,9 +224,11 @@ Deployments build a public GitHub repository into an OCI image (Railpack or Dock
 | `GET /api/v1/deployments/{id}/logs/stream` | session + owner | `?after` (or `Last-Event-ID`) | `text/event-stream` | Implemented |
 | `POST /api/v1/internal/deployments/{id}/logs` | `INTERNAL_API_TOKEN` | `{ lines: [{ stream, message, timestamp? }] }` | 204 | Implemented |
 | `POST /api/v1/internal/deployments/{id}/status` | `INTERNAL_API_TOKEN` | `{ status, message? }` | 200 `data.deployment` | Implemented |
-| `POST /api/v1/internal/deployments/{id}/complete` | `INTERNAL_API_TOKEN` | `{ imageRef, internalPort? }` | 200 `data.deployment` | Implemented |
+| `POST /api/v1/internal/deployments/{id}/complete` | `INTERNAL_API_TOKEN` | `{ imageRef, internalPort?, commitSha? }` | 200 `data.deployment` | Implemented |
 
-- **Create (`POST /api/v1/deployments`):** rate-limited 10/min per IP. The URL must parse as `https://github.com/{owner}/{repo}` (no `.git` suffix, no tree/commit paths, no query/fragment — `lib/build/github.ts`). The repo is checked for public reachability via the GitHub API (server-side, no PAT required; 404→`missing`, 403/429→rate-limited, private→rejected). On success a deployment is inserted with status `queued`, `build_number = 1`, and a `build-jobs` queue message is enqueued.
+- **Create (`POST /api/v1/deployments`):** rate-limited 10/min per IP. Accepts `url`, optional `branch`, `rootDirectory` (normalized relative POSIX path, no `..`), `commitSha` (pinned commit SHA from discovery), and detected framework metadata (`framework`, `language`, `runtime`, `packageManager`). The repo is checked for public reachability via the GitHub API. On success a deployment is inserted with status `queued`, `build_number = 1`, and a `build-jobs` queue message is enqueued with the discovery context.
+- **Discover (`POST /api/v1/deployments/discover`):** rate-limited 10/min per IP. Authenticated user calls this endpoint to trigger deterministic automatic project discovery via the builder. Wakes the builder, runs shallow clone, resolves head commit SHA, detects frameworks, monorepos, and deployable paths, and returns `{ discovery: RepositoryDiscoveryResult, commitSha }`.
+- **Builder endpoint `POST /discover`:** internal endpoint on builder machine (`BUILDER_API_TOKEN`). Accepts `{ repositoryUrl, branch, commitSha? }`. Clones repo in temporary scratch directory, runs `runDiscovery()`, cleans up scratch workspace, and returns discovery result without executing customer code.
 - **Validate (`POST /api/v1/deployments/validate`):** 30/min. Returns `{ valid: true, repository: { owner, name, url, defaultBranch, fork, pushedAt } }` or `{ valid: false, reason, message }` (no exception on missing/private repos).
 - **Logs (`GET .../logs`):** keyset-paginated on `(deployment_id, id)` using `after` (opaque numeric cursor) and `limit` (default 200, max 500). `terminal` mirrors `isTerminalStatus(deployment.status)`.
 - **Stream (`GET .../logs/stream`):** `text/event-stream`. Polls Postgres every 3s, sends a heartbeat comment every 10s, and closes after 60s (clients reconnect with `Last-Event-ID` / `?after`). Events: `log` (`{ id, stream, message, timestamp }`), `status` (`{ status }`), `complete` (`{ status }`), `error` (`{ message }`), plus `heartbeat` comments. The stream closes automatically once the deployment reaches a terminal state. Auth and ownership are checked before the response is returned.

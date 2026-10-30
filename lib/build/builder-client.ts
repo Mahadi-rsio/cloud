@@ -8,6 +8,16 @@ export type BuildJobPayload = {
   branch: string;
   imageRef: string;
   buildNumber: number;
+  /** Relative path within the repository to use as build context (e.g. "apps/web"). Defaults to ".". */
+  rootDirectory?: string;
+  /** Exact commit SHA resolved during discovery. When set, the builder checks out this SHA. */
+  commitSha?: string;
+};
+
+export type DiscoverPayload = {
+  repositoryUrl: string;
+  branch: string;
+  commitSha?: string;
 };
 
 function builderBaseUrl(url: string): string {
@@ -132,4 +142,52 @@ export async function dispatchBuild(payload: BuildJobPayload): Promise<void> {
       body.slice(0, 500),
     );
   }
+}
+
+/**
+ * Call the builder's /discover endpoint to analyze a repository.
+ * Returns the raw discovery result JSON.
+ */
+export async function callBuilderDiscover(payload: DiscoverPayload): Promise<unknown> {
+  const env = await getEnv();
+  if (!env.BUILDER_URL) {
+    throw new HttpError(
+      "PROVIDER_ERROR",
+      "BUILDER_URL is not configured.",
+      500,
+    );
+  }
+
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (env.BUILDER_API_TOKEN) {
+    headers.set("Authorization", `Bearer ${env.BUILDER_API_TOKEN}`);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${builderBaseUrl(env.BUILDER_URL)}/discover`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      // Discovery clones the repo, so allow up to 3 minutes
+      signal: AbortSignal.timeout(180_000),
+    });
+  } catch {
+    throw new HttpError(
+      "PROVIDER_ERROR",
+      "Could not reach the build service. Please try again.",
+      502,
+    );
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new HttpError(
+      "PROVIDER_ERROR",
+      `Discovery failed (status ${response.status}): ${body.slice(0, 300)}`,
+      502,
+    );
+  }
+
+  return response.json();
 }

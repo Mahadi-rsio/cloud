@@ -85,6 +85,9 @@ export async function processDeployJob(
       branch: deployment.branch,
       imageRef,
       buildNumber: deployment.buildNumber,
+      // Pass discovery-resolved fields so the builder uses the exact context
+      ...(deployment.rootDirectory ? { rootDirectory: deployment.rootDirectory } : {}),
+      ...(deployment.commitSha ? { commitSha: deployment.commitSha } : {}),
     });
     await appendSystemLog(deployment.id, "Build job handed to the builder.");
   } catch (error) {

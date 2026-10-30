@@ -15,6 +15,7 @@ import { getEnv } from "@/lib/env";
 import { errorResponse, HttpError, jsonOk, readJson } from "@/lib/http";
 import { assertRateLimit, clientIp } from "@/lib/rate-limit";
 import { createDeploymentSchema } from "@/lib/validators/deployment";
+import { normalizeRelativePath } from "@/lib/project-discovery";
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,6 +35,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate rootDirectory if provided
+    let rootDirectory: string | undefined;
+    if (input.rootDirectory) {
+      try {
+        rootDirectory = normalizeRelativePath(input.rootDirectory);
+      } catch {
+        throw new HttpError(
+          "VALIDATION_ERROR",
+          "rootDirectory contains an invalid path.",
+          400,
+        );
+      }
+    }
+
     const env = await getEnv();
     const status = await checkGitHubRepository(repository, env.GITHUB_API_TOKEN);
     if (!status.ok) {
@@ -47,11 +62,10 @@ export async function POST(request: NextRequest) {
     }
 
     const branch = input.branch ?? status.defaultBranch;
-    const commitSha = await resolveGitHubHeadSha(
-      repository,
-      branch,
-      env.GITHUB_API_TOKEN,
-    );
+    // Use commitSha from discovery input if provided (ensures SHA consistency), else resolve now
+    const commitSha =
+      input.commitSha ??
+      (await resolveGitHubHeadSha(repository, branch, env.GITHUB_API_TOKEN));
 
     const db = await getDb();
     const [deployment] = await db
@@ -65,6 +79,12 @@ export async function POST(request: NextRequest) {
         commitSha,
         status: "queued",
         buildNumber: 1,
+        // Discovery metadata (nullable)
+        rootDirectory: rootDirectory ?? null,
+        framework: input.framework ?? null,
+        language: input.language ?? null,
+        runtime: input.runtime ?? null,
+        packageManager: input.packageManager ?? null,
       })
       .returning();
 

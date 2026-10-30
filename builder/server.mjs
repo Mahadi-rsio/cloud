@@ -38,7 +38,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, realpath, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const config = {
@@ -454,6 +454,317 @@ async function detectStrategy(appDir) {
   return { dockerfile };
 }
 
+/* ------------------------------------------------------------------ */
+/* Inline Project Discovery Engine                                     */
+/* ------------------------------------------------------------------ */
+
+const DISCOVERY_VERSION = "1.0.0";
+
+const DISCOVERY_IGNORED_DIRS = new Set([
+  ".git", "node_modules", ".next", "dist", "build", ".turbo", ".nx",
+  "vendor", ".venv", "venv", "env", ".cargo", "target", "bin", "obj",
+  ".idea", ".vscode", "coverage", ".output", ".cache", "tmp",
+]);
+
+const DISCOVERY_DEPLOYABLE_FILES = new Set([
+  "package.json", "requirements.txt", "pyproject.toml", "Pipfile",
+  "go.mod", "Cargo.toml", "composer.json", "artisan", "Gemfile",
+  "mix.exs", "pom.xml", "build.gradle", "build.gradle.kts",
+  "Dockerfile", "dockerfile", "Containerfile", "containerfile",
+]);
+
+function discoveryNormalizePath(rawPath) {
+  if (!rawPath) return ".";
+  const clean = rawPath.replace(/\\/g, "/").trim().replace(/^\/+/, "").replace(/\/+$/, "");
+  if (!clean || clean === ".") return ".";
+  const parts = clean.split("/").filter(Boolean);
+  const resolved = [];
+  for (const part of parts) {
+    if (part === ".") continue;
+    if (part === "..") throw new Error(`Path traversal rejected: ${rawPath}`);
+    resolved.push(part);
+  }
+  return resolved.length > 0 ? resolved.join("/") : ".";
+}
+
+async function discoveryValidateRoot(repoRoot, selectedRoot) {
+  const normalized = discoveryNormalizePath(selectedRoot);
+  const abs = path.resolve(repoRoot, normalized);
+  if (!abs.startsWith(path.resolve(repoRoot))) {
+    throw new Error(`Path escapes repository: ${selectedRoot}`);
+  }
+  try {
+    const real = await realpath(abs);
+    const realRoot = await realpath(repoRoot);
+    if (!real.startsWith(realRoot)) throw new Error(`Symlink escape: ${selectedRoot}`);
+  } catch (err) {
+    if (err.code === "ENOENT") throw new Error(`Path does not exist: ${selectedRoot}`);
+    throw err;
+  }
+  return abs;
+}
+
+function detectPkgManager(files) {
+  if (files.includes("bun.lockb") || files.includes("bun.lock")) return "bun";
+  if (files.includes("pnpm-lock.yaml")) return "pnpm";
+  if (files.includes("yarn.lock")) return "yarn";
+  if (files.includes("package-lock.json")) return "npm";
+  return null;
+}
+
+function hasDeployableSignal(files) {
+  return files.some(
+    (f) => DISCOVERY_DEPLOYABLE_FILES.has(f) || f.endsWith(".csproj") || f.endsWith(".sln"),
+  );
+}
+
+async function detectFrameworkForDiscovery(dirPath, files) {
+  let pkg = null;
+  if (files.includes("package.json")) {
+    try { pkg = JSON.parse(await readFile(path.join(dirPath, "package.json"), "utf8")); } catch {}
+  }
+  const allDeps = pkg ? { ...pkg.dependencies, ...pkg.devDependencies } : {};
+
+  if (pkg) {
+    if (allDeps["@tanstack/react-start"] || allDeps["@tanstack/start"])
+      return { slug: "tanstack-start", name: "TanStack Start", confidence: 0.95, language: "typescript", runtime: "nodejs" };
+    if (allDeps["next"] || files.some(f => f.startsWith("next.config.")))
+      return { slug: "nextjs", name: "Next.js", confidence: 0.95, language: "typescript", runtime: "nodejs" };
+    if (allDeps["astro"] || files.some(f => f.startsWith("astro.config.")))
+      return { slug: "astro", name: "Astro", confidence: 0.95, language: "typescript", runtime: "nodejs" };
+    if (allDeps["@sveltejs/kit"] || files.some(f => f.startsWith("svelte.config.")))
+      return { slug: "sveltekit", name: "SvelteKit", confidence: 0.95, language: "typescript", runtime: "nodejs" };
+    if (allDeps["nuxt"] || files.some(f => f.startsWith("nuxt.config.")))
+      return { slug: "nuxt", name: "Nuxt", confidence: 0.95, language: "typescript", runtime: "nodejs" };
+    if (files.includes("angular.json") || allDeps["@angular/core"])
+      return { slug: "angular", name: "Angular", confidence: 0.95, language: "typescript", runtime: "nodejs" };
+    if (allDeps["@remix-run/react"] || allDeps["@react-router/dev"] || allDeps["remix"])
+      return { slug: "remix", name: "Remix", confidence: 0.95, language: "typescript", runtime: "nodejs" };
+    if (allDeps["@nestjs/core"] || files.includes("nest-cli.json"))
+      return { slug: "nestjs", name: "NestJS", confidence: 0.92, language: "typescript", runtime: "nodejs" };
+    if (allDeps["hono"])
+      return { slug: "hono", name: "Hono", confidence: 0.9, language: "typescript", runtime: "nodejs" };
+    if (allDeps["fastify"])
+      return { slug: "fastify", name: "Fastify", confidence: 0.9, language: "javascript", runtime: "nodejs" };
+    if (allDeps["express"])
+      return { slug: "express", name: "Express", confidence: 0.88, language: "javascript", runtime: "nodejs" };
+    if (allDeps["vite"] || files.some(f => f.startsWith("vite.config.")))
+      return { slug: "vite", name: "Vite", confidence: 0.85, language: "typescript", runtime: "nodejs" };
+    return { slug: null, name: null, confidence: 0.5, language: files.includes("tsconfig.json") ? "typescript" : "javascript", runtime: "nodejs" };
+  }
+
+  if (files.includes("manage.py"))
+    return { slug: "django", name: "Django", confidence: 0.95, language: "python", runtime: "python" };
+  if (files.includes("requirements.txt") || files.includes("pyproject.toml") || files.includes("Pipfile")) {
+    let txt = "";
+    for (const mf of ["requirements.txt", "pyproject.toml", "Pipfile"]) {
+      if (files.includes(mf)) try { txt += await readFile(path.join(dirPath, mf), "utf8"); } catch {}
+    }
+    const lo = txt.toLowerCase();
+    if (lo.includes("django")) return { slug: "django", name: "Django", confidence: 0.9, language: "python", runtime: "python" };
+    if (lo.includes("fastapi")) return { slug: "fastapi", name: "FastAPI", confidence: 0.9, language: "python", runtime: "python" };
+    if (lo.includes("flask")) return { slug: "flask", name: "Flask", confidence: 0.9, language: "python", runtime: "python" };
+    return { slug: null, name: null, confidence: 0.6, language: "python", runtime: "python" };
+  }
+
+  if (files.includes("go.mod")) {
+    let goMod = "";
+    try { goMod = await readFile(path.join(dirPath, "go.mod"), "utf8"); } catch {}
+    if (goMod.includes("github.com/gin-gonic/gin")) return { slug: "gin", name: "Gin", confidence: 0.9, language: "go", runtime: "go" };
+    if (goMod.includes("github.com/labstack/echo")) return { slug: "echo", name: "Echo", confidence: 0.9, language: "go", runtime: "go" };
+    if (goMod.includes("github.com/gofiber/fiber")) return { slug: "fiber", name: "Fiber", confidence: 0.9, language: "go", runtime: "go" };
+    return { slug: "go", name: "Go Application", confidence: 0.8, language: "go", runtime: "go" };
+  }
+
+  if (files.includes("Cargo.toml")) {
+    let cargo = "";
+    try { cargo = await readFile(path.join(dirPath, "Cargo.toml"), "utf8"); } catch {}
+    if (cargo.includes("[workspace]")) return null;
+    if (cargo.includes("axum")) return { slug: "axum", name: "Axum", confidence: 0.9, language: "rust", runtime: "rust" };
+    if (cargo.includes("actix-web")) return { slug: "actix-web", name: "Actix Web", confidence: 0.9, language: "rust", runtime: "rust" };
+    return { slug: "rust", name: "Rust Application", confidence: 0.75, language: "rust", runtime: "rust" };
+  }
+
+  if (files.includes("artisan")) return { slug: "laravel", name: "Laravel", confidence: 0.95, language: "php", runtime: "php" };
+  if (files.includes("composer.json")) {
+    let composer = "";
+    try { composer = await readFile(path.join(dirPath, "composer.json"), "utf8"); } catch {}
+    if (composer.includes("laravel/framework")) return { slug: "laravel", name: "Laravel", confidence: 0.92, language: "php", runtime: "php" };
+    if (composer.includes("symfony/framework-bundle")) return { slug: "symfony", name: "Symfony", confidence: 0.92, language: "php", runtime: "php" };
+    return { slug: "php", name: "PHP Application", confidence: 0.7, language: "php", runtime: "php" };
+  }
+
+  if (files.includes("Gemfile")) {
+    let gemfile = "";
+    try { gemfile = await readFile(path.join(dirPath, "Gemfile"), "utf8"); } catch {}
+    if (gemfile.includes('"rails"') || gemfile.includes("'rails'"))
+      return { slug: "rails", name: "Ruby on Rails", confidence: 0.95, language: "ruby", runtime: "ruby" };
+    return { slug: "ruby", name: "Ruby Application", confidence: 0.7, language: "ruby", runtime: "ruby" };
+  }
+
+  if (files.includes("mix.exs")) {
+    let mix = "";
+    try { mix = await readFile(path.join(dirPath, "mix.exs"), "utf8"); } catch {}
+    if (mix.includes(":phoenix")) return { slug: "phoenix", name: "Phoenix", confidence: 0.95, language: "elixir", runtime: "elixir" };
+    return { slug: "elixir", name: "Elixir Application", confidence: 0.8, language: "elixir", runtime: "elixir" };
+  }
+
+  if (files.includes("pom.xml") || files.includes("build.gradle") || files.includes("build.gradle.kts")) {
+    let manifest = "";
+    const mf = ["pom.xml", "build.gradle", "build.gradle.kts"].find(f => files.includes(f));
+    if (mf) try { manifest = await readFile(path.join(dirPath, mf), "utf8"); } catch {}
+    const isSpring = manifest.includes("spring-boot") || manifest.includes("org.springframework.boot");
+    return { slug: isSpring ? "spring-boot" : "java", name: isSpring ? "Spring Boot" : "Java Application", confidence: isSpring ? 0.92 : 0.78, language: "java", runtime: "java" };
+  }
+
+  const csproj = files.find(f => f.endsWith(".csproj"));
+  if (csproj || files.find(f => f.endsWith(".sln"))) {
+    let proj = "";
+    if (csproj) try { proj = await readFile(path.join(dirPath, csproj), "utf8"); } catch {}
+    const isAsp = proj.includes("Microsoft.AspNetCore") || proj.includes('Sdk="Microsoft.NET.Sdk.Web"');
+    return { slug: isAsp ? "aspnet-core" : "dotnet", name: isAsp ? "ASP.NET Core" : ".NET Application", confidence: isAsp ? 0.92 : 0.78, language: "csharp", runtime: "dotnet" };
+  }
+
+  const dockerfileFile = files.find(f => f.toLowerCase() === "dockerfile" || f.toLowerCase() === "containerfile");
+  if (dockerfileFile) return { slug: null, name: null, confidence: 0.6, language: null, runtime: null };
+
+  return null;
+}
+
+function isLikelySharedLib(relPath, confidence) {
+  const lower = relPath.toLowerCase();
+  const libNames = new Set(["packages", "libs", "shared", "common", "ui", "components", "utils", "helpers", "types", "core"]);
+  const last = lower.split("/").pop() ?? "";
+  if (libNames.has(last) && confidence < 0.75) return true;
+  if ((lower.startsWith("packages/") || lower.startsWith("libs/")) && confidence < 0.8) return true;
+  return false;
+}
+
+async function runDiscovery(repoRoot, repoName, branch, commitSha) {
+  const MAX_DEPTH = 5;
+  const MAX_FILES = 5000;
+  const warnings = [];
+  let fileCount = 0;
+  const visited = new Set();
+  const candidates = [];
+
+  async function walk(currentPath, depth) {
+    if (depth > MAX_DEPTH) return;
+    if (fileCount >= MAX_FILES) {
+      if (!warnings.includes("Scan limit reached.")) warnings.push("Scan limit reached; some directories were skipped.");
+      return;
+    }
+
+    let realCurrent;
+    try { realCurrent = await realpath(currentPath); } catch { return; }
+    let realRoot;
+    try { realRoot = await realpath(repoRoot); } catch { realRoot = repoRoot; }
+    if (!realCurrent.startsWith(realRoot) || visited.has(realCurrent)) return;
+    visited.add(realCurrent);
+
+    let entries;
+    try { entries = await readdir(currentPath, { withFileTypes: true }); } catch { return; }
+
+    const files = [];
+    const subdirs = [];
+    for (const e of entries) {
+      fileCount++;
+      if (e.isDirectory()) {
+        if (!DISCOVERY_IGNORED_DIRS.has(e.name) && !e.name.startsWith(".")) subdirs.push(e.name);
+      } else if (e.isFile() || e.isSymbolicLink()) {
+        files.push(e.name);
+      }
+    }
+
+    const relPath = currentPath === repoRoot ? "." : path.relative(repoRoot, currentPath).replace(/\\/g, "/");
+
+    if (hasDeployableSignal(files)) {
+      const fw = await detectFrameworkForDiscovery(currentPath, files);
+      if (fw !== null) {
+        const confidence = fw.confidence ?? 0;
+        const likelyLib = isLikelySharedLib(relPath, confidence);
+        const dockerfileFile = files.find(f => f.toLowerCase() === "dockerfile" || f.toLowerCase() === "containerfile");
+        const pkgMgr = detectPkgManager(files);
+        const isDeployable = !likelyLib && (confidence > 0.4 || !!dockerfileFile);
+        const lastSeg = relPath === "." ? repoName : relPath.split("/").pop();
+
+        candidates.push({
+          id: Buffer.from(`${repoName}:${relPath}`).toString("base64").replace(/[+/=]/g, "").slice(0, 16),
+          name: lastSeg,
+          rootDirectory: relPath,
+          framework: fw.slug ?? null,
+          frameworkName: fw.name ?? null,
+          language: fw.language ?? null,
+          runtime: fw.runtime ?? null,
+          packageManager: pkgMgr,
+          dockerfilePath: dockerfileFile ? (relPath === "." ? dockerfileFile : `${relPath}/${dockerfileFile}`) : undefined,
+          confidence,
+          warnings: [],
+          isDeployable,
+        });
+      }
+    }
+
+    for (const sub of subdirs) {
+      await walk(path.join(currentPath, sub), depth + 1);
+    }
+  }
+
+  await walk(repoRoot, 0);
+
+  const deployable = candidates.filter(c => c.isDeployable).sort((a, b) => {
+    const cd = b.confidence - a.confidence;
+    if (Math.abs(cd) > 0.05) return cd;
+    const da = a.rootDirectory === "." ? 0 : a.rootDirectory.split("/").length;
+    const db2 = b.rootDirectory === "." ? 0 : b.rootDirectory.split("/").length;
+    return da - db2;
+  });
+  const nonDeployable = candidates.filter(c => !c.isDeployable);
+  const ranked = [...deployable, ...nonDeployable];
+
+  let recommendedRootDirectory = null;
+  let requiresUserSelection = false;
+  if (deployable.length === 1) {
+    recommendedRootDirectory = deployable[0].rootDirectory;
+  } else if (deployable.length > 1) {
+    const [first, second] = deployable;
+    recommendedRootDirectory = first.rootDirectory;
+    if (first.confidence - second.confidence <= 0.15) requiresUserSelection = true;
+  }
+
+  let rootFiles = [];
+  try { rootFiles = (await readdir(repoRoot, { withFileTypes: true })).filter(e => e.isFile()).map(e => e.name); } catch {}
+  const isMonorepo = rootFiles.includes("pnpm-workspace.yaml") || rootFiles.includes("turbo.json")
+    || rootFiles.includes("nx.json") || rootFiles.includes("lerna.json") || deployable.length > 1;
+
+  return {
+    repository: { name: repoName, branch, commitSha: commitSha ?? null },
+    monorepo: isMonorepo,
+    candidates: ranked,
+    recommendedRootDirectory,
+    requiresUserSelection,
+    discoveryVersion: DISCOVERY_VERSION,
+    warnings,
+  };
+}
+
+async function resolveAppRoot(clonedRepoDir, rootDirectory) {
+  if (!rootDirectory || rootDirectory === ".") return clonedRepoDir;
+  const normalized = discoveryNormalizePath(rootDirectory);
+  const abs = path.resolve(clonedRepoDir, normalized);
+  if (!abs.startsWith(path.resolve(clonedRepoDir))) {
+    throw new Error(`rootDirectory escapes the repository: ${rootDirectory}`);
+  }
+  let s;
+  try { s = await stat(abs); } catch (err) {
+    if (err.code === "ENOENT") throw new Error(`rootDirectory not found: ${rootDirectory}`);
+    throw err;
+  }
+  if (!s.isDirectory()) throw new Error(`rootDirectory is not a directory: ${rootDirectory}`);
+  return abs;
+}
+
+
 async function readDockerfilePort(filePath) {
   try {
     const contents = await readFile(filePath, "utf8");
@@ -700,7 +1011,32 @@ async function runBuild(job) {
       commitSha ? `Checked out commit ${commitSha.slice(0, 12)}.` : "Repository cloned.",
     );
 
-    let strategy = await detectStrategy(appDir);
+    onLine("system", "[Discovery] Scanning repository…");
+    const discoverySummary = await runDiscovery(appDir, "app", job.branch, commitSha).catch(() => null);
+    if (discoverySummary) {
+      if (discoverySummary.monorepo) {
+        onLine("system", "[Discovery] Monorepo detected.");
+      }
+      onLine(
+        "system",
+        `[Discovery] Found ${discoverySummary.candidates.length} application(s).`,
+      );
+    }
+
+    // Resolve the application root directory (from discovery or default to repo root)
+    const buildRoot = await resolveAppRoot(appDir, job.rootDirectory ?? null);
+    const activeCandidate = discoverySummary?.candidates.find(
+      (c) => c.rootDirectory === (job.rootDirectory ?? ".")
+    );
+    if (activeCandidate?.frameworkName) {
+      onLine("system", `[Discovery] Framework: ${activeCandidate.frameworkName}`);
+    }
+    onLine("system", `[Discovery] Root directory: ${job.rootDirectory ?? "."}`);
+    if (activeCandidate?.packageManager) {
+      onLine("system", `[Discovery] Package manager: ${activeCandidate.packageManager}`);
+    }
+
+    let strategy = await detectStrategy(buildRoot);
     let internalPort = config.defaultInternalPort;
     let planPath = null;
     let useRailpack = false;
@@ -708,7 +1044,7 @@ async function runBuild(job) {
     if (strategy.dockerfile) {
       onLine("system", `Using Dockerfile: ${strategy.dockerfile}`);
       internalPort =
-        (await readDockerfilePort(path.join(appDir, strategy.dockerfile))) ??
+        (await readDockerfilePort(path.join(buildRoot, strategy.dockerfile))) ??
         internalPort;
     } else {
       onLine("system", "No Dockerfile found; using Railpack.");
@@ -720,7 +1056,7 @@ async function runBuild(job) {
 
     while (true) {
       if (useRailpack) {
-        const prepared = await prepareRailpack(appDir, workDir, onLine, job.deploymentId);
+        const prepared = await prepareRailpack(buildRoot, workDir, onLine, job.deploymentId);
         for (const line of prepared.logs) sink.push("stdout", line);
         if (!prepared.success) {
           throw new Error(prepared.error ?? "Railpack could not plan this application.");
@@ -740,7 +1076,7 @@ async function runBuild(job) {
       try {
         await buildImage({
           strategy,
-          appDir,
+          appDir: buildRoot,
           workDir,
           planPath,
           imageRef: job.imageRef,
@@ -901,7 +1237,18 @@ function validateJob(raw) {
     throw new Error("Invalid buildNumber.");
   }
 
-  return { deploymentId, repoUrl, branch, imageRef, buildNumber };
+  // Optional discovery fields
+  const rootDirectory = typeof body.rootDirectory === "string" && body.rootDirectory
+    ? body.rootDirectory
+    : null;
+  if (rootDirectory && (rootDirectory.includes("..") || rootDirectory.startsWith("/"))) {
+    throw new Error("Invalid rootDirectory.");
+  }
+  const commitSha = typeof body.commitSha === "string" && /^[0-9a-f]{7,64}$/.test(body.commitSha)
+    ? body.commitSha
+    : null;
+
+  return { deploymentId, repoUrl, branch, imageRef, buildNumber, rootDirectory, commitSha };
 }
 
 function json(response, status, body) {
@@ -940,6 +1287,68 @@ const server = http.createServer(async (request, response) => {
       buildkitReady = !result.error && result.code === 0;
     }
     json(response, buildkitReady ? 200 : 503, { ready: buildkitReady });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/discover") {
+    if (!authorized(request)) {
+      json(response, 401, { error: "unauthorized" });
+      return;
+    }
+    let discoverBody;
+    try {
+      const raw = await readBody(request);
+      discoverBody = JSON.parse(raw);
+    } catch {
+      json(response, 400, { error: "Invalid request body." });
+      return;
+    }
+    const { repositoryUrl, branch, commitSha: inputSha } = discoverBody ?? {};
+    if (typeof repositoryUrl !== "string" || !repositoryUrl.startsWith("https://github.com/")) {
+      json(response, 400, { error: "Invalid repositoryUrl." });
+      return;
+    }
+    if (typeof branch !== "string" || !/^[A-Za-z0-9._\-\/]+$/.test(branch)) {
+      json(response, 400, { error: "Invalid branch." });
+      return;
+    }
+
+    const discoverJobId = `discover-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const discoverDir = path.join(config.workspaceDir, discoverJobId, "repo");
+    try {
+      await mkdir(discoverDir, { recursive: true });
+      log(`[Discover] Cloning ${repositoryUrl} branch ${branch}`);
+
+      // Clone the repo (shallow)
+      const cloneResult = await runCommand(
+        "git",
+        ["clone", "--depth", "1", "--single-branch", `--branch=${branch}`, repositoryUrl, discoverDir],
+        { timeoutMs: 3 * 60 * 1000, env: { GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "true" } },
+      );
+      if (cloneResult.code !== 0) {
+        json(response, 422, { error: "Repository clone failed.", detail: cloneResult.stderr.slice(0, 500) });
+        return;
+      }
+
+      // Resolve actual SHA
+      const headResult = await runCommand("git", ["rev-parse", "HEAD"], { cwd: discoverDir, timeoutMs: 10_000 });
+      const resolvedSha = headResult.code === 0 && headResult.stdout ? headResult.stdout.trim() : (inputSha ?? null);
+
+      // Extract repo name from URL
+      const urlParts = repositoryUrl.replace(/\/+$/, "").split("/");
+      const repoName = urlParts[urlParts.length - 1] || "repository";
+
+      log(`[Discover] Running discovery on ${repoName}`);
+      const result = await runDiscovery(discoverDir, repoName, branch, resolvedSha);
+      log(`[Discover] Found ${result.candidates.length} candidates`);
+
+      json(response, 200, result);
+    } catch (error) {
+      log(`[Discover] Error: ${error?.message ?? error}`);
+      json(response, 500, { error: error?.message ?? "Discovery failed." });
+    } finally {
+      await rm(path.join(config.workspaceDir, discoverJobId), { recursive: true, force: true }).catch(() => {});
+    }
     return;
   }
 

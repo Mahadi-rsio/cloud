@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
 import { user } from "./schema";
 
 export const applications = pgTable(
@@ -114,6 +115,14 @@ export const deployments = pgTable(
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
+    // Discovery metadata (nullable for backward compatibility)
+    rootDirectory: text("root_directory"),
+    framework: text("framework"),
+    language: text("language"),
+    runtime: text("runtime"),
+    packageManager: text("package_manager"),
+    discoveryMetadata: jsonb("discovery_metadata"),
+    discoveryVersion: text("discovery_version"),
   },
   (table) => [
     index("deployments_user_created_idx").on(table.userId, table.createdAt),
