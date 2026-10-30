@@ -48,8 +48,8 @@
 - [x] Zero-dependency build worker `builder/server.mjs` + `builder/Dockerfile` + `builder/entrypoint.sh` (Railpack prepare → BuildKit/docker buildx push; never holds Fly credentials)
 - [x] GitHub UI: deploy form + recent deployments (`app/(app)/github/page.tsx`, `components/github/github-page.tsx`) and deployment detail page with live SSE log viewer (`app/(app)/deployments/[id]/page.tsx`, `components/deployments/*`)
 - [x] Unit tests for parsing/strategy/railpack/status/log helpers (`tests/deployment-build.test.ts`)
-- [ ] Deploy the builder machine on Fly (see `builds.md`) and set secrets — requires operator action
-- [ ] End-to-end verification with a real repository on a deployed builder (blocked on the above)
+- [x] Deploy the builder machine on Fly (see `builds.md`) and set secrets (`cloud-builder` on Fly)
+- [x] End-to-end verification with discovery & builds on deployed builder and live Neon DB migration
 
 ### Queue and async
 - [x] Queue binding `AUTH_JOBS` and worker consumer for `welcome-email` (`cloudflare.config.ts`, `entrypoints/worker.ts`)
