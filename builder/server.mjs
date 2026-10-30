@@ -84,10 +84,10 @@ function sleep(ms) {
 /* Control plane callbacks                                             */
 /* ------------------------------------------------------------------ */
 
-async function callControlPlane(pathname, body, retries = 2) {
+async function callControlPlane(pathname, body, retries = 2, timeoutMs = 20_000) {
   if (!config.controlPlaneUrl || !config.internalToken) {
     log(`cannot call ${pathname}: CONTROL_PLANE_URL/INTERNAL_API_TOKEN missing`);
-    return false;
+    return { ok: false, error: "CONTROL_PLANE_URL or INTERNAL_API_TOKEN missing" };
   }
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -99,9 +99,9 @@ async function callControlPlane(pathname, body, retries = 2) {
           Authorization: `Bearer ${config.internalToken}`,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
-      if (response.ok) return true;
+      if (response.ok) return { ok: true };
       const text = await response.text().catch(() => "");
       lastError = new Error(`status ${response.status}: ${text.slice(0, 300)}`);
       if (response.status >= 400 && response.status < 500) break;
@@ -111,7 +111,7 @@ async function callControlPlane(pathname, body, retries = 2) {
     if (attempt < retries) await sleep(1_000 * (attempt + 1));
   }
   log(`callback ${pathname} failed: ${lastError?.message ?? "unknown error"}`);
-  return false;
+  return { ok: false, error: lastError?.message ?? "unknown error" };
 }
 
 function sendStatus(deploymentId, status, extra = {}) {
@@ -119,6 +119,7 @@ function sendStatus(deploymentId, status, extra = {}) {
     `/api/v1/internal/deployments/${deploymentId}/status`,
     { status, ...extra },
     1,
+    15_000,
   );
 }
 
@@ -770,10 +771,11 @@ async function runBuild(job) {
         internalPort,
         ...(commitSha ? { commitSha } : {}),
       },
-      3,
+      1,
+      180_000,
     );
-    if (!accepted) {
-      throw new Error("The control plane did not accept the build result.");
+    if (!accepted.ok) {
+      throw new Error(`The control plane did not accept the build result (${accepted.error}).`);
     }
     onLine("system", "Build complete.");
   } catch (error) {

@@ -227,7 +227,7 @@ export type DeployImageResult = {
 // Port verification (once per deployment)
 // ---------------------------------------------------------------------------
 
-const PORT_POLL_INTERVAL_MS = 5_000;
+const PORT_POLL_INTERVAL_MS = 3_000;
 const PORT_POLL_TIMEOUT_MS = 90_000;
 const PORT_EXEC_TIMEOUT_S = 8;
 
@@ -270,6 +270,7 @@ async function verifyAndCorrectPort(input: {
     reachable: [],
     loopbackOnly: [],
   };
+  let consecutiveExecFailures = 0;
 
   while (Date.now() < deadline) {
     // Wait for the machine to reach 'started' before exec.
@@ -289,16 +290,23 @@ async function verifyAndCorrectPort(input: {
     );
 
     if (execResult === null) {
-      // exec API unavailable; degrade gracefully.
-      await appendSystemLog(
-        deploymentId,
-        "Port detection unavailable (exec not supported). Using configured port " +
-          configuredPort +
-          ".",
-      );
-      return;
+      consecutiveExecFailures += 1;
+      // Machine might still be starting or guest agent warming up. Only degrade
+      // gracefully if exec consistently fails (8+ attempts = 24s+) or deadline near.
+      if (consecutiveExecFailures >= 8 || Date.now() + PORT_POLL_INTERVAL_MS >= deadline) {
+        await appendSystemLog(
+          deploymentId,
+          "Port detection unavailable (exec not supported or machine not responding). Using configured port " +
+            configuredPort +
+            ".",
+        );
+        return;
+      }
+      await new Promise((r) => setTimeout(r, PORT_POLL_INTERVAL_MS));
+      continue;
     }
 
+    consecutiveExecFailures = 0;
     lastPorts = parseListeningPorts(execResult.stdout ?? "");
 
     if (lastPorts.reachable.length > 0 || lastPorts.loopbackOnly.length > 0) {

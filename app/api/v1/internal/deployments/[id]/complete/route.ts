@@ -34,15 +34,22 @@ export async function POST(request: NextRequest, ctx: RouteContext) {
       return jsonOk({ deployment: current, skipped: true });
     }
 
+    // Avoid duplicate concurrent deployments if another call is already deploying
+    if (
+      current.status === "deploying" &&
+      current.updatedAt &&
+      Date.now() - new Date(current.updatedAt).getTime() < 120_000
+    ) {
+      return jsonOk({ deployment: current, skipped: true, inProgress: true });
+    }
+
     await appendSystemLog(id, `Build finished. Image: ${input.imageRef}`);
     const deploying = await advanceDeploymentToDeploying(id, input.imageRef);
     const env = await getEnv();
-    // internalPort from the builder takes precedence; fall back to the default.
-    // If the builder explicitly provided a port (from EXPOSE or railpack-info)
-    // we skip auto-detection and trust it as a user/framework intent signal.
     const internalPort =
       input.internalPort ?? buildDefaultInternalPort(env);
-    const skipPortDetection = input.internalPort !== undefined;
+    // Never skip port detection: always verify and auto-detect the actual listening port on the machine
+    const skipPortDetection = false;
 
     try {
       const result = await deployImageToFly({
