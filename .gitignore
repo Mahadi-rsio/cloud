@@ -44,3 +44,8 @@ next-env.d.ts
 /dist/
 .vinext/
 .cloudflare/
+
+# Firecracker and VM server (managed separately on firecracker branch)
+firecracker/
+server/
+
