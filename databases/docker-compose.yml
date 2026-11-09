@@ -1,0 +1,33 @@
+services:
+  sqld:
+    image: ghcr.io/tursodatabase/libsql-server:latest
+    container_name: platform-sqld
+    restart: unless-stopped
+    ports:
+      - "8080:8080" # User HTTP & Hrana API (queries)
+      - "8082:8082" # Admin API (namespace management)
+      - "5001:5001" # gRPC replication (optional replicas)
+    environment:
+      - SQLD_NODE=primary
+      - SQLD_HTTP_LISTEN_ADDR=0.0.0.0:8080
+      - SQLD_ADMIN_LISTEN_ADDR=0.0.0.0:8082
+      - SQLD_DB_PATH=/var/lib/sqld/data.sqld
+      - SQLD_MAX_ACTIVE_NAMESPACES=100
+      - SQLD_MAX_RESPONSE_SIZE=10MB
+      - SQLD_MAX_TOTAL_RESPONSE_SIZE=32MB
+    command:
+      - "sqld"
+      - "--enable-namespaces"
+      - "--db-path"
+      - "/var/lib/sqld/data.sqld"
+    volumes:
+      - sqld_data:/var/lib/sqld
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  sqld_data:
