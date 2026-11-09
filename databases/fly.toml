@@ -11,7 +11,7 @@ kill_timeout = "30s"
   image = "ghcr.io/tursodatabase/libsql-server:latest"
 
 [processes]
-  app = "/bin/sqld --enable-namespaces --db-path /var/lib/sqld/data.sqld"
+  app = "/bin/sqld --enable-namespaces"
 
 [env]
   SQLD_NODE = "primary"
