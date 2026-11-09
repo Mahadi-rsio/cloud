@@ -92,18 +92,21 @@ The first label of the incoming `Host` header automatically resolves to the name
 The Admin API runs on port `8082`. On Fly.io, it is bound to Fly's private 6PN mesh network (`<app-name>.internal:8082`) or accessed via `fly proxy 8082:8082 -a <app-name>`.
 
 ### 1. Create a Namespace
-Provisions a new isolated database namespace.
+Provisions a new isolated database namespace. You can pass a `jwt_key` (Ed25519 public key in PEM format) to immediately lock down and cryptographically secure the tenant's database:
 
 ```bash
 POST /v1/namespaces/{namespace}/create
 Content-Type: application/json
 
-{}
+{
+  "jwt_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA...-----END PUBLIC KEY-----\n"
+}
 ```
 
-**Optional Request Body:**
+**Optional Request Body Fields:**
 ```json
 {
+  "jwt_key": "-----BEGIN PUBLIC KEY-----\n...",
   "dump_url": "https://storage.example.com/seeds/schema.sql"
 }
 ```
@@ -185,14 +188,48 @@ GET /metrics
 
 ---
 
-## 5. Querying the Database (Data API)
+## 5. Tenant Authentication & Token Generation (Ed25519 / JWT)
+
+libSQL supports stateless cryptographic token authentication using **Ed25519 (EdDSA)** keypairs:
+1. **Public Key on Server**: Stored in the namespace configuration (`jwt_key`).
+2. **Private Key with Platform/User**: Used to mint signed JWTs.
+3. **Cryptographic Isolation**: A token generated for `tenant-a` is cryptographically rejected by `tenant-b` (HTTP `401 Unauthorized`).
+4. **Token Claims**:
+   - `a`: Permissions (`"rw"` for Read/Write, `"ro"` for Read-Only).
+   - `ns`: Target namespace (e.g. `"test_user"`).
+   - `iat`: Timestamp issued at.
+   - `exp`: (Optional) Expiration timestamp.
+
+### Quick Management CLI (`manage.js`)
+
+A zero-dependency CLI tool is included in `databases/manage.js`:
+
+```bash
+# 1. Create a tenant database namespace, generate keys, mint tokens, and verify connection:
+node databases/manage.js create <namespace>
+
+# 2. Mint additional JWT tokens (e.g. read-only or with TTL expiration):
+node databases/manage.js token <namespace> --ro
+node databases/manage.js token <namespace> --exp 3600
+
+# 3. Test arbitrary SQL query against the tenant database:
+node databases/manage.js test <namespace>
+
+# 4. View real-time query latency and storage stats:
+node databases/manage.js stats <namespace>
+```
+
+---
+
+## 6. Querying the Database (Data API)
 
 ### 1. Direct HTTP Pipeline (`POST /v2/pipeline`)
 
-Send batch SQL statements in a single round-trip:
+Send batch SQL statements in a single round-trip with the bearer auth token:
 
 ```bash
-curl -X POST https://libsql-database-service.fly.dev/v2/pipeline \
+curl -X POST http://localhost:8080/v2/pipeline \
+  -H "Authorization: Bearer <JWT_AUTH_TOKEN>" \
   -H "x-namespace: tenant1" \
   -H "Content-Type: application/json" \
   -d '{
@@ -235,12 +272,13 @@ import { createClient } from "@libsql/client";
 // Option A: Using subdomain routing
 const client = createClient({
   url: "https://tenant1.db.yourplatform.com",
-  // authToken: process.env.TENANT_JWT_TOKEN // if namespace auth is enabled
+  authToken: process.env.TENANT_JWT_TOKEN,
 });
 
 // Option B: Using x-namespace header
 const tenantClient = createClient({
   url: "https://libsql-database-service.fly.dev",
+  authToken: process.env.TENANT_JWT_TOKEN,
   headers: {
     "x-namespace": "tenant1",
   },
@@ -266,41 +304,312 @@ async function main() {
 main();
 ```
 
-### 3. Drizzle ORM Integration
+### 3. Drizzle ORM (Node.js / TypeScript)
+
+[Drizzle ORM](https://orm.drizzle.team) has first-class native support for libSQL:
+
+```bash
+npm install drizzle-orm @libsql/client
+```
 
 ```typescript
-import { drizzle } from "drizzle-orm/libsql";
-import { createClient } from "@libsql/client";
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { eq } from 'drizzle-orm';
 
+// Connect using subdomain or localhost routing with authToken
 const client = createClient({
-  url: "https://libsql-database-service.fly.dev",
-  headers: {
-    "x-namespace": "tenant1",
-  },
+  url: process.env.DB_URL || 'http://test_user.localhost:8080',
+  authToken: process.env.DB_TOKEN,
+});
+
+export const users = sqliteTable('drizzle_users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  role: text('role').notNull().default('user'),
+  createdAt: text('created_at').notNull(),
 });
 
 export const db = drizzle(client);
+
+// Query example
+const results = await db.select().from(users).where(eq(users.role, 'developer'));
 ```
 
-### 4. Python SDK (`libsql-client`)
+*(See complete working executable example in [`databases/examples/nodejs/test_drizzle.mjs`](file:///workspaces/cloud/databases/examples/nodejs/test_drizzle.mjs)).*
+
+---
+
+### 4. Kysely Type-Safe Query Builder (Node.js / TypeScript)
+
+[Kysely](https://kysely.dev) works seamlessly via `@libsql/kysely-libsql`:
+
+```bash
+npm install kysely @libsql/kysely-libsql
+```
+
+```typescript
+import { Kysely } from 'kysely';
+import { LibsqlDialect } from '@libsql/kysely-libsql';
+
+interface Database {
+  posts: {
+    id: number;
+    title: string;
+    content: string;
+    views: number;
+  };
+}
+
+export const db = new Kysely<Database>({
+  dialect: new LibsqlDialect({
+    url: process.env.DB_URL || 'http://test_user.localhost:8080',
+    authToken: process.env.DB_TOKEN,
+  }),
+});
+
+// Type-safe queries
+const inserted = await db
+  .insertInto('posts')
+  .values({ title: 'Hello libSQL', content: 'Multi-tenant SQLite is fast', views: 0 })
+  .returningAll()
+  .executeTakeFirst();
+```
+
+*(See complete working executable example in [`databases/examples/nodejs/test_kysely.mjs`](file:///workspaces/cloud/databases/examples/nodejs/test_kysely.mjs)).*
+
+---
+
+### 5. Prisma ORM (Node.js / TypeScript)
+
+Prisma connects to multi-tenant libSQL databases using the official `@prisma/adapter-libsql`:
+
+```bash
+npm install @prisma/client @prisma/adapter-libsql @libsql/client
+npm install prisma --save-dev
+```
+
+In `prisma/schema.prisma`:
+```prisma
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+```
+
+In application code:
+```typescript
+import { createClient } from '@libsql/client';
+import { PrismaLibSQL } from '@prisma/adapter-libsql';
+import { PrismaClient } from '@prisma/client';
+
+const libsql = createClient({
+  url: process.env.DB_URL || 'http://test_user.localhost:8080',
+  authToken: process.env.DB_TOKEN,
+});
+
+const adapter = new PrismaLibSQL(libsql);
+export const prisma = new PrismaClient({ adapter });
+```
+
+---
+
+### 6. Python SDK (`libsql-client`)
+
+Turso provides the official pure-Python, zero-native-compilation client `libsql-client` with both synchronous and asynchronous support:
 
 ```bash
 pip install libsql-client
 ```
 
 ```python
+import os
 import libsql_client
 
 client = libsql_client.create_client_sync(
-    url="https://libsql-database-service.fly.dev",
-    headers={"x-namespace": "tenant1"}
+    url=os.environ.get("DB_URL", "http://test_user.localhost:8080"),
+    auth_token=os.environ.get("DB_TOKEN"),
 )
 
-client.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, content TEXT);")
-client.execute("INSERT INTO notes (content) VALUES ('Meeting notes');")
-rows = client.execute("SELECT * FROM notes;")
-print(rows)
+# Prepared statement execution with parameter binding
+client.execute(
+    "INSERT INTO items (title, quantity) VALUES (?, ?);",
+    ["SSD Drive", 25]
+)
+
+res = client.execute("SELECT id, title, quantity FROM items WHERE quantity > ?;", [10])
+for row in res.rows:
+    print(dict(zip(res.columns, row)))
+
+client.close()
 ```
+
+*(See complete working executable example in [`databases/examples/python/test_libsql_client.py`](file:///workspaces/cloud/databases/examples/python/test_libsql_client.py)).*
+
+---
+
+### 7. Python SQLAlchemy ORM Integration
+
+SQLAlchemy Core and ORM models can generate and compile standard SQLite statements executed over the `libsql-client` HTTP/WebSocket connection:
+
+```bash
+pip install sqlalchemy libsql-client
+```
+
+```python
+import os
+import libsql_client
+from sqlalchemy import MetaData, Table, Column, Integer, String, select, insert
+from sqlalchemy.dialects import sqlite
+
+metadata = MetaData()
+products = Table(
+    "products",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("price", Integer, nullable=False),
+)
+
+client = libsql_client.create_client_sync(
+    url=os.environ.get("DB_URL", "http://test_user.localhost:8080"),
+    auth_token=os.environ.get("DB_TOKEN"),
+)
+
+# Compile SQLAlchemy query for SQLite dialect
+stmt = insert(products).values(name="Gaming Mouse", price=60)
+compiled = stmt.compile(dialect=sqlite.dialect())
+
+# Execute via libSQL client
+client.execute(str(compiled), list(compiled.params.values()))
+```
+
+*(See complete working executable example in [`databases/examples/python/test_sqlalchemy.py`](file:///workspaces/cloud/databases/examples/python/test_sqlalchemy.py)).*
+
+---
+
+### 8. Go Standard Library (`database/sql`)
+
+Using the official Turso Go driver [`github.com/tursodatabase/libsql-client-go/libsql`](https://github.com/tursodatabase/libsql-client-go):
+
+```bash
+go get github.com/tursodatabase/libsql-client-go/libsql
+```
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    _ "github.com/tursodatabase/libsql-client-go/libsql"
+)
+
+func main() {
+    dbURL := "http://test_user.localhost:8080?authToken=" + os.Getenv("DB_TOKEN")
+    db, err := sql.Open("libsql", dbURL)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+
+    res, err := db.Exec("INSERT INTO services (name, status) VALUES (?, ?)", "auth-service", "running")
+    id, _ := res.LastInsertId()
+    fmt.Printf("Inserted ID: %d\n", id)
+}
+```
+
+*(See complete working executable example in [`databases/examples/go/main.go`](file:///workspaces/cloud/databases/examples/go/main.go)).*
+
+---
+
+### 9. Go GORM ORM Integration
+
+[GORM](https://gorm.io) integrates with libSQL by combining `database/sql` with the pure-Go SQLite dialector:
+
+```bash
+go get gorm.io/gorm
+go get github.com/glebarez/sqlite
+go get github.com/tursodatabase/libsql-client-go/libsql
+```
+
+```go
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "log"
+    "os"
+    "time"
+
+    "github.com/glebarez/sqlite"
+    _ "github.com/tursodatabase/libsql-client-go/libsql"
+    "gorm.io/gorm"
+)
+
+type Deployment struct {
+    ID        uint   `gorm:"primaryKey"`
+    AppName   string `gorm:"not null"`
+    Region    string `gorm:"not null"`
+    Status    string `gorm:"not null"`
+    CreatedAt time.Time
+}
+
+func main() {
+    dbURL := "http://test_user.localhost:8080?authToken=" + os.Getenv("DB_TOKEN")
+    sqlDB, err := sql.Open("libsql", dbURL)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer sqlDB.Close()
+
+    db, err := gorm.Open(&sqlite.Dialector{Conn: sqlDB}, &gorm.Config{})
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Auto-migrate schema
+    db.AutoMigrate(&Deployment{})
+
+    // Create record
+    dep := Deployment{AppName: "api-gateway", Region: "iad", Status: "active"}
+    db.Create(&dep)
+
+    // Query record
+    var found Deployment
+    db.First(&found, dep.ID)
+    fmt.Println("GORM Found:", found.AppName, found.Status)
+}
+```
+
+*(See complete working executable example in [`databases/examples/go/test_gorm.go`](file:///workspaces/cloud/databases/examples/go/test_gorm.go)).*
+
+---
+
+### 10. Automated Multi-Language Verification Suite
+
+You can execute the entire multi-language ORM test suite against any tenant database in a single command:
+
+```bash
+# Test against the default test_user
+./databases/test_all_orms.sh test_user
+```
+
+This automated runner:
+1. Mints a fresh Ed25519 JWT token for the namespace.
+2. Runs Node.js **Drizzle ORM** & **Kysely**.
+3. Runs Python **libsql-client** & **SQLAlchemy**.
+4. Runs Go **database/sql** & **GORM**.
+5. Verifies schema creation, data insertion, prepared parameter binding, selection, and updates across all languages.
 
 ---
 
