@@ -35,6 +35,7 @@ Built on **Next.js (Vinext on Cloudflare Workers)**, **Better Auth**, **Drizzle 
   - Automatically plans and compiles zero-config repositories using **Railpack**.
   - Falls back gracefully to Railpack if a repository's Dockerfile fails (e.g. CI-only Dockerfiles).
 - **Dynamic Port Detection**: Sniffs `/proc/net/tcp` and `/proc/net/tcp6` in deployed containers to verify listening ports bind to `0.0.0.0` (not loopback `127.0.0.1`) and automatically routes public HTTP (80) and HTTPS (443) traffic.
+- **Multi-Tenant Database Service**: Managed multi-tenant libSQL (`sqld`) service providing instant, sub-millisecond per-tenant SQLite database isolation, copy-on-write branching, and stateless Ed25519 cryptographic token authentication.
 - **Real-Time Build Streaming**: Streams live build and deployment logs from the builder to the user dashboard using Server-Sent Events (SSE) with heartbeat and cursor resumption.
 - **Edge Deployment**: Provisions user applications onto Fly.io Machines with automated free Anycast shared IPv4 routing (`https://<app>.fly.dev`).
 
@@ -81,7 +82,8 @@ graph TD
 | **Styling & UI** | Tailwind CSS v4, Radix UI primitives, shadcn/ui, Lucide icons |
 | **Client State & Cache** | TanStack Query v5, Zustand v5 |
 | **Authentication** | [Better Auth](https://www.better-auth.com/) with email/password and session management |
-| **Database & ORM** | Neon Serverless PostgreSQL with Drizzle ORM (`drizzle-orm/neon-http`, `drizzle-kit`) |
+| **Control Plane Database** | Neon Serverless PostgreSQL with Drizzle ORM (`drizzle-orm/neon-http`, `drizzle-kit`) |
+| **Tenant Database Service** | libSQL Server (`sqld` in namespace mode) on Fly.io with encrypted persistent volume |
 | **Queues & Rate Limiting** | Cloudflare Queues (`build-jobs`, `auth-jobs`), Upstash Redis |
 | **Project Discovery** | `@vercel/frameworks`, `@vercel/fs-detectors`, custom deterministic polyglot scanners |
 | **Image Builder** | Node 22, BuildKit v0.17+, Railpack v0.43+, FUSE overlayfs, Fly.io Machine |
@@ -105,6 +107,11 @@ graph TD
 │   ├── deployments/              # Deployment detail, log terminal viewer
 │   ├── shell/                    # Dashboard layout, sidebar, app bar
 │   └── ui/                       # shadcn/ui design primitives
+├── databases/                    # Multi-tenant libSQL (sqld) database service
+│   ├── fly.toml                  # Dual-port Fly.io manifest (Data 443, Admin 8443)
+│   ├── manage.js                 # Zero-dependency tenant lifecycle & token CLI
+│   ├── docker-compose.yml        # Local multi-tenant development environment
+│   └── examples/                 # Polyglot ORM examples (Node, Drizzle, Kysely, Python, Go)
 ├── drizzle/                      # Database migration SQL files
 │   ├── 0000_luxuriant_toad.sql
 │   ├── 0001_add_applications_and_machines.sql
@@ -353,6 +360,7 @@ Test coverage includes:
 | [`architecture.md`](./architecture.md) | In-depth system architecture, reliability models, and runtime boundaries |
 | [`builds.md`](./builds.md) | Build pipeline specifications, Railpack plan rewriting, and BuildKit daemon tuning |
 | [`db.md`](./db.md) | Database schema documentation, table relationships, and index design |
+| [`databases/README.md`](./databases/README.md) | Multi-tenant libSQL service, Admin API (port 8443), and Ed25519 token authentication |
 | [`todo.md`](./todo.md) | Engineering roadmap, MVP milestones, and operational checklist |
 
 ---

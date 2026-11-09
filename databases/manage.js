@@ -25,6 +25,26 @@ const DATA_URL = process.env.SQLD_DATA_URL || 'http://127.0.0.1:8080';
 const BASE_DOMAIN = process.env.SQLD_BASE_DOMAIN || 'db.yourplatform.com';
 const KEYS_DIR = path.join(__dirname, 'keys');
 
+// Load Admin Auth Key from env or file if available
+function getAdminAuthKey() {
+  if (process.env.LIBSQL_ADMIN_AUTH_KEY) return process.env.LIBSQL_ADMIN_AUTH_KEY.trim();
+  if (process.env.SQLD_ADMIN_AUTH_KEY) return process.env.SQLD_ADMIN_AUTH_KEY.trim();
+  const keyFile = path.join(KEYS_DIR, 'admin_auth_key.txt');
+  if (fs.existsSync(keyFile)) {
+    return fs.readFileSync(keyFile, 'utf8').trim();
+  }
+  return null;
+}
+
+function getAdminHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  const adminKey = getAdminAuthKey();
+  if (adminKey) {
+    headers['Authorization'] = `Basic ${adminKey}`;
+  }
+  return headers;
+}
+
 // Ensure keys directory exists with appropriate gitignore
 if (!fs.existsSync(KEYS_DIR)) {
   fs.mkdirSync(KEYS_DIR, { recursive: true });
@@ -103,7 +123,7 @@ export async function createDatabase(namespace, options = {}) {
   console.log(`[2/4] Registering namespace with sqld Admin API (${ADMIN_URL})...`);
   const createRes = await fetch(`${ADMIN_URL}/v1/namespaces/${namespace}/create`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAdminHeaders(),
     body: JSON.stringify({
       jwt_key: keys.publicKey
     })
@@ -116,7 +136,7 @@ export async function createDatabase(namespace, options = {}) {
       console.log(`      Namespace "${namespace}" already exists, updating jwt_key...`);
       const cfgRes = await fetch(`${ADMIN_URL}/v1/namespaces/${namespace}/config`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminHeaders(),
         body: JSON.stringify({
           jwt_key: keys.publicKey,
           block_reads: false,
@@ -214,7 +234,9 @@ export async function executeQuery(namespace, token, sql) {
  * Fetch stats for a namespace
  */
 export async function getStats(namespace) {
-  const res = await fetch(`${ADMIN_URL}/v1/namespaces/${namespace}/stats`);
+  const res = await fetch(`${ADMIN_URL}/v1/namespaces/${namespace}/stats`, {
+    headers: getAdminHeaders()
+  });
   if (!res.ok) {
     throw new Error(`Failed to fetch stats: ${await res.text()} (HTTP ${res.status})`);
   }

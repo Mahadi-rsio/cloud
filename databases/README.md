@@ -1,6 +1,6 @@
 # libSQL (`sqld`) Multi-Tenant SQLite Database Service
 
-This directory contains the production Fly.io deployment configuration (`fly.toml`), local development environment (`docker-compose.yml`), and complete architectural documentation for self-hosting **libSQL Server (`sqld`)** in **Multi-Tenant Namespace Mode**.
+This directory contains the production Fly.io deployment configuration ([`fly.toml`](file:///workspaces/cloud/databases/fly.toml)), local development environment ([`docker-compose.yml`](file:///workspaces/cloud/databases/docker-compose.yml)), management CLI ([`manage.js`](file:///workspaces/cloud/databases/manage.js)), and complete architectural documentation for self-hosting **libSQL Server (`sqld`)** in **Multi-Tenant Namespace Mode**.
 
 ---
 
@@ -15,63 +15,70 @@ Traditional multi-tenancy models usually either:
 2. **Spin up dedicated containerized databases per tenant (e.g. Postgres)**: Expensive idle resources, slow provisioning (minutes), high memory footprint per tenant.
 
 **libSQL Namespaces solve this:**
-- **Per-Tenant SQLite Isolation**: Every tenant gets an independent SQLite database file (`.db`), WAL log, schema, and quota.
+- **Per-Tenant SQLite Isolation**: Every tenant gets an independent SQLite database file (`data.db`), WAL log, schema, and quota.
 - **Sub-Millisecond Cold Starts**: Databases are opened on demand from disk and automatically paged out of memory when idle.
 - **Zero Idle Overhead**: Thousands of inactive tenant databases consume only disk storage; idle tenants consume 0 CPU and 0 RAM.
-- **Instant Provisioning & Branching**: Creating or forking a database namespace happens in under 5 milliseconds via an HTTP API.
+- **Single Machine, Instant Provisioning**: Creating, branching, or deleting a database namespace happens in **< 10ms** via the Admin API without spinning up additional Fly machines or containers.
 
 ```
-                      ┌────────────────────────────────────────┐
-                      │          Fly.io Edge Network           │
-                      └──────────────────┬─────────────────────┘
-                                         │ HTTPS (Port 443)
-                                         ▼
-                      ┌────────────────────────────────────────┐
-                      │    libSQL Server (`sqld` on Fly)       │
-                      │                                        │
-                      │  Port 8080: User HTTP / Hrana Protocol │
-                      │  Port 8082: Admin Management API       │
-                      └──────────────────┬─────────────────────┘
-                                         │
-                    ┌────────────────────┴────────────────────┐
-                    ▼                                         ▼
-           Tenant Routing:                           Persistent Fly Volume
-           - Subdomain: `tenant-a.db.domain.com`     `/var/lib/sqld/data.sqld`
-           - Header: `x-namespace: tenant-a`         ├── dbs/
-                                                     │   ├── default/
-                                                     │   ├── tenant-a/ (data.db, wal)
-                                                     │   └── tenant-b/ (data.db, wal)
-                                                     └── metastore/
+                      ┌────────────────────────────────────────────────────────┐
+                      │                  Fly.io Edge Network                   │
+                      └──────────────┬──────────────────────────┬──────────────┘
+                                     │                          │
+                    HTTPS (Port 443) │         TLS (Port 8443)  │ Protected by
+                   Public Data Plane │         Admin API Plane  │ LIBSQL_ADMIN_AUTH_KEY
+                                     ▼                          ▼
+                      ┌────────────────────────────────────────────────────────┐
+                      │         libSQL Server (`sqld` on Fly Machine)          │
+                      │                                                        │
+                      │   Port 8080 (Internal): User HTTP & Hrana Data API     │
+                      │   Port 8082 (Internal): Admin Namespace Management API │
+                      └──────────────────────────┬─────────────────────────────┘
+                                                 │
+                   ┌─────────────────────────────┴─────────────────────────────┐
+                   ▼                                                           ▼
+         Tenant Namespace Routing:                                    Persistent Fly Volume
+         - Subdomain: `tenant-a.db.domain.com`                        `/var/lib/sqld/data.sqld`
+         - Header: `x-namespace: tenant-a`                            ├── dbs/
+                                                                      │   ├── default/
+                                                                      │   ├── tenant-a/ (data.db, wallog)
+                                                                      │   └── tenant-b/ (data.db, wallog)
+                                                                      └── metastore/
 ```
 
 ---
 
 ## 2. Server Configuration & Ports
 
-| Port | Service | Access Policy | Description |
-|---|---|---|---|
-| **`8080`** | **User HTTP / Hrana** | Public (via Fly Proxy HTTPS) | Query execution (`/v2/pipeline`), WebSocket streams (`/v1`), health checks (`/health`), and version (`/version`). |
-| **`8082`** | **Admin API** | Private (Fly 6PN / WireGuard) | Namespace lifecycle management (create, fork, delete, configure, stats). Protected from public internet exposure. |
-| **`5001`** | **gRPC Replication** | Private (Internal only) | Replication protocol for primary-replica multi-region deployments. |
+| External Port | Internal Port | Protocol | Access Policy | Description |
+|---|---|---|---|---|
+| **`443`** (HTTP `80` &rarr; `443`) | **`8080`** | HTTP / Hrana / WS | **Public** (Edge TLS) | Query execution (`/v2/pipeline`), WebSocket streams (`/v1`), health checks (`/health`), and version (`/version`). Scoped by tenant JWT token. |
+| **`8443`** | **`8082`** | HTTP (over TLS) | **Protected Admin API** | Secure external Admin API for external Next.js apps and platform control planes. Protected by `LIBSQL_ADMIN_AUTH_KEY`. |
+| *Internal* | **`8082`** | HTTP | **Private 6PN Mesh** | Internal Admin API accessible within Fly private network at `http://libsql-database-service.internal:8082`. |
+| *Internal* | **`5001`** | gRPC | **Private 6PN Mesh** | Internal replication protocol for primary-replica multi-region deployments. |
 
 ### Storage Layout
 
-When `--enable-namespaces` is enabled, all databases are managed under `--db-path /var/lib/sqld/data.sqld`:
+When `--enable-namespaces` is active, all databases are managed under `--db-path /var/lib/sqld/data.sqld`:
 - `/var/lib/sqld/data.sqld/dbs/<namespace>/data.db` &mdash; SQLite database file for `<namespace>`.
 - `/var/lib/sqld/data.sqld/dbs/<namespace>/wallog` &mdash; Write-Ahead Log replication entries.
 - `/var/lib/sqld/data.sqld/metastore` &mdash; Namespace registry, schema configurations, and metadata.
+
+> [!IMPORTANT]
+> The storage volume (`sqld_data`) is attached directly to the Fly Machine. Namespaces are stored as independent SQLite database files on this mounted volume. Creating a new namespace **does not** create a new Fly Machine.
 
 ---
 
 ## 3. Tenant Namespace Routing
 
-When client queries arrive on port `8080`, `sqld` determines the target database using the following resolution priority:
+When client queries arrive on port `443` (internal `8080`), `sqld` determines the target database using the following resolution priority:
 
 ### Method A: HTTP Header Routing (`x-namespace`)
 
 Clients pass the target tenant name directly in the request header:
 ```bash
-curl -X POST http://localhost:8080/v2/pipeline \
+curl -X POST https://libsql-database-service.fly.dev/v2/pipeline \
+  -H "Authorization: Bearer <TENANT_JWT_TOKEN>" \
   -H "x-namespace: customer_42" \
   -H "Content-Type: application/json" \
   -d '{"requests": [{"type": "execute", "stmt": {"sql": "SELECT 1;"}}]}'
@@ -87,15 +94,53 @@ The first label of the incoming `Host` header automatically resolves to the name
 
 ---
 
-## 4. Complete Admin API Reference
+## 4. Admin API Reference (Port 8443)
 
-The Admin API runs on port `8082`. On Fly.io, it is bound to Fly's private 6PN mesh network (`<app-name>.internal:8082`) or accessed via `fly proxy 8082:8082 -a <app-name>`.
+The Admin API runs on external port **`8443`** with TLS (or internal port `8082` over 6PN). All requests to the Admin API require authentication via the `LIBSQL_ADMIN_AUTH_KEY`.
 
-### 1. Create a Namespace
-Provisions a new isolated database namespace. You can pass a `jwt_key` (Ed25519 public key in PEM format) to immediately lock down and cryptographically secure the tenant's database:
+### Authentication Scheme
+
+`sqld` requires the admin authentication key to be passed using HTTP Basic authentication format:
 
 ```bash
-POST /v1/namespaces/{namespace}/create
+# Production Admin Endpoint with Basic Auth:
+curl -H "Authorization: Basic <LIBSQL_ADMIN_AUTH_KEY>" \
+  https://libsql-database-service.fly.dev:8443/v1/namespaces
+```
+
+Unauthenticated requests or requests with an invalid key return `401 Unauthorized`.
+
+---
+
+### 1. List All Namespaces
+
+Fetches an array of all active database namespaces:
+
+```bash
+GET https://libsql-database-service.fly.dev:8443/v1/namespaces
+Authorization: Basic <LIBSQL_ADMIN_AUTH_KEY>
+```
+
+**Example Response:**
+```json
+{
+  "namespaces": [
+    "default",
+    "test_user",
+    "testtenant"
+  ]
+}
+```
+
+---
+
+### 2. Create a Namespace
+
+Provisions a new isolated database namespace in `< 10ms`. Pass a `jwt_key` (Ed25519 public key in PEM format) to cryptographically lock down and secure the tenant's database:
+
+```bash
+POST https://libsql-database-service.fly.dev:8443/v1/namespaces/{namespace}/create
+Authorization: Basic <LIBSQL_ADMIN_AUTH_KEY>
 Content-Type: application/json
 
 {
@@ -112,43 +157,59 @@ Content-Type: application/json
 ```
 *Response: `200 OK` (Empty body)*
 
-### 2. Fork a Namespace
+---
+
+### 3. Fork a Namespace (Branching)
+
 Instantly clones an existing namespace into a new target namespace (copy-on-write branching):
 
 ```bash
-POST /v1/namespaces/{source_namespace}/fork/{target_namespace}
+POST https://libsql-database-service.fly.dev:8443/v1/namespaces/{source_namespace}/fork/{target_namespace}
+Authorization: Basic <LIBSQL_ADMIN_AUTH_KEY>
 Content-Type: application/json
 
 {}
 ```
 *Response: `200 OK` (Empty body)*
 
-### 3. Delete a Namespace
+---
+
+### 4. Delete a Namespace
+
 Permanently deletes a namespace and removes its SQLite database files from disk:
 
 ```bash
-DELETE /v1/namespaces/{namespace}
+DELETE https://libsql-database-service.fly.dev:8443/v1/namespaces/{namespace}
+Authorization: Basic <LIBSQL_ADMIN_AUTH_KEY>
 ```
 *Response: `200 OK` (Empty body)*
 
-### 4. Inspect Namespace Status
-Fetches metadata and configuration for a given namespace:
+---
+
+### 5. Inspect Namespace Status & Config
+
+Fetches configuration and metadata for a given namespace:
 
 ```bash
-GET /v1/namespaces/{namespace}
+GET https://libsql-database-service.fly.dev:8443/v1/namespaces/{namespace}
+Authorization: Basic <LIBSQL_ADMIN_AUTH_KEY>
 ```
 
-### 5. Fetch Performance & Query Statistics
+---
+
+### 6. Fetch Performance & Query Statistics
+
 Returns real-time execution statistics, storage usage, top queries, and latency percentiles (p50, p75, p90, p95, p99):
 
 ```bash
-GET /v1/namespaces/{namespace}/stats
+GET https://libsql-database-service.fly.dev:8443/v1/namespaces/{namespace}/stats
+Authorization: Basic <LIBSQL_ADMIN_AUTH_KEY>
 ```
 
 **Example Response:**
 ```json
 {
-  "id": "0e850351-d2a3-41ec-8a61-502c580f7270",
+  "id": "353bb70f-9795-4622-9f44-258b6ebc6eb2",
   "rows_read_count": 420,
   "rows_written_count": 18,
   "storage_bytes_used": 40960,
@@ -172,18 +233,15 @@ GET /v1/namespaces/{namespace}/stats
 }
 ```
 
-### 6. Force WAL Checkpoint
+---
+
+### 7. Force WAL Checkpoint
+
 Flushes all WAL frame logs into the primary SQLite database file:
 
 ```bash
-POST /v1/namespaces/{namespace}/checkpoint
-```
-
-### 7. Prometheus Metrics
-Exposes Prometheus-compatible metric gauges and counters for server monitoring:
-
-```bash
-GET /metrics
+POST https://libsql-database-service.fly.dev:8443/v1/namespaces/{namespace}/checkpoint
+Authorization: Basic <LIBSQL_ADMIN_AUTH_KEY>
 ```
 
 ---
@@ -191,565 +249,346 @@ GET /metrics
 ## 5. Tenant Authentication & Token Generation (Ed25519 / JWT)
 
 libSQL supports stateless cryptographic token authentication using **Ed25519 (EdDSA)** keypairs:
-1. **Public Key on Server**: Stored in the namespace configuration (`jwt_key`).
-2. **Private Key with Platform/User**: Used to mint signed JWTs.
-3. **Cryptographic Isolation**: A token generated for `tenant-a` is cryptographically rejected by `tenant-b` (HTTP `401 Unauthorized`).
-4. **Token Claims**:
-   - `a`: Permissions (`"rw"` for Read/Write, `"ro"` for Read-Only).
-   - `ns`: Target namespace (e.g. `"test_user"`).
-   - `iat`: Timestamp issued at.
-   - `exp`: (Optional) Expiration timestamp.
+1. **Public Key on Server**: Registered once in `sqld` namespace config via the Admin API (`jwt_key`).
+2. **Private Key with Platform**: Kept secret by your platform or Next.js control plane.
+3. **Local Token Minting**: Next.js mints scoped JWT tokens in microseconds (`< 0.1ms`) without making network calls to `sqld`.
+4. **Cryptographic Isolation**: A token generated for `tenant-a` is cryptographically rejected by `tenant-b` (HTTP `401 Unauthorized`).
 
-### Quick Management CLI (`manage.js`)
+### Token Structure
+- **Header**: `{"alg": "EdDSA", "typ": "JWT"}`
+- **Payload**:
+  - `ns`: Target namespace (e.g. `"tenant_123"`).
+  - `a`: Permissions (`"rw"` for Read/Write, `"ro"` for Read-Only).
+  - `iat`: Timestamp issued at.
+  - `exp`: (Optional) Expiration timestamp.
 
-A zero-dependency CLI tool is included in `databases/manage.js`:
+### Quick Management CLI ([`manage.js`](file:///workspaces/cloud/databases/manage.js))
+
+The management CLI automatically picks up `LIBSQL_ADMIN_AUTH_KEY` from the environment or [`databases/keys/admin_auth_key.txt`](file:///workspaces/cloud/databases/keys/admin_auth_key.txt):
 
 ```bash
-# 1. Create a tenant database namespace, generate keys, mint tokens, and verify connection:
-node databases/manage.js create <namespace>
+# Create and secure a tenant namespace against local or remote Fly instance:
+SQLD_ADMIN_URL=https://libsql-database-service.fly.dev:8443 \
+SQLD_DATA_URL=https://libsql-database-service.fly.dev \
+node databases/manage.js create customer_abc
 
-# 2. Mint additional JWT tokens (e.g. read-only or with TTL expiration):
-node databases/manage.js token <namespace> --ro
-node databases/manage.js token <namespace> --exp 3600
+# Mint a fresh JWT token for a namespace:
+node databases/manage.js token customer_abc --ro
+node databases/manage.js token customer_abc --exp 3600
 
-# 3. Test arbitrary SQL query against the tenant database:
-node databases/manage.js test <namespace>
+# Run a test query:
+node databases/manage.js test customer_abc
 
-# 4. View real-time query latency and storage stats:
-node databases/manage.js stats <namespace>
+# Inspect real-time query latency and storage stats:
+SQLD_ADMIN_URL=https://libsql-database-service.fly.dev:8443 \
+node databases/manage.js stats customer_abc
 ```
 
 ---
 
-## 6. Querying the Database (Data API)
+## 6. External Next.js App Integration
 
-### 1. Direct HTTP Pipeline (`POST /v2/pipeline`)
+Here is the production integration module for provisioning tenant databases and minting tokens from your Next.js application or platform control plane:
 
-Send batch SQL statements in a single round-trip with the bearer auth token:
+### 1. Database Provisioning Service (`lib/tenant-db.ts`)
 
-```bash
-curl -X POST http://localhost:8080/v2/pipeline \
-  -H "Authorization: Bearer <JWT_AUTH_TOKEN>" \
-  -H "x-namespace: tenant1" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "requests": [
-      {
-        "type": "execute",
-        "stmt": {
-          "sql": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT);"
-        }
-      },
-      {
-        "type": "execute",
-        "stmt": {
-          "sql": "INSERT INTO users (name, email) VALUES (?, ?);",
-          "args": [{"type": "text", "value": "Alice"}, {"type": "text", "value": "alice@example.com"}]
-        }
-      },
-      {
-        "type": "execute",
-        "stmt": {
-          "sql": "SELECT id, name, email FROM users;"
-        }
-      }
-    ]
-  }'
+```typescript
+import crypto from "node:crypto";
+
+const ADMIN_URL = process.env.LIBSQL_ADMIN_URL || "https://libsql-database-service.fly.dev:8443";
+const DATA_URL = process.env.LIBSQL_DATA_URL || "https://libsql-database-service.fly.dev";
+const ADMIN_AUTH_KEY = process.env.LIBSQL_ADMIN_AUTH_KEY!;
+
+function base64url(input: string | Buffer): string {
+  return Buffer.from(input).toString("base64url");
+}
+
+export interface TenantKeypair {
+  publicKey: string;
+  privateKey: string;
+}
+
+export interface TenantDatabaseCredentials {
+  namespace: string;
+  databaseUrl: string;
+  authToken: string;
+  readOnlyToken: string;
+}
+
+/**
+ * Generates an Ed25519 keypair for securing a tenant database.
+ */
+export function generateTenantKeypair(): TenantKeypair {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  return {
+    publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    privateKey: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+  };
+}
+
+/**
+ * Mints an Ed25519 JWT token locally without any network calls (< 0.1ms).
+ */
+export function mintTenantToken(
+  namespace: string,
+  privateKeyPem: string,
+  options: { scope?: "rw" | "ro"; expiresInSeconds?: number } = {}
+): string {
+  const header = { alg: "EdDSA", typ: "JWT" };
+  const now = Math.floor(Date.now() / 1000);
+  const payload: Record<string, unknown> = {
+    a: options.scope || "rw",
+    ns: namespace,
+    iat: now,
+  };
+  if (options.expiresInSeconds) {
+    payload.exp = now + options.expiresInSeconds;
+  }
+
+  const message = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(payload))}`;
+  const signature = crypto.sign(null, Buffer.from(message), privateKeyPem).toString("base64url");
+  return `${message}.${signature}`;
+}
+
+/**
+ * Provisions a new tenant database namespace on Fly.io via the Admin API.
+ */
+export async function createTenantDatabase(
+  namespace: string,
+  publicKeyPem: string
+): Promise<void> {
+  const res = await fetch(`${ADMIN_URL}/v1/namespaces/${namespace}/create`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Basic ${ADMIN_AUTH_KEY}`,
+    },
+    body: JSON.stringify({ jwt_key: publicKeyPem }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to create tenant database (${res.status}): ${errorText}`);
+  }
+}
+
+/**
+ * Clones/branches a database instantly (e.g. for preview environments).
+ */
+export async function forkTenantDatabase(source: string, target: string): Promise<void> {
+  const res = await fetch(`${ADMIN_URL}/v1/namespaces/${source}/fork/${target}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Basic ${ADMIN_AUTH_KEY}`,
+    },
+    body: JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fork database: ${await res.text()}`);
+  }
+}
+
+/**
+ * Deletes a tenant database namespace and frees storage.
+ */
+export async function deleteTenantDatabase(namespace: string): Promise<void> {
+  const res = await fetch(`${ADMIN_URL}/v1/namespaces/${namespace}`, {
+    method: "DELETE",
+    headers: {
+      "Authorization": `Basic ${ADMIN_AUTH_KEY}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to delete database: ${await res.text()}`);
+  }
+}
+
+/**
+ * Fetches query and storage metrics for a tenant database.
+ */
+export async function getTenantStats(namespace: string): Promise<unknown> {
+  const res = await fetch(`${ADMIN_URL}/v1/namespaces/${namespace}/stats`, {
+    headers: {
+      "Authorization": `Basic ${ADMIN_AUTH_KEY}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to get stats: ${await res.text()}`);
+  }
+  return await res.json();
+}
 ```
 
-### 2. TypeScript / Node.js SDK (`@libsql/client`)
+### 2. Next.js API Route Example (`app/api/v1/databases/route.ts`)
 
-Install the official client:
+```typescript
+import { NextResponse } from "next/server";
+import {
+  generateTenantKeypair,
+  createTenantDatabase,
+  mintTenantToken,
+} from "@/lib/tenant-db";
+
+export async function POST(req: Request) {
+  const { tenantId } = await req.json();
+
+  if (!tenantId || !/^[a-zA-Z0-9_-]+$/.test(tenantId)) {
+    return NextResponse.json({ error: "Invalid tenant ID" }, { status: 400 });
+  }
+
+  // 1. Generate Ed25519 keypair
+  const keys = generateTenantKeypair();
+
+  // 2. Call sqld Admin API to provision namespace
+  await createTenantDatabase(tenantId, keys.publicKey);
+
+  // 3. Mint initial Read/Write token
+  const authToken = mintTenantToken(tenantId, keys.privateKey, { scope: "rw" });
+  const readOnlyToken = mintTenantToken(tenantId, keys.privateKey, { scope: "ro" });
+
+  // 4. Store privateKey in your platform database (e.g. Neon PostgreSQL)
+  // await db.insert(tenantDatabases).values({ tenantId, privateKey: keys.privateKey });
+
+  return NextResponse.json({
+    tenantId,
+    databaseUrl: `https://libsql-database-service.fly.dev`,
+    headers: { "x-namespace": tenantId },
+    authToken,
+    readOnlyToken,
+  });
+}
+```
+
+---
+
+## 7. Querying the Database (Data API)
+
+### TypeScript / Node.js SDK (`@libsql/client`)
+
 ```bash
 npm install @libsql/client
 ```
 
-Connect using HTTP/WebSocket with namespace routing:
-
 ```typescript
 import { createClient } from "@libsql/client";
 
-// Option A: Using subdomain routing
 const client = createClient({
-  url: "https://tenant1.db.yourplatform.com",
-  authToken: process.env.TENANT_JWT_TOKEN,
-});
-
-// Option B: Using x-namespace header
-const tenantClient = createClient({
   url: "https://libsql-database-service.fly.dev",
   authToken: process.env.TENANT_JWT_TOKEN,
   headers: {
-    "x-namespace": "tenant1",
+    "x-namespace": "customer_42",
   },
 });
 
 async function main() {
-  await tenantClient.execute(`
-    CREATE TABLE IF NOT EXISTS items (
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE
     );
   `);
 
-  await tenantClient.execute({
-    sql: "INSERT INTO items (title) VALUES (?)",
-    args: ["First Item"],
+  await client.execute({
+    sql: "INSERT INTO users (name, email) VALUES (?, ?)",
+    args: ["Alice", "alice@example.com"],
   });
 
-  const rs = await tenantClient.execute("SELECT * FROM items");
-  console.log("Items:", rs.rows);
+  const res = await client.execute("SELECT * FROM users");
+  console.log("Users:", res.rows);
 }
 
 main();
 ```
 
-### 3. Drizzle ORM (Node.js / TypeScript)
-
-[Drizzle ORM](https://orm.drizzle.team) has first-class native support for libSQL:
-
-```bash
-npm install drizzle-orm @libsql/client
-```
+### Drizzle ORM (Node.js / TypeScript)
 
 ```typescript
-import { drizzle } from 'drizzle-orm/libsql';
-import { createClient } from '@libsql/client';
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
-import { eq } from 'drizzle-orm';
+import { drizzle } from "drizzle-orm/libsql";
+import { createClient } from "@libsql/client";
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 
-// Connect using subdomain or localhost routing with authToken
 const client = createClient({
-  url: process.env.DB_URL || 'http://test_user.localhost:8080',
-  authToken: process.env.DB_TOKEN,
+  url: "https://libsql-database-service.fly.dev",
+  authToken: process.env.TENANT_JWT_TOKEN,
+  headers: { "x-namespace": "customer_42" },
 });
 
-export const users = sqliteTable('drizzle_users', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  email: text('email').notNull().unique(),
-  role: text('role').notNull().default('user'),
-  createdAt: text('created_at').notNull(),
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
 });
 
 export const db = drizzle(client);
-
-// Query example
-const results = await db.select().from(users).where(eq(users.role, 'developer'));
 ```
 
-*(See complete working executable example in [`databases/examples/nodejs/test_drizzle.mjs`](file:///workspaces/cloud/databases/examples/nodejs/test_drizzle.mjs)).*
-
----
-
-### 4. Kysely Type-Safe Query Builder (Node.js / TypeScript)
-
-[Kysely](https://kysely.dev) works seamlessly via `@libsql/kysely-libsql`:
-
-```bash
-npm install kysely @libsql/kysely-libsql
-```
-
-```typescript
-import { Kysely } from 'kysely';
-import { LibsqlDialect } from '@libsql/kysely-libsql';
-
-interface Database {
-  posts: {
-    id: number;
-    title: string;
-    content: string;
-    views: number;
-  };
-}
-
-export const db = new Kysely<Database>({
-  dialect: new LibsqlDialect({
-    url: process.env.DB_URL || 'http://test_user.localhost:8080',
-    authToken: process.env.DB_TOKEN,
-  }),
-});
-
-// Type-safe queries
-const inserted = await db
-  .insertInto('posts')
-  .values({ title: 'Hello libSQL', content: 'Multi-tenant SQLite is fast', views: 0 })
-  .returningAll()
-  .executeTakeFirst();
-```
-
-*(See complete working executable example in [`databases/examples/nodejs/test_kysely.mjs`](file:///workspaces/cloud/databases/examples/nodejs/test_kysely.mjs)).*
-
----
-
-### 5. Prisma ORM (Node.js / TypeScript)
-
-Prisma connects to multi-tenant libSQL databases using the official `@prisma/adapter-libsql`:
-
-```bash
-npm install @prisma/client @prisma/adapter-libsql @libsql/client
-npm install prisma --save-dev
-```
-
-In `prisma/schema.prisma`:
-```prisma
-datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
-}
-
-generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
-}
-```
-
-In application code:
-```typescript
-import { createClient } from '@libsql/client';
-import { PrismaLibSQL } from '@prisma/adapter-libsql';
-import { PrismaClient } from '@prisma/client';
-
-const libsql = createClient({
-  url: process.env.DB_URL || 'http://test_user.localhost:8080',
-  authToken: process.env.DB_TOKEN,
-});
-
-const adapter = new PrismaLibSQL(libsql);
-export const prisma = new PrismaClient({ adapter });
-```
-
----
-
-### 6. Python SDK (`libsql-client`)
-
-Turso provides the official pure-Python, zero-native-compilation client `libsql-client` with both synchronous and asynchronous support:
-
-```bash
-pip install libsql-client
-```
+### Python SDK (`libsql-client`)
 
 ```python
 import os
 import libsql_client
 
 client = libsql_client.create_client_sync(
-    url=os.environ.get("DB_URL", "http://test_user.localhost:8080"),
-    auth_token=os.environ.get("DB_TOKEN"),
+    url="https://libsql-database-service.fly.dev",
+    auth_token=os.environ.get("TENANT_JWT_TOKEN"),
 )
 
-# Prepared statement execution with parameter binding
-client.execute(
-    "INSERT INTO items (title, quantity) VALUES (?, ?);",
-    ["SSD Drive", 25]
-)
-
-res = client.execute("SELECT id, title, quantity FROM items WHERE quantity > ?;", [10])
-for row in res.rows:
-    print(dict(zip(res.columns, row)))
-
-client.close()
+client.execute("INSERT INTO items (title) VALUES (?);", ["First Item"])
 ```
 
-*(See complete working executable example in [`databases/examples/python/test_libsql_client.py`](file:///workspaces/cloud/databases/examples/python/test_libsql_client.py)).*
-
----
-
-### 7. Python SQLAlchemy ORM Integration
-
-SQLAlchemy Core and ORM models can generate and compile standard SQLite statements executed over the `libsql-client` HTTP/WebSocket connection:
-
-```bash
-pip install sqlalchemy libsql-client
-```
-
-```python
-import os
-import libsql_client
-from sqlalchemy import MetaData, Table, Column, Integer, String, select, insert
-from sqlalchemy.dialects import sqlite
-
-metadata = MetaData()
-products = Table(
-    "products",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("name", String, nullable=False),
-    Column("price", Integer, nullable=False),
-)
-
-client = libsql_client.create_client_sync(
-    url=os.environ.get("DB_URL", "http://test_user.localhost:8080"),
-    auth_token=os.environ.get("DB_TOKEN"),
-)
-
-# Compile SQLAlchemy query for SQLite dialect
-stmt = insert(products).values(name="Gaming Mouse", price=60)
-compiled = stmt.compile(dialect=sqlite.dialect())
-
-# Execute via libSQL client
-client.execute(str(compiled), list(compiled.params.values()))
-```
-
-*(See complete working executable example in [`databases/examples/python/test_sqlalchemy.py`](file:///workspaces/cloud/databases/examples/python/test_sqlalchemy.py)).*
-
----
-
-### 8. Go Standard Library (`database/sql`)
-
-Using the official Turso Go driver [`github.com/tursodatabase/libsql-client-go/libsql`](https://github.com/tursodatabase/libsql-client-go):
-
-```bash
-go get github.com/tursodatabase/libsql-client-go/libsql
-```
+### Go Driver (`github.com/tursodatabase/libsql-client-go`)
 
 ```go
 package main
 
 import (
     "database/sql"
-    "fmt"
-    "log"
     _ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
 func main() {
-    dbURL := "http://test_user.localhost:8080?authToken=" + os.Getenv("DB_TOKEN")
-    db, err := sql.Open("libsql", dbURL)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer db.Close()
-
-    res, err := db.Exec("INSERT INTO services (name, status) VALUES (?, ?)", "auth-service", "running")
-    id, _ := res.LastInsertId()
-    fmt.Printf("Inserted ID: %d\n", id)
+    url := "https://libsql-database-service.fly.dev?authToken=" + os.Getenv("TENANT_JWT_TOKEN")
+    db, err := sql.Open("libsql", url)
+    // ...
 }
 ```
-
-*(See complete working executable example in [`databases/examples/go/main.go`](file:///workspaces/cloud/databases/examples/go/main.go)).*
 
 ---
 
-### 9. Go GORM ORM Integration
+## 8. Fly.io Production Deployment & Volume Verification
 
-[GORM](https://gorm.io) integrates with libSQL by combining `database/sql` with the pure-Go SQLite dialector:
+### Persistent Volume Verification
 
+The production app `libsql-database-service` is mounted to a Fly volume:
+- **Volume ID**: `vol_vjy9kek5g6j11ypv`
+- **Volume Name**: `sqld_data`
+- **Size**: 1 GB (encrypted)
+- **Mount Path**: `/var/lib/sqld`
+- **Machine**: `82dd324c766358` (`snowy-feather-8932` in region `iad`)
+
+To verify volume attachment and status:
 ```bash
-go get gorm.io/gorm
-go get github.com/glebarez/sqlite
-go get github.com/tursodatabase/libsql-client-go/libsql
+fly volumes list -a libsql-database-service
 ```
 
-```go
-package main
+### Automated Multi-Language Verification Suite
 
-import (
-    "database/sql"
-    "fmt"
-    "log"
-    "os"
-    "time"
-
-    "github.com/glebarez/sqlite"
-    _ "github.com/tursodatabase/libsql-client-go/libsql"
-    "gorm.io/gorm"
-)
-
-type Deployment struct {
-    ID        uint   `gorm:"primaryKey"`
-    AppName   string `gorm:"not null"`
-    Region    string `gorm:"not null"`
-    Status    string `gorm:"not null"`
-    CreatedAt time.Time
-}
-
-func main() {
-    dbURL := "http://test_user.localhost:8080?authToken=" + os.Getenv("DB_TOKEN")
-    sqlDB, err := sql.Open("libsql", dbURL)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer sqlDB.Close()
-
-    db, err := gorm.Open(&sqlite.Dialector{Conn: sqlDB}, &gorm.Config{})
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Auto-migrate schema
-    db.AutoMigrate(&Deployment{})
-
-    // Create record
-    dep := Deployment{AppName: "api-gateway", Region: "iad", Status: "active"}
-    db.Create(&dep)
-
-    // Query record
-    var found Deployment
-    db.First(&found, dep.ID)
-    fmt.Println("GORM Found:", found.AppName, found.Status)
-}
-```
-
-*(See complete working executable example in [`databases/examples/go/test_gorm.go`](file:///workspaces/cloud/databases/examples/go/test_gorm.go)).*
-
----
-
-### 10. Automated Multi-Language Verification Suite
-
-You can execute the entire multi-language ORM test suite against any tenant database in a single command:
-
+Run the end-to-end verification suite across Drizzle, Kysely, SQLAlchemy, and GORM:
 ```bash
-# Test against the default test_user
 ./databases/test_all_orms.sh test_user
 ```
 
-This automated runner:
-1. Mints a fresh Ed25519 JWT token for the namespace.
-2. Runs Node.js **Drizzle ORM** & **Kysely**.
-3. Runs Python **libsql-client** & **SQLAlchemy**.
-4. Runs Go **database/sql** & **GORM**.
-5. Verifies schema creation, data insertion, prepared parameter binding, selection, and updates across all languages.
-
 ---
 
-## 6. Fly.io Production Deployment
+## 9. Backup & Disaster Recovery
 
-The provided [`fly.toml`](file:///workspaces/cloud/databases/fly.toml) is pre-configured with:
-- `ghcr.io/tursodatabase/libsql-server:latest`
-- Automatic namespace enablement via `/bin/sqld --enable-namespaces --db-path /var/lib/sqld/data.sqld`
-- Persistent volume mount (`sqld_data`) at `/var/lib/sqld`
-- Built-in health checks on `/health`
-- Private Admin API on port `8082`
+Fly.io automatically performs daily volume snapshots. In addition, `sqld` supports backing up the metastore and SQLite WAL to any S3-compatible bucket (Tigris, R2, AWS S3):
 
-### Step 1: Install & Authenticate with `flyctl`
-
-```bash
-# Install flyctl
-curl -L https://fly.io/install.sh | sh
-
-# Log in
-fly auth login
-```
-
-### Step 2: Initialize the App
-
-Navigate to the `databases/` directory:
-```bash
-cd databases
-```
-
-If you wish to change the application name, edit `app = "your-app-name"` in `fly.toml` or launch with:
-```bash
-fly launch --copy-config --name my-platform-libsql --region iad --no-deploy
-```
-
-### Step 3: Create the Persistent Volume
-
-A persistent volume is **mandatory** so that database files survive machine restarts and redeployments:
-
-```bash
-fly volumes create sqld_data --region iad --size 10
-```
-*(Adjust `--size` in GB based on anticipated storage needs. Volumes can be expanded dynamically later).*
-
-### Step 4: Deploy
-
-```bash
-fly deploy
-```
-
-### Step 5: Verify Deployment
-
-Check the machine status:
-```bash
-fly status
-fly logs
-```
-
-Test the health check endpoint:
-```bash
-curl -i https://libsql-database-service.fly.dev/health
-# HTTP/1.1 200 OK
-```
-
-### Step 6: Accessing the Admin API on Fly.io
-
-Because port `8082` is kept private for security, you can interact with the Admin API using Fly WireGuard proxying:
-
-```bash
-# In terminal A: establish local tunnel to remote port 8082
-fly proxy 8082:8082 -a libsql-database-service
-
-# In terminal B: create a tenant database
-curl -X POST http://localhost:8082/v1/namespaces/client_alpha/create \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-Alternatively, any other app deployed inside your Fly.io organization can reach the Admin API directly over internal DNS:
-```
-http://libsql-database-service.internal:8082/v1/namespaces/{namespace}/create
-```
-
-### Step 7: Wildcard Subdomain & Custom SSL (Optional)
-
-To enable automatic subdomain routing like `tenant1.db.yourplatform.com`:
-1. Add a wildcard CNAME record in your DNS provider:
-   `*.db.yourplatform.com` &rarr; `<your-app-name>.fly.dev`
-2. Allocate a dedicated Fly IPv4 and IPv6:
-   ```bash
-   fly ips allocate-v4
-   fly ips allocate-v6
-   ```
-3. Issue a wildcard certificate via Fly.io:
-   ```bash
-   fly certs add *.db.yourplatform.com
-   ```
-
----
-
-## 7. Local Development with Docker Compose
-
-To test multi-tenant libSQL locally before deploying:
-
-```bash
-cd databases
-
-# Start sqld container
-docker compose up -d
-
-# Verify logs
-docker compose logs -f
-
-# Check health
-curl -i http://localhost:8080/health
-
-# Create tenant namespace
-curl -X POST http://localhost:8082/v1/namespaces/dev_tenant/create \
-  -H "Content-Type: application/json" \
-  -d '{}'
-
-# Query tenant database
-curl -X POST http://localhost:8080/v2/pipeline \
-  -H "x-namespace: dev_tenant" \
-  -H "Content-Type: application/json" \
-  -d '{"requests": [{"type": "execute", "stmt": {"sql": "SELECT \x27Hello Multi-Tenant libSQL!\x27 as greeting;"}}]}'
-
-# Fetch tenant statistics
-curl -s http://localhost:8082/v1/namespaces/dev_tenant/stats | jq
-
-# Stop container
-docker compose down
-```
-
----
-
-## 8. Backup & Replication Options
-
-In addition to Fly.io automated volume snapshots (`fly volumes list`), `sqld` supports backing up the metadata store and SQLite WAL to any S3-compatible storage (such as Fly Tigris, Cloudflare R2, or AWS S3).
-
-To enable metastore backup, set the following secrets on Fly:
 ```bash
 fly secrets set \
   SQLD_BACKUP_META_STORE=true \
@@ -758,5 +597,6 @@ fly secrets set \
   SQLD_META_STORE_ACCESS_KEY_ID=your_access_key \
   SQLD_META_STORE_SECRET_ACCESS=your_secret_key \
   SQLD_META_STORE_REGION=auto \
-  SQLD_META_STORE_BACKUP_ID=primary-cluster
+  SQLD_META_STORE_BACKUP_ID=primary-cluster \
+  -a libsql-database-service
 ```
