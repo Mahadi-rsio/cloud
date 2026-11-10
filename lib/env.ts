@@ -38,6 +38,12 @@ type Env = {
   // Cloudflare Storage (R2 + libSQL control plane)
   STORAGE_DATABASE_URL?: string;
   STORAGE_DATABASE_AUTH_TOKEN?: string;
+
+  // Multi-tenant libSQL (sqld) service
+  LIBSQL_ADMIN_URL?: string;
+  LIBSQL_ADMIN_AUTH_KEY?: string;
+  LIBSQL_DATA_URL?: string;
+  LIBSQL_BASE_DOMAIN?: string;
 };
 
 const KEYS: (keyof Env)[] = [
@@ -66,6 +72,10 @@ const KEYS: (keyof Env)[] = [
   "UPSTASH_REDIS_REST_TOKEN",
   "STORAGE_DATABASE_URL",
   "STORAGE_DATABASE_AUTH_TOKEN",
+  "LIBSQL_ADMIN_URL",
+  "LIBSQL_ADMIN_AUTH_KEY",
+  "LIBSQL_DATA_URL",
+  "LIBSQL_BASE_DOMAIN",
 ];
 
 let cached: Env | undefined;
@@ -74,7 +84,7 @@ function fromRecord(source: Record<string, unknown>): Env {
   const env: Env = {};
   for (const key of KEYS) {
     const value = source[key];
-    if (typeof value === "string") env[key] = value;
+    if (typeof value === "string") env[key] = value.replace(/^["']|["']$/g, "").trim();
   }
   return env;
 }

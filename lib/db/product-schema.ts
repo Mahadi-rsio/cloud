@@ -163,3 +163,46 @@ export const deploymentLogsRelations = relations(deploymentLogs, ({ one }) => ({
     references: [deployments.id],
   }),
 }));
+
+export const databases = pgTable(
+  "databases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    namespace: text("namespace").notNull().unique(),
+    region: text("region").notNull().default("iad"),
+    status: text("status").notNull().default("ready"),
+    primaryHost: text("primary_host").notNull(),
+    httpUrl: text("http_url").notNull(),
+    libsqlUrl: text("libsql_url").notNull(),
+    publicKey: text("public_key").notNull(),
+    privateKey: text("private_key").notNull(),
+    defaultToken: text("default_token").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("databases_user_created_idx").on(table.userId, table.createdAt),
+    index("databases_user_status_idx").on(table.userId, table.status),
+    uniqueIndex("databases_namespace_idx").on(table.namespace),
+    check(
+      "databases_status_check",
+      sql`${table.status} in ('provisioning','ready','failed','deleting','deleted')`,
+    ),
+  ],
+);
+
+export const databasesRelations = relations(databases, ({ one }) => ({
+  user: one(user, {
+    fields: [databases.userId],
+    references: [user.id],
+  }),
+}));
+

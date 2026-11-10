@@ -4,7 +4,7 @@ import { AppShell } from "@/components/shell/app-shell";
 
 export const instant = false;
 
-export default async function AppLayout({ children }: LayoutProps<"/">) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) {
     redirect("/login");

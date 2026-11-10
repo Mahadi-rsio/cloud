@@ -35,6 +35,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         // Normalize objects so the client always gets both `key` (full path)
         // and `name` (filename component), matching the StorageObject interface.
         objects: result.objects.map((obj) => ({
+          path: obj.path,
           key: obj.path,
           name: obj.path,
           size: obj.size,

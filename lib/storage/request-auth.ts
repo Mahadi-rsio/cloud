@@ -79,11 +79,14 @@ export async function authenticateStorageRequest(
         const [keyRecord] = await db
           .select()
           .from(apiKeys)
-          .where(and(eq(apiKeys.keyHash, keyHash), isNull(apiKeys.revokedAt)));
+          .where(eq(apiKeys.keyHash, keyHash));
 
         if (keyRecord) {
+          if (keyRecord.revokedAt) {
+            throw new HttpError("FORBIDDEN", "This API key has been revoked", 403);
+          }
           if (keyRecord.expiresAt && new Date(keyRecord.expiresAt) < new Date()) {
-            throw new HttpError("UNAUTHENTICATED", "API key has expired.", 401);
+            throw new HttpError("FORBIDDEN", "API key has expired.", 403);
           }
           tenant = await service.getTenant(keyRecord.tenantId);
 

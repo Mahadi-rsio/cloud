@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     "Cloudisy — deploy backend apps from a Docker image or a GitHub repo and get a public URL.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"

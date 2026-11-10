@@ -12,7 +12,8 @@ const schema = { ...authSchema, ...productSchema, ...storageSchema };
 let cached: ReturnType<typeof createDb> | undefined;
 
 function createDb(url: string) {
-  return drizzle(neon(url), { schema });
+  const cleanUrl = url.replace(/^["']|["']$/g, "").trim();
+  return drizzle(neon(cleanUrl), { schema });
 }
 
 export async function getDb() {

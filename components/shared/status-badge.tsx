@@ -17,6 +17,7 @@ const DOT_STYLES: Record<Tone, string> = {
 };
 
 const STATUS_TONE: Record<string, Tone> = {
+  ready: "success",
   running: "success",
   active: "success",
   started: "success",

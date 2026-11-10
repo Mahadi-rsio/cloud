@@ -7,16 +7,22 @@ import { createPresignedToken, verifyPresignedToken } from "@/lib/storage/presig
 import type { Tenant } from "@/lib/storage/schema";
 
 describe("Storage Phase 2 Data Plane", () => {
-  const mockTenant: Tenant = {
+  const mockTenant = {
     id: "t_testtenant1234567890",
     name: "Test Tenant",
     plan: "free",
     status: "active",
-    storageUsed: 0,
-    storageLimit: 5368709120,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
+    storageUsedBytes: 0,
+    storageLimitBytes: 5368709120,
+    fileCount: 0,
+    monthlyReadLimitOps: 100000,
+    monthlyWriteLimitOps: 100000,
+    bandwidthLimitBytes: 0,
+    egressRateLimitMbps: 100,
+    trialEndsAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } as Tenant;
 
   it("validates and normalizes paths, preventing path traversal", () => {
     assert.equal(validatePath("documents/report.pdf").valid, true);

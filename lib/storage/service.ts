@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { HttpError } from "@/lib/http";
+import { getRedis } from "@/lib/redis";
 import { generateApiKey, hashApiKey, hasScope, type ApiKeyEnvironment, type StorageScope } from "./auth";
 import { getStorageDb, type StorageDb } from "./db";
 import {
@@ -371,6 +372,13 @@ export class StorageService {
 
     const now = new Date().toISOString();
     await db.update(apiKeys).set({ revokedAt: now }).where(eq(apiKeys.id, keyId));
+
+    try {
+      const redis = await getRedis();
+      await redis.del(`storage:apikey:${key.keyHash}`);
+    } catch {
+      // Non-blocking
+    }
 
     await this.recordAudit({
       tenantId,

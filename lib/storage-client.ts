@@ -202,7 +202,7 @@ export async function uploadStorageFile(
   if (!response.ok) {
     let msg = `Upload failed (${response.status})`;
     try {
-      const errBody = await response.json();
+      const errBody = (await response.json()) as any;
       if (errBody?.error?.message) {
         msg = errBody.error.message;
       } else if (errBody?.message) {
@@ -237,7 +237,7 @@ export async function downloadStorageFile(
   if (!response.ok) {
     let msg = `Download failed (${response.status})`;
     try {
-      const data = await response.json();
+      const data = (await response.json()) as any;
       if (data?.error?.message) {
         msg = data.error.message;
       }

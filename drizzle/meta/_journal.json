@@ -50,6 +50,13 @@
       "when": 1794301810628,
       "tag": "0006_dazzling_jubilee",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794310000000,
+      "tag": "0007_add_databases_table",
+      "breakpoints": true
     }
   ]
 }

@@ -259,7 +259,7 @@ export class TenantMeterDO implements TenantMeterInterface {
 
   async checkOperationQuota(
     classType: "class_a" | "class_b",
-    limit = classType === "class_a"
+    limit: number = classType === "class_a"
       ? STORAGE_PLANS.free.monthlyWriteLimitOps
       : STORAGE_PLANS.free.monthlyReadLimitOps,
   ): Promise<OperationQuotaResult> {
@@ -286,7 +286,7 @@ export class TenantMeterDO implements TenantMeterInterface {
     classType: "class_a" | "class_b",
     eventType: "read" | "write" | "delete" | "list" | "copy",
     bytes = 0,
-    limit = classType === "class_a"
+    limit: number = classType === "class_a"
       ? STORAGE_PLANS.free.monthlyWriteLimitOps
       : STORAGE_PLANS.free.monthlyReadLimitOps,
   ): Promise<OperationQuotaResult> {
@@ -678,7 +678,7 @@ export class MemoryTenantMeter implements TenantMeterInterface {
 
   async checkOperationQuota(
     classType: "class_a" | "class_b",
-    limit = classType === "class_a"
+    limit: number = classType === "class_a"
       ? STORAGE_PLANS.free.monthlyWriteLimitOps
       : STORAGE_PLANS.free.monthlyReadLimitOps,
   ): Promise<OperationQuotaResult> {
@@ -702,7 +702,7 @@ export class MemoryTenantMeter implements TenantMeterInterface {
     classType: "class_a" | "class_b",
     eventType: "read" | "write" | "delete" | "list" | "copy",
     bytes = 0,
-    limit = classType === "class_a"
+    limit: number = classType === "class_a"
       ? STORAGE_PLANS.free.monthlyWriteLimitOps
       : STORAGE_PLANS.free.monthlyReadLimitOps,
   ): Promise<OperationQuotaResult> {
