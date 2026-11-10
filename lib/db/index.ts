@@ -2,11 +2,12 @@ import { neon, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as authSchema from "./schema";
 import * as productSchema from "./product-schema";
+import * as storageSchema from "@/lib/storage/schema";
 import { getEnv } from "@/lib/env";
 
 neonConfig.fetchConnectionCache = true;
 
-const schema = { ...authSchema, ...productSchema };
+const schema = { ...authSchema, ...productSchema, ...storageSchema };
 
 let cached: ReturnType<typeof createDb> | undefined;
 
@@ -24,4 +25,4 @@ export async function getDb() {
   return cached;
 }
 
-export { authSchema, productSchema };
+export { authSchema, productSchema, storageSchema };

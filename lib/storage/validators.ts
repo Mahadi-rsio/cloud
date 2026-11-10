@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TENANT_PLANS, TENANT_STATUSES } from "./schema";
 
 export const createTenantSchema = z.object({
+  id: z.string().optional(), // if provided, use this ID instead of generating a new one
   name: z.string().trim().min(1, "Name is required").max(100, "Name too long"),
   plan: z.enum(TENANT_PLANS).optional().default("free"),
   storageLimitBytes: z.number().int().positive().optional(),

@@ -1,4 +1,13 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  bigint,
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 export const TENANT_STATUSES = [
   "trial",
@@ -13,17 +22,17 @@ export type TenantStatus = (typeof TENANT_STATUSES)[number];
 export const TENANT_PLANS = ["free", "pro", "enterprise"] as const;
 export type TenantPlan = (typeof TENANT_PLANS)[number];
 
-export const tenants = sqliteTable(
-  "tenants",
+export const tenants = pgTable(
+  "storage_tenants",
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    status: text("status", { enum: TENANT_STATUSES }).notNull().default("trial"),
-    plan: text("plan", { enum: TENANT_PLANS }).notNull().default("free"),
-    storageLimitBytes: integer("storage_limit_bytes")
+    status: text("status").notNull().default("trial"),
+    plan: text("plan").notNull().default("free"),
+    storageLimitBytes: bigint("storage_limit_bytes", { mode: "number" })
       .notNull()
       .default(10 * 1024 * 1024 * 1024), // 10 GB
-    bandwidthLimitBytes: integer("bandwidth_limit_bytes")
+    bandwidthLimitBytes: bigint("bandwidth_limit_bytes", { mode: "number" })
       .notNull()
       .default(50 * 1024 * 1024 * 1024), // 50 GB
     egressRateLimitMbps: integer("egress_rate_limit_mbps").notNull().default(100),
@@ -32,13 +41,13 @@ export const tenants = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
-    index("tenants_status_idx").on(table.status),
-    index("tenants_created_idx").on(table.createdAt),
+    index("storage_tenants_status_idx").on(table.status),
+    index("storage_tenants_created_idx").on(table.createdAt),
   ],
 );
 
-export const projects = sqliteTable(
-  "projects",
+export const projects = pgTable(
+  "storage_projects",
   {
     id: text("id").primaryKey(),
     tenantId: text("tenant_id")
@@ -49,13 +58,14 @@ export const projects = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
-    index("projects_tenant_idx").on(table.tenantId),
-    uniqueIndex("projects_tenant_name_idx").on(table.tenantId, table.name),
+    index("storage_projects_tenant_idx").on(table.tenantId),
+    uniqueIndex("storage_projects_tenant_name_idx").on(table.tenantId, table.name),
   ],
 );
 
-export const apiKeys = sqliteTable(
-  "api_keys",
+/** Legacy custom API key table (kept for schema reference; auth now via Better Auth apikey table) */
+export const apiKeys = pgTable(
+  "storage_api_keys",
   {
     id: text("id").primaryKey(),
     tenantId: text("tenant_id")
@@ -72,14 +82,14 @@ export const apiKeys = sqliteTable(
     createdAt: text("created_at").notNull(),
   },
   (table) => [
-    uniqueIndex("api_keys_key_hash_idx").on(table.keyHash),
-    index("api_keys_tenant_idx").on(table.tenantId),
-    index("api_keys_tenant_revoked_idx").on(table.tenantId, table.revokedAt),
+    uniqueIndex("storage_api_keys_key_hash_idx").on(table.keyHash),
+    index("storage_api_keys_tenant_idx").on(table.tenantId),
+    index("storage_api_keys_tenant_revoked_idx").on(table.tenantId, table.revokedAt),
   ],
 );
 
-export const usageDaily = sqliteTable(
-  "usage_daily",
+export const usageDaily = pgTable(
+  "storage_usage_daily",
   {
     id: text("id").primaryKey(),
     tenantId: text("tenant_id")
@@ -87,26 +97,26 @@ export const usageDaily = sqliteTable(
       .references(() => tenants.id, { onDelete: "cascade" }),
     projectId: text("project_id"),
     date: text("date").notNull(), // YYYY-MM-DD
-    storageBytesAvg: integer("storage_bytes_avg").notNull().default(0),
-    egressBytes: integer("egress_bytes").notNull().default(0),
-    ingressBytes: integer("ingress_bytes").notNull().default(0),
+    storageBytesAvg: bigint("storage_bytes_avg", { mode: "number" }).notNull().default(0),
+    egressBytes: bigint("egress_bytes", { mode: "number" }).notNull().default(0),
+    ingressBytes: bigint("ingress_bytes", { mode: "number" }).notNull().default(0),
     readOps: integer("read_ops").notNull().default(0),
     writeOps: integer("write_ops").notNull().default(0),
     deleteOps: integer("delete_ops").notNull().default(0),
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
-    uniqueIndex("usage_daily_tenant_proj_date_idx").on(
+    uniqueIndex("storage_usage_daily_tenant_proj_date_idx").on(
       table.tenantId,
       table.projectId,
       table.date,
     ),
-    index("usage_daily_tenant_date_idx").on(table.tenantId, table.date),
+    index("storage_usage_daily_tenant_date_idx").on(table.tenantId, table.date),
   ],
 );
 
-export const usageEvents = sqliteTable(
-  "usage_events",
+export const usageEvents = pgTable(
+  "storage_usage_events",
   {
     id: text("id").primaryKey(),
     tenantId: text("tenant_id")
@@ -115,17 +125,17 @@ export const usageEvents = sqliteTable(
     projectId: text("project_id"),
     timestamp: text("timestamp").notNull(),
     eventType: text("event_type").notNull(), // read | write | delete | egress
-    bytes: integer("bytes").notNull().default(0),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
     ops: integer("ops").notNull().default(1),
   },
   (table) => [
-    index("usage_events_tenant_time_idx").on(table.tenantId, table.timestamp),
-    index("usage_events_tenant_type_idx").on(table.tenantId, table.eventType),
+    index("storage_usage_events_tenant_time_idx").on(table.tenantId, table.timestamp),
+    index("storage_usage_events_tenant_type_idx").on(table.tenantId, table.eventType),
   ],
 );
 
-export const auditLog = sqliteTable(
-  "audit_log",
+export const auditLog = pgTable(
+  "storage_audit_log",
   {
     id: text("id").primaryKey(),
     tenantId: text("tenant_id")
@@ -142,8 +152,8 @@ export const auditLog = sqliteTable(
     createdAt: text("created_at").notNull(),
   },
   (table) => [
-    index("audit_log_tenant_time_idx").on(table.tenantId, table.createdAt),
-    index("audit_log_resource_idx").on(table.resourceType, table.resourceId),
+    index("storage_audit_log_tenant_time_idx").on(table.tenantId, table.createdAt),
+    index("storage_audit_log_resource_idx").on(table.resourceType, table.resourceId),
   ],
 );
 

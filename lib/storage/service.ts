@@ -73,7 +73,7 @@ export class StorageService {
   async createTenant(input: CreateTenantInput): Promise<Tenant> {
     const db = await this.db();
     const parsed = createTenantSchema.parse(input);
-    const id = generateTenantId();
+    const id = parsed.id ?? generateTenantId();
     const now = new Date().toISOString();
     const trialEndsAt = calculateTrialEndDate(parsed.trialDays ?? 7);
 

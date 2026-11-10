@@ -43,6 +43,7 @@ export async function authenticateStorageRequest(
 
     if (!tenant) {
       tenant = await service.createTenant({
+        id: tenantId,
         name: "Default Workspace",
         plan: "free",
       });
@@ -61,6 +62,7 @@ export async function authenticateStorageRequest(
 
     if (!tenant) {
       tenant = await service.createTenant({
+        id: tenantId,
         name: session.user.name || session.user.email || "Default Workspace",
         plan: "free",
       });
