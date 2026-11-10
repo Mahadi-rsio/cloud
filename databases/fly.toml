@@ -21,6 +21,8 @@ kill_timeout = "30s"
   SQLD_MAX_ACTIVE_NAMESPACES = "100"
   SQLD_MAX_RESPONSE_SIZE = "10MB"
   SQLD_MAX_TOTAL_RESPONSE_SIZE = "32MB"
+  # Tenant subdomain pattern: {namespace}_cdb.cloudisy.top
+  SQLD_BASE_DOMAIN = "cloudisy.top"
   # SQLD_AUTH_JWT_KEY and LIBSQL_ADMIN_AUTH_KEY are set as fly secrets
 
 [[mounts]]

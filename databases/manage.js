@@ -22,7 +22,8 @@ const __dirname = path.dirname(__filename);
 
 const ADMIN_URL = process.env.SQLD_ADMIN_URL || 'http://127.0.0.1:8082';
 const DATA_URL = process.env.SQLD_DATA_URL || 'http://127.0.0.1:8080';
-const BASE_DOMAIN = process.env.SQLD_BASE_DOMAIN || 'db.yourplatform.com';
+const BASE_DOMAIN = process.env.SQLD_BASE_DOMAIN || 'cloudisy.top';
+// Tenant subdomain pattern: {namespace}_cdb.cloudisy.top
 const KEYS_DIR = path.join(__dirname, 'keys');
 
 // Load Admin Auth Key from env or file if available
@@ -168,11 +169,11 @@ export async function createDatabase(namespace, options = {}) {
   const testRes = await executeQuery(namespace, rwToken, "SELECT 'ready' as status, datetime('now') as created_at;");
   console.log(`      Connection verified! Result:`, JSON.stringify(testRes?.results?.[0]?.response?.result?.rows || testRes));
 
-  // Connection URLs
+  // Connection URLs — tenant subdomain pattern: {namespace}_cdb.cloudisy.top
   const localUrl = `${DATA_URL}`;
   const localSubdomainUrl = `http://${namespace}.localhost:8080`;
-  const prodUrl = `https://${namespace}.${BASE_DOMAIN}`;
-  const prodLibsqlUrl = `libsql://${namespace}.${BASE_DOMAIN}`;
+  const prodUrl = `https://${namespace}_cdb.${BASE_DOMAIN}`;
+  const prodLibsqlUrl = `libsql://${namespace}_cdb.${BASE_DOMAIN}`;
 
   console.log(`\n------------------------------------------------------`);
   console.log(`DATABASE PROVISIONED SUCCESSFULLY:`);
