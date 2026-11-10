@@ -34,6 +34,10 @@ type Env = {
   // Upstash Redis (cache + rate limiting)
   UPSTASH_REDIS_REST_URL?: string;
   UPSTASH_REDIS_REST_TOKEN?: string;
+
+  // Cloudflare Storage (R2 + libSQL control plane)
+  STORAGE_DATABASE_URL?: string;
+  STORAGE_DATABASE_AUTH_TOKEN?: string;
 };
 
 const KEYS: (keyof Env)[] = [
@@ -60,6 +64,8 @@ const KEYS: (keyof Env)[] = [
   "GITHUB_API_TOKEN",
   "UPSTASH_REDIS_REST_URL",
   "UPSTASH_REDIS_REST_TOKEN",
+  "STORAGE_DATABASE_URL",
+  "STORAGE_DATABASE_AUTH_TOKEN",
 ];
 
 let cached: Env | undefined;

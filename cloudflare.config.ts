@@ -45,6 +45,9 @@ export default defineConfig({
       GITHUB_API_TOKEN: bindings.secret(),
       UPSTASH_REDIS_REST_URL: bindings.secret(),
       UPSTASH_REDIS_REST_TOKEN: bindings.secret(),
+      STORAGE_BUCKET: bindings.r2({ name: "cloud-storage" }),
+      STORAGE_DATABASE_URL: bindings.secret(),
+      STORAGE_DATABASE_AUTH_TOKEN: bindings.secret(),
     },
     ...(isPreviewBuild
       ? {}

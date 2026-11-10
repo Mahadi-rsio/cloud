@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cloud",
+  "main": "./entrypoints/worker.ts",
+  "compatibility_date": "2026-10-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".vinext/client",
+    "binding": "ASSETS",
+    "run_worker_first": ["/*", "!/_next/static/*", "!/*/_next/static/*"]
+  },
+  "r2_buckets": [
+    {
+      "binding": "STORAGE_BUCKET",
+      "bucket_name": "cloud-storage-dev"
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "cloud-staging",
+      "r2_buckets": [
+        {
+          "binding": "STORAGE_BUCKET",
+          "bucket_name": "cloud-storage-staging"
+        }
+      ]
+    },
+    "production": {
+      "name": "cloud-prod",
+      "r2_buckets": [
+        {
+          "binding": "STORAGE_BUCKET",
+          "bucket_name": "cloud-storage-prod"
+        }
+      ]
+    }
+  }
+}
