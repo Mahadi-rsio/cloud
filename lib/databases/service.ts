@@ -193,20 +193,26 @@ export class DatabaseService {
       .where(and(eq(databases.userId, userId), isNull(databases.deletedAt)))
       .orderBy(desc(databases.createdAt));
 
-    return records.map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      name: r.name,
-      namespace: r.namespace,
-      region: r.region,
-      status: r.status,
-      primaryHost: r.primaryHost,
-      httpUrl: r.httpUrl,
-      libsqlUrl: r.libsqlUrl,
-      defaultToken: r.defaultToken,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    }));
+    return await Promise.all(
+      records.map(async (r) => {
+        const stats = await getSqldNamespaceStats(r.namespace);
+        return {
+          id: r.id,
+          userId: r.userId,
+          name: r.name,
+          namespace: r.namespace,
+          region: r.region,
+          status: r.status,
+          primaryHost: r.primaryHost,
+          httpUrl: r.httpUrl,
+          libsqlUrl: r.libsqlUrl,
+          defaultToken: r.defaultToken,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          stats,
+        };
+      }),
+    );
   }
 
   async get(id: string, userId: string): Promise<DatabaseRecord> {
