@@ -119,7 +119,7 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", "Tenant not found", 404);
     }
 
-    if (input.status && !canTransitionStatus(current.status, input.status)) {
+    if (input.status && !canTransitionStatus(current.status as TenantStatus, input.status)) {
       throw new HttpError(
         "CONFLICT",
         `Cannot transition tenant from ${current.status} to ${input.status}`,
@@ -186,7 +186,7 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", "Tenant not found", 404);
     }
 
-    const check = canPerformStorageOperation(tenant.status, tenant.trialEndsAt, "write");
+    const check = canPerformStorageOperation(tenant.status as TenantStatus, tenant.trialEndsAt, "write");
     if (!check.allowed) {
       throw new HttpError("FORBIDDEN", check.reason, check.status);
     }
@@ -421,7 +421,7 @@ export class StorageService {
     tenant: Tenant,
     operation: StorageOperation,
   ): Promise<void> {
-    const check = canPerformStorageOperation(tenant.status, tenant.trialEndsAt, operation);
+    const check = canPerformStorageOperation(tenant.status as TenantStatus, tenant.trialEndsAt, operation);
     if (!check.allowed) {
       throw new HttpError("FORBIDDEN", check.reason, check.status);
     }
@@ -596,6 +596,71 @@ export class StorageService {
       etag: meta.etag,
       httpMetadata: meta.httpMetadata,
       uploaded: meta.uploaded,
+    };
+  }
+
+  /**
+   * Copies a file from one location to another within the same tenant.
+   * The destination namespace may differ from the source namespace.
+   */
+  async copyFile(
+    tenant: Tenant,
+    sourceNamespace: string,
+    sourcePath: string,
+    destinationNamespace: string,
+    destinationPath: string,
+  ) {
+    await this.assertOperationAllowed(tenant, "read");
+    await this.assertOperationAllowed(tenant, "write");
+
+    // Validate both paths up front
+    const srcValidated = validatePath(sourcePath);
+    if (!srcValidated.valid) {
+      throw new HttpError("VALIDATION_ERROR", srcValidated.error, 400);
+    }
+    const dstValidated = validatePath(destinationPath);
+    if (!dstValidated.valid) {
+      throw new HttpError("VALIDATION_ERROR", dstValidated.error, 400);
+    }
+
+    // Resolve namespaces
+    const srcNs = await this.getNamespace(tenant.id, sourceNamespace);
+    if (!srcNs) {
+      throw new HttpError("NOT_FOUND", `Source namespace '${sourceNamespace}' not found`, 404);
+    }
+    const dstNs = await this.getNamespace(tenant.id, destinationNamespace);
+    if (!dstNs) {
+      throw new HttpError("NOT_FOUND", `Destination namespace '${destinationNamespace}' not found`, 404);
+    }
+
+    const bucket = await this.bucket();
+
+    // Download source object
+    const srcKey = formatObjectKey(tenant.id, srcNs.name, srcValidated.normalized);
+    const srcObject = await bucket.get(srcKey);
+    if (!srcObject) {
+      throw new HttpError("NOT_FOUND", `Source file '${sourcePath}' not found`, 404);
+    }
+
+    // Re-upload to destination preserving content type and custom metadata
+    const dstKey = formatObjectKey(tenant.id, dstNs.name, dstValidated.normalized);
+    const body = await srcObject.arrayBuffer();
+    const stored = await bucket.put(dstKey, body, {
+      httpMetadata: srcObject.httpMetadata,
+      customMetadata: srcObject.customMetadata,
+    });
+
+    // Record usage for both the read and the write
+    await this.recordUsage(tenant.id, srcNs.id, "read", srcObject.size, 1);
+    await this.recordUsage(tenant.id, dstNs.id, "write", stored.size, 1);
+
+    return {
+      sourceNamespace: srcNs.name,
+      sourcePath: srcValidated.normalized,
+      destinationNamespace: dstNs.name,
+      destinationPath: dstValidated.normalized,
+      size: stored.size,
+      etag: stored.etag,
     };
   }
 

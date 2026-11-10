@@ -122,7 +122,7 @@ export async function detectFrameworkForDir(
 
         // Try version detection
         try {
-          const ver = await detectFrameworkVersion({ fs: fsDetector, framework: slug });
+          const ver = await (detectFrameworkVersion as any)({ fs: fsDetector, framework: slug });
           detectedVersion = ver ?? undefined;
         } catch {}
 

@@ -1,27 +1,27 @@
 Here's a plan to build this as a production-grade service, in phases. A solo developer could reach a private beta in about 6 to 8 weeks.
 
-## Phase 0: Decisions to lock first (2-3 days)
+## Phase 0: Decisions to lock first (2-3 days) — [COMPLETED]
 - **API surface:** start with a versioned REST API (`/v1/...`) plus presigned upload and download URLs. Add an S3-compatible layer later only if customers ask for it.
 - **Tenancy model:** one shared bucket per environment, with the key layout `t_<tenantId>/<projectId>/<path>`. Generate tenant IDs as random IDs (ULID or UUID), not sequential numbers.
 - **Tenant lifecycle states:** `trial → active → suspended → pending_delete → deleted`. Your 7-day trial then delete plan becomes a scheduled purge job instead of a manual cleanup.
 - **Threat model:** write down one page covering cross-tenant access, key leakage, abuse of public files, and cost attacks.
 
-## Phase 1: Foundations (week 1)
+## Phase 1: Foundations (week 1) — [COMPLETED]
 - **Stack:** TypeScript, Native Vinext Cloudflare Worker (App Router / Worker fetch handlers, no external Hono router needed), Zod for validation, Drizzle with the libsql driver (matching our existing DB), and Vitest for tests.
 - **Environments:** dev, staging, and prod, each with its own R2 bucket, API tokens, and Worker. Never share credentials across environments.
 - **Infrastructure as code:** Wrangler config plus Terraform for the Cloudflare resources. CI/CD on GitHub Actions: lint, typecheck, test, deploy staging, manual promote to prod.
 - **Control-plane schema:** `tenants`, `projects`, `api_keys`, `usage_daily`, `usage_events`, and `audit_log`.
 
-## Phase 2: Core data plane (weeks 2-3)
+## Phase 2: Core data plane (weeks 2-3) — [COMPLETED]
 - **API keys:** use a prefixed format (`sk_live_...`) with high entropy and store only the hash. Support multiple keys per tenant, rotation, and revocation.
 - **Auth hot path:** cache key lookups in KV or the Cache API with a 30-60 second TTL. That way a slow or down Fly DB doesn't break every request.
 - **Object operations:** put, get, head, delete, list with cursor pagination, copy, and multipart for large files. Use presigned URLs for uploads over a few MB.
 - **Safety rules:**
   - Normalize keys and reject traversal.
-  - Enforce max object size and an allowed-content policy.
+  - Enforce max object size (100 MB) and an allowed-content policy.
   - Set a safe `Content-Disposition` and `X-Content-Type-Options`.
   - Serve user-uploaded public content from a separate domain, so uploaded HTML can't attack your dashboard origin.
-- **API standards:** OpenAPI spec, RFC 7807 error format, idempotency keys on writes, ETag and conditional requests, and rate-limit headers.
+- **API standards:** OpenAPI spec (`/api/v1/storage/openapi.json`), RFC 7807 error format, idempotency keys on writes, ETag and conditional requests, and rate-limit headers.
 
 ## Phase 3: Metering, quotas, and billing hooks (week 4)
 - **Usage tracking:** increment bytes on write, handle deletes and direct writes through R2 event notifications and Queues, and reconcile nightly by listing each prefix.

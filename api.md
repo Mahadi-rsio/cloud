@@ -293,9 +293,28 @@ Files are stored in R2 with the key: `<tenantId>/<namespace>/<path>`
 | Endpoint | Auth | Body / Query | Success | Status |
 | --- | --- | --- | --- | --- |
 | `GET /api/v1/storage/namespaces/:namespace/files` | API key or session | `?prefix&limit&cursor` | `{ objects[], prefixes[], truncated }` | Implemented |
-| `PUT /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | raw file body | `{ namespace, path, size, etag, uploadedAt }` | Implemented |
-| `GET /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | — | raw file content (streamed) | Implemented |
+| `PUT /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | raw file body (max 100 MB) | `{ namespace, path, size, etag, uploadedAt }` | Implemented |
+| `GET /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | `?download=true` (optional Range) | raw file stream (supports 304 via `If-None-Match`/`If-Modified-Since`) | Implemented |
+| `HEAD /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | — | 200 / 304 with `ETag`, `Content-Length`, `Last-Modified` | Implemented |
 | `DELETE /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | — | 200 | Implemented |
+| `POST /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | `{ destinationPath, destinationNamespace? }` | `{ sourcePath, destinationPath, destinationNamespace, size, etag }` | Implemented |
+
+#### Presigned & OpenAPI endpoints
+
+| Endpoint | Auth | Body / Query | Success | Status |
+| --- | --- | --- | --- | --- |
+| `POST /api/v1/storage/namespaces/:namespace/presign` | API key or session | `{ path, method?, expiresIn? }` | `{ token, url, method, path, expiresAt }` | Implemented |
+| `PUT /api/v1/storage/presigned/:token` | Presigned Token (URL) | raw file body (max 100 MB) | `{ namespace, path, size, etag, uploadedAt }` | Implemented |
+| `GET /api/v1/storage/presigned/:token` | Presigned Token (URL) | `?download=true` | raw file stream | Implemented |
+| `GET /api/v1/storage/openapi.json` | None (public) | — | OpenAPI 3.1 JSON specification | Implemented |
+
+#### Security & Header specifications
+- **XSS prevention:** user-uploaded markup files (`text/html`, `text/xml`, `image/svg+xml`, `application/xml`) are served with `Content-Type: application/octet-stream` and `Content-Disposition: attachment` unless a custom domain is configured.
+- **Sniff protection:** all GET/HEAD responses return `X-Content-Type-Options: nosniff`.
+- **Conditional requests:** `If-None-Match` and `If-Modified-Since` headers are supported, returning `304 Not Modified` without body transmission.
+- **Idempotency:** writes accept an optional `Idempotency-Key` header, which is preserved in R2 object metadata and returned in response headers.
+- **Rate-limit transparency:** all storage responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers.
+- **Upload size limit:** requests with `Content-Length` > 100 MB are rejected upfront with `413 VALIDATION_ERROR`.
 
 #### Error responses
 

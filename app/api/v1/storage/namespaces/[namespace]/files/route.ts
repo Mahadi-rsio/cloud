@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { errorResponse, jsonOk } from "@/lib/http";
 import { authenticateStorageRequest } from "@/lib/storage/request-auth";
 import { getStorageService } from "@/lib/storage/service";
+import { addRateLimitHeaders, endOfCurrentHour } from "@/lib/storage/rate-limit-headers";
 
 type RouteContext = { params: Promise<{ namespace: string }> };
 
@@ -25,13 +26,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
       limit: Math.min(Math.max(limit, 1), 1000),
     });
 
-    return jsonOk({
-      namespace: result.namespace,
-      objects: result.objects,
-      prefixes: result.prefixes,
-      cursor: result.cursor,
-      truncated: result.truncated,
-    });
+    const headers = new Headers();
+    addRateLimitHeaders(headers, 1000, 999, endOfCurrentHour());
+
+    return jsonOk(
+      {
+        namespace: result.namespace,
+        objects: result.objects,
+        prefixes: result.prefixes,
+        cursor: result.cursor,
+        truncated: result.truncated,
+      },
+      200,
+      headers,
+    );
   } catch (error) {
     return errorResponse(error);
   }

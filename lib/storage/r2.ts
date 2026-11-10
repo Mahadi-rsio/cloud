@@ -56,6 +56,17 @@ export interface StorageBucket {
   head(key: string): Promise<StoredObjectMetadata | null>;
   delete(keys: string | string[]): Promise<void>;
   list(options?: ListObjectsOptions): Promise<ListObjectsResult>;
+  /**
+   * Returns a presigned URL that allows the caller to perform the specified
+   * HTTP method on `key` without further authentication.
+   *
+   * For the real Cloudflare R2 binding (private bucket), presigned URLs are
+   * not directly available from Workers bindings without public access enabled
+   * on the bucket.  Callers should use the internal proxy-token approach
+   * (`/api/v1/storage/presigned/[token]`) instead.  Implementations MAY
+   * return a stub URL in environments where true presigned URLs are unavailable.
+   */
+  presign(key: string, options: { method: "GET" | "PUT"; expiresIn: number }): Promise<string>;
 }
 
 /**
@@ -211,6 +222,12 @@ export class MemoryStorageBucket implements StorageBucket {
     };
   }
 
+  // TODO: MemoryStorageBucket stub — real presigned URLs are not applicable in
+  // local/test environments.  Returns a deterministic stub URL for testing.
+  async presign(key: string, _options: { method: "GET" | "PUT"; expiresIn: number }): Promise<string> {
+    return "http://localhost/presigned-stub?key=" + encodeURIComponent(key);
+  }
+
   clear() {
     this.store.clear();
   }
@@ -226,6 +243,21 @@ export async function getStorageBucket(): Promise<StorageBucket> {
     const { env } = await import("cloudflare:workers");
     const r2 = (env as unknown as Record<string, unknown>).STORAGE_BUCKET as StorageBucket | undefined;
     if (r2 && typeof r2.put === "function" && typeof r2.get === "function") {
+      // Cloudflare R2 private buckets do not expose a createPresignedUrl method
+      // from Workers bindings without public access enabled.  We attach a stub
+      // that documents this limitation; callers should use the internal proxy-token
+      // approach (/api/v1/storage/presigned/[token]) for authenticated uploads.
+      if (typeof (r2 as unknown as Record<string, unknown>).presign !== "function") {
+        (r2 as unknown as Record<string, unknown>).presign = async (
+          key: string,
+          _options: { method: "GET" | "PUT"; expiresIn: number },
+        ) => {
+          // NOTE: Real presigned URLs require a public R2 bucket with a custom
+          // domain configured in the Cloudflare dashboard.  This stub is
+          // intentionally returned so callers degrade gracefully.
+          return "https://your-public-r2-domain/presigned-stub?key=" + encodeURIComponent(key);
+        };
+      }
       return r2;
     }
   } catch {

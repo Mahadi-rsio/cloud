@@ -22,8 +22,8 @@ export class HttpError extends Error {
   }
 }
 
-export function jsonOk<T>(data: T, status = 200) {
-  return Response.json({ success: true, data }, { status });
+export function jsonOk<T>(data: T, status = 200, headers?: HeadersInit) {
+  return Response.json({ success: true, data }, { status, headers });
 }
 
 export function jsonError(
@@ -31,6 +31,7 @@ export function jsonError(
   message: string,
   status: number,
   details?: unknown,
+  headers?: HeadersInit,
 ) {
   return Response.json(
     {
@@ -41,7 +42,7 @@ export function jsonError(
         ...(details === undefined ? {} : { details }),
       },
     },
-    { status },
+    { status, headers },
   );
 }
 
