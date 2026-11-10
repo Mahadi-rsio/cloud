@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth/session";
 import { HttpError } from "@/lib/http";
 import { getRedis } from "@/lib/redis";
 import { extractApiKey, hashApiKey, type StorageScope } from "./auth";
+import { getStorageDb } from "./db";
 import { getStorageService } from "./service";
 import { apiKeys, type Project, type Tenant } from "./schema";
 
@@ -74,7 +75,7 @@ export async function authenticateStorageRequest(
     // 1b. Check storage_api_keys table
     if (!tenant) {
       try {
-        const db = await service.db();
+        const db = await getStorageDb();
         const [keyRecord] = await db
           .select()
           .from(apiKeys)

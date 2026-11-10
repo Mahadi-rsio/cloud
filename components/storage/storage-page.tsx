@@ -238,7 +238,7 @@ export function StoragePage() {
   };
 
   const handleDownloadFile = async (file: StorageObject) => {
-    const filename = file.name || file.key.split("/").pop() || "file";
+    const filename = file.name || (file.key ?? "").split("/").pop() || "file";
     try {
       await downloadStorageFile(selectedNamespace, file.name || file.key, filename);
     } catch (err) {
@@ -500,7 +500,7 @@ export function StoragePage() {
                     </thead>
                     <tbody className="divide-y divide-border">
                       {filteredFiles.map((file) => {
-                        const filename = file.name || file.key.split("/").pop() || "file";
+                        const filename = file.name || (file.key ?? "").split("/").pop() || "file";
                         return (
                           <tr
                             key={file.key || file.name}

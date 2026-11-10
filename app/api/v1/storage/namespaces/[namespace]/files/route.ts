@@ -32,7 +32,16 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return jsonOk(
       {
         namespace: result.namespace,
-        objects: result.objects,
+        // Normalize objects so the client always gets both `key` (full path)
+        // and `name` (filename component), matching the StorageObject interface.
+        objects: result.objects.map((obj) => ({
+          key: obj.path,
+          name: obj.path,
+          size: obj.size,
+          etag: obj.etag,
+          uploaded: obj.uploaded instanceof Date ? obj.uploaded.toISOString() : obj.uploaded,
+          httpMetadata: obj.httpMetadata,
+        })),
         prefixes: result.prefixes,
         cursor: result.cursor,
         truncated: result.truncated,

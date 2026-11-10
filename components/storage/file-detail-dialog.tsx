@@ -66,7 +66,7 @@ export function FileDetailDialog({
 
   if (!file) return null;
 
-  const filename = file.name || file.key.split("/").pop() || "file";
+  const filename = file.name || (file.key ?? "").split("/").pop() || "file";
   const contentType = file.httpMetadata?.contentType || "application/octet-stream";
   const isImage =
     contentType.startsWith("image/") ||
