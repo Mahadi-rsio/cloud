@@ -12,7 +12,7 @@
   "r2_buckets": [
     {
       "binding": "STORAGE_BUCKET",
-      "bucket_name": "cloud-storage-dev"
+      "bucket_name": "cloud-storage"
     }
   ],
   "env": {
