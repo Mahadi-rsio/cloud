@@ -17,6 +17,7 @@ export interface DatabaseRecord {
   namespace: string;
   region: string;
   status: string;
+  source: string;
   primaryHost: string;
   httpUrl: string;
   libsqlUrl: string;
@@ -84,7 +85,7 @@ export function generateNamespace(name: string): string {
   return `${slug}_${rand}`;
 }
 
-async function getAdminConfig() {
+export async function getAdminConfig() {
   const env = await getEnv();
   const adminUrl = env.LIBSQL_ADMIN_URL || DEFAULT_ADMIN_URL;
   const adminKey = env.LIBSQL_ADMIN_AUTH_KEY || DEFAULT_ADMIN_KEY;
@@ -203,6 +204,7 @@ export class DatabaseService {
           namespace: r.namespace,
           region: r.region,
           status: r.status,
+          source: r.source,
           primaryHost: r.primaryHost,
           httpUrl: r.httpUrl,
           libsqlUrl: r.libsqlUrl,
@@ -241,6 +243,7 @@ export class DatabaseService {
       namespace: record.namespace,
       region: record.region,
       status: record.status,
+      source: record.source,
       primaryHost: record.primaryHost,
       httpUrl: record.httpUrl,
       libsqlUrl: record.libsqlUrl,
@@ -267,8 +270,8 @@ export class DatabaseService {
     // 3. Mint default Read-Write token
     const token = createToken(keys.privateKey, namespace, { scope: "rw" });
 
-    // Host & URLs format: {namespace}_cdb.cloudisy.top
-    const primaryHost = `${namespace}_cdb.${baseDomain}`;
+    // Host & URLs format: {namespace}.cloudisy.top
+    const primaryHost = `${namespace}.${baseDomain}`;
     const httpUrl = `https://${primaryHost}`;
     const libsqlUrl = `libsql://${primaryHost}`;
 
@@ -297,6 +300,7 @@ export class DatabaseService {
       namespace: record.namespace,
       region: record.region,
       status: record.status,
+      source: record.source,
       primaryHost: record.primaryHost,
       httpUrl: record.httpUrl,
       libsqlUrl: record.libsqlUrl,

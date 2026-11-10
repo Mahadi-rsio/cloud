@@ -239,7 +239,7 @@ export function CreateDatabaseDialog({
               <p className="text-xs text-muted-foreground">
                 Domain preview:{" "}
                 <span className="font-mono text-foreground font-medium">
-                  {previewSlug}_[id]_cdb.cloudisy.top
+                  {previewSlug}_[id].cloudisy.top
                 </span>
               </p>
             </div>

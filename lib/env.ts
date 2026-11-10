@@ -44,6 +44,9 @@ type Env = {
   LIBSQL_ADMIN_AUTH_KEY?: string;
   LIBSQL_DATA_URL?: string;
   LIBSQL_BASE_DOMAIN?: string;
+
+  // Managed Better Auth runtime (comma-separated allowed browser origins)
+  AUTH_RUNTIME_TRUSTED_ORIGINS?: string;
 };
 
 const KEYS: (keyof Env)[] = [
@@ -76,6 +79,7 @@ const KEYS: (keyof Env)[] = [
   "LIBSQL_ADMIN_AUTH_KEY",
   "LIBSQL_DATA_URL",
   "LIBSQL_BASE_DOMAIN",
+  "AUTH_RUNTIME_TRUSTED_ORIGINS",
 ];
 
 let cached: Env | undefined;

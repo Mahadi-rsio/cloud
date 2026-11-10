@@ -288,6 +288,12 @@ export function DatabasesPage() {
                         {db.namespace}
                       </span>
                       <StatusBadge status={db.status} />
+                      {db.source === "auth" && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          <ShieldCheck className="size-3" />
+                          Auth
+                        </span>
+                      )}
                       <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
                         {db.region.toUpperCase()}
                       </span>
