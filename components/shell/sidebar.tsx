@@ -7,6 +7,7 @@ import {
   BookOpen,
   CreditCard,
   Globe,
+  HardDrive,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -28,6 +29,7 @@ import { UserAvatar } from "@/components/shell/user-avatar";
 
 const PRIMARY_NAV = [
   { href: "/apps", label: "Apps", icon: AppWindow },
+  { href: "/storage", label: "Storage", icon: HardDrive },
   { href: "/domains", label: "Domains", icon: Globe },
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },

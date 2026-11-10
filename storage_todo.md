@@ -23,8 +23,8 @@
 | **Phase 3** | Metering, Quotas & Billing | **IN PROGRESS** | 3 / 6 (50%) | SQLite DO metering, 512MB/100k op free plan, hard 402 rejection |
 | **Phase 4** | Security & Abuse Hardening | **IN PROGRESS** | 2 / 5 (40%) | CI cross-tenant isolation tests, audit logging, admin suspension switch |
 | **Phase 5** | Reliability & Observability | **PENDING** | 0 / 5 (0%) | Structured logging with request IDs, metrics, soft-delete trash, runbooks |
-| **Phase 6** | Pre-launch & SDK | **PENDING** | 0 / 4 (0%) | TypeScript SDK, k6 load testing, developer docs & quickstart, private beta |
-| **Total** | | | **23 / 35 (66%)** | |
+| **Phase 6** | Pre-launch & SDK | **IN PROGRESS** | 1 / 4 (25%) | Interactive Storage Dashboard UI, TypeScript SDK, k6 load testing, private beta |
+| **Total** | | | **24 / 35 (69%)** | |
 
 ---
 
@@ -151,8 +151,26 @@
 
 ---
 
-## Phase 6: Pre-launch & SDK — [REMAINING]
+## Phase 6: Pre-launch, Dashboard & SDK — [IN PROGRESS]
 
+- [x] **Interactive Storage Dashboard UI**:
+  - Full Next.js App Router UI at [`app/(app)/storage/page.tsx`](file:///workspaces/cloud/app/(app)/storage/page.tsx).
+  - **Create Storage**: modal dialog with lowercase alphanumeric / hyphens / dots validation.
+  - **File Operations**:
+    - Upload file via drag & drop or file picker with custom path support and atomic quota verification.
+    - Download file with direct browser download trigger.
+    - Delete file with `ConfirmDeleteDialog`.
+    - File Explorer table with file type icons, size, ETag, and last modified date.
+    - File Detail dialog with metadata, image preview, direct cURL snippet, and quick copy.
+  - **API Key Management**:
+    - Dedicated API keys tab to list, create, and revoke keys.
+    - Secret key reveal modal with one-click copy and warning.
+    - Direct revocation with confirmation dialog.
+  - **Quota & Metering Banner**:
+    - Visual progress bar for 512 MB storage capacity.
+    - Monthly Class B read operations progress (100k cap).
+    - Monthly Class A write operations progress (100k cap).
+    - Total stored objects count.
 - [ ] **TypeScript Client SDK (`@cloud/storage`)**:
   - Typed client supporting:
     - `storage.upload(path, file, { idempotencyKey })`
@@ -160,9 +178,8 @@
     - `storage.createPresignedUrl(path, { action, expiresIn })`
     - `storage.list(prefix, { limit, cursor })`
     - `storage.copy(src, dest)`
-- [ ] **Interactive Developer Documentation & Quickstart**:
-  - cURL, Node.js, and Python code snippets.
-  - Dashboard API playground and namespace explorer UI.
+- [ ] **Developer Documentation & Quickstart**:
+  - cURL, Node.js, and Python code snippets in docs.
 - [ ] **k6 Load Testing Suite**:
   - Mixed read/write/list benchmarks against staging worker to validate p95 latency and memory footprint under concurrency.
 - [ ] **Pilot Beta Onboarding**:
@@ -174,6 +191,7 @@
 
 The test suite runs with Node's native test runner (`node --experimental-transform-types --import ./tests/register.js --test tests/*.test.ts`):
 
+- [x] [`tests/storage-ui.test.ts`](file:///workspaces/cloud/tests/storage-ui.test.ts): Storage UI helpers, byte formatting (`formatBytes`), and client helper validation.
 - [x] [`tests/storage-quota-do.test.ts`](file:///workspaces/cloud/tests/storage-quota-do.test.ts): SQLite Durable Object atomic byte reservations, 512 MB storage quota rejections (402), 100k Class A & B monthly limits, and R2 byte reconciliation.
 - [x] [`tests/storage-phase2.test.ts`](file:///workspaces/cloud/tests/storage-phase2.test.ts): 100 MB limits, nosniff, forced download for HTML/SVG/XML, copy file, presigned token generation & verification, ETag 304 conditional GET.
 - [x] [`tests/storage/service.test.ts`](file:///workspaces/cloud/tests/storage/service.test.ts): Core CRUD file & namespace operations.

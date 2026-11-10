@@ -19,6 +19,7 @@ import { Wordmark } from "@/components/shell/wordmark";
 
 const SECTION_LABELS: Record<string, string> = {
   apps: "Apps",
+  storage: "Storage",
   databases: "Databases",
   domains: "Domains",
   billing: "Billing",

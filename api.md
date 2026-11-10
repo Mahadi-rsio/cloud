@@ -252,18 +252,19 @@ Deployments build a public GitHub repository into an OCI image (Railpack or Dock
 - `GET /api/health` — readiness/liveness; returns `{ status: "ok" }`.
 - Internal queue jobs run in `entrypoints/worker.ts` (no public HTTP endpoint); do not expose provider credentials or admin actions over the public API.
 
-### 3.11 Storage API — [Implemented]
+### 3.11 Storage API & Web Dashboard — [Implemented]
 
-Multi-tenant object storage backed by Cloudflare R2. Routes live in `app/api/v1/storage/**`.
+Multi-tenant object storage backed by Cloudflare R2 and Durable Objects with real-time quota & metering. Routes live in `app/api/v1/storage/**`.
+A full interactive web dashboard is available at `/storage`.
 
 #### Authentication
 
-Storage endpoints accept **either**:
-- `x-api-key: <key>` header (Better Auth API key)
-- `Authorization: Bearer <key>` header (Better Auth API key)
-- Session cookie (dashboard access, same mechanism as other `/api/v1/*` endpoints)
+Storage endpoints accept **any** of:
+- `x-api-key: <key>` header (Better Auth or Storage API key)
+- `Authorization: Bearer <key>` header (Better Auth or Storage API key)
+- Session cookie (web dashboard access at `/storage`, same mechanism as other `/api/v1/*` endpoints)
 
-Create an API key via `POST /api/auth/api-key/create` (see §2.8). The key grants access to the authenticated user's tenant namespace.
+Create an API key via the Storage UI (`/storage` → API Keys tab) or `POST /api/v1/storage/api-keys`. The key grants access to the authenticated user's tenant namespace.
 
 #### Tenant auto-provisioning
 

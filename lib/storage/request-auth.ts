@@ -1,11 +1,12 @@
 import type { NextRequest } from "next/server";
+import { eq, and, isNull } from "drizzle-orm";
 import { getAuth } from "@/lib/auth";
 import { getSession } from "@/lib/auth/session";
 import { HttpError } from "@/lib/http";
 import { getRedis } from "@/lib/redis";
 import { extractApiKey, hashApiKey, type StorageScope } from "./auth";
 import { getStorageService } from "./service";
-import type { Project, Tenant } from "./schema";
+import { apiKeys, type Project, type Tenant } from "./schema";
 
 export interface StorageAuthContext {
   tenant: Tenant;
@@ -48,24 +49,56 @@ export async function authenticateStorageRequest(
       // Non-blocking: continue to authoritative verification
     }
 
-    const auth = await getAuth();
-    const result = await auth.api.verifyApiKey({ body: { key: rawKey } });
+    let tenant: Tenant | null = null;
 
-    if (!result.valid || !result.key) {
-      throw new HttpError("UNAUTHENTICATED", "Invalid or expired API key.", 401);
+    // 1a. Try Better Auth API key
+    try {
+      const auth = await getAuth();
+      const result = await auth.api.verifyApiKey({ body: { key: rawKey } });
+      if (result.valid && result.key) {
+        const userId = result.key.referenceId as string;
+        const tenantId = `t_${userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 24)}`;
+        tenant = await service.getTenant(tenantId);
+        if (!tenant) {
+          tenant = await service.createTenant({
+            id: tenantId,
+            name: "Default Workspace",
+            plan: "free",
+          });
+        }
+      }
+    } catch {
+      // Non-blocking: fall back to storage_api_keys check
     }
 
-    // `referenceId` is the userId stored when the key was created
-    const userId = result.key.referenceId as string;
-    const tenantId = `t_${userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 24)}`;
-    let tenant = await service.getTenant(tenantId);
+    // 1b. Check storage_api_keys table
+    if (!tenant) {
+      try {
+        const db = await service.db();
+        const [keyRecord] = await db
+          .select()
+          .from(apiKeys)
+          .where(and(eq(apiKeys.keyHash, keyHash), isNull(apiKeys.revokedAt)));
+
+        if (keyRecord) {
+          if (keyRecord.expiresAt && new Date(keyRecord.expiresAt) < new Date()) {
+            throw new HttpError("UNAUTHENTICATED", "API key has expired.", 401);
+          }
+          tenant = await service.getTenant(keyRecord.tenantId);
+
+          // Update lastUsedAt asynchronously
+          db.update(apiKeys)
+            .set({ lastUsedAt: new Date().toISOString() })
+            .where(eq(apiKeys.id, keyRecord.id))
+            .catch(() => {});
+        }
+      } catch (err) {
+        if (err instanceof HttpError) throw err;
+      }
+    }
 
     if (!tenant) {
-      tenant = await service.createTenant({
-        id: tenantId,
-        name: "Default Workspace",
-        plan: "free",
-      });
+      throw new HttpError("UNAUTHENTICATED", "Invalid or expired API key.", 401);
     }
 
     // Cache verified tenant for 60 seconds

@@ -43,7 +43,8 @@ Here's a plan to build this as a production-grade service, in phases. A solo dev
 - **Delete protection:** decide whether to add a soft-delete window (move to a `_trash/` prefix with a lifecycle rule), since users will delete things by accident.
 - **Runbooks:** for quota-drift fixes, leaked keys, and R2 or Fly outages.
 
-## Phase 6: Pre-launch (weeks 7-8)
+## Phase 6: Pre-launch & Developer Experience (weeks 7-8) — [IN PROGRESS]
+- **Interactive Storage Dashboard UI [COMPLETED]:** Dedicated Next.js App Router UI (`/storage`) with storage namespace creation, drag & drop uploads, browser downloads, file deletion, metadata & image previews, API key management with secret key reveal, and live quota/metering status (512 MB and 100k read/write ops).
 - **Load testing:** run k6 against staging with realistic mixed traffic.
 - **Developer experience:** publish docs, a generated TypeScript SDK, and a quickstart.
 - **Beta:** onboard 5 to 10 friendly tenants, watch usage drift and cost per tenant, and fix issues. Then open signups with trial caps.
