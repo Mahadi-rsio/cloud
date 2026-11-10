@@ -165,20 +165,25 @@ Source: `lib/db/schema.ts`; migration `drizzle/0004_open_prism.sql`. Owned and m
 
 ### 1.6 Storage control-plane tables (implemented)
 
-Source: `lib/storage/schema.ts`; migration `drizzle/0005_brief_trish_tilby.sql`. All tables use the `storage_` prefix and are defined with `pgTable` (Neon PostgreSQL). Storage data (file bytes) lives in Cloudflare R2 — only control-plane metadata is stored here.
+Source: `lib/storage/schema.ts`; migrations `drizzle/0005_brief_trish_tilby.sql` and `drizzle/0006_dazzling_jubilee.sql`. All tables use the `storage_` prefix and are defined with `pgTable` (Neon PostgreSQL). Storage data (file bytes) lives in Cloudflare R2 — only control-plane metadata and persistent ledgers are stored here. Real-time byte reservations and hot-path operation rate checks are managed by the per-tenant Cloudflare SQLite Durable Object (`TenantMeterDO`).
 
 **`storage_tenants`** — one record per platform user.
 
 | Column | Type | Constraints |
 | --- | --- | --- |
 | `id` | text | PK (deterministic: `t_${userId.replace(/[^a-zA-Z0-9]/g,'').slice(0,24)}`) |
-| `user_id` | text | not null, unique, FK → `user.id` |
-| `name` | text | nullable |
+| `name` | text | not null |
 | `plan` | text | not null, default `free` |
-| `status` | text | not null, default `active` |
-| `storage_used` | bigint | not null, default 0 (bytes) |
-| `storage_limit` | bigint | not null, default 5368709120 (5 GB) |
-| `created_at` / `updated_at` | timestamp | not null |
+| `status` | text | not null, default `trial` (`trial`, `active`, `suspended`, `pending_delete`, `deleted`) |
+| `storage_limit_bytes` | bigint | not null, default 536870912 (512 MB for free plan) |
+| `storage_used_bytes` | bigint | not null, default 0 (reconciled bytes) |
+| `file_count` | integer | not null, default 0 |
+| `monthly_read_limit_ops` | integer | not null, default 100000 (100k Class B ops) |
+| `monthly_write_limit_ops` | integer | not null, default 100000 (100k Class A ops) |
+| `bandwidth_limit_bytes` | bigint | not null, default 5368709120 (5 GB) |
+| `egress_rate_limit_mbps` | integer | not null, default 100 |
+| `trial_ends_at` | text | nullable |
+| `created_at` / `updated_at` | text | not null |
 
 **`storage_projects`** — named namespaces (sub-buckets) per tenant.
 

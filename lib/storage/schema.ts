@@ -22,6 +22,36 @@ export type TenantStatus = (typeof TENANT_STATUSES)[number];
 export const TENANT_PLANS = ["free", "pro", "enterprise"] as const;
 export type TenantPlan = (typeof TENANT_PLANS)[number];
 
+export const STORAGE_PLANS = {
+  free: {
+    name: "free",
+    storageLimitBytes: 512 * 1024 * 1024, // 512 MB
+    monthlyReadLimitOps: 100_000,          // 100k read operations
+    monthlyWriteLimitOps: 100_000,         // 100k write operations
+    bandwidthLimitBytes: 5 * 1024 * 1024 * 1024, // 5 GB
+    egressRateLimitMbps: 100,
+    maxObjectSizeBytes: 100 * 1024 * 1024, // 100 MB max object
+  },
+  pro: {
+    name: "pro",
+    storageLimitBytes: 100 * 1024 * 1024 * 1024, // 100 GB
+    monthlyReadLimitOps: 10_000_000,
+    monthlyWriteLimitOps: 1_000_000,
+    bandwidthLimitBytes: 500 * 1024 * 1024 * 1024,
+    egressRateLimitMbps: 1000,
+    maxObjectSizeBytes: 500 * 1024 * 1024,
+  },
+  enterprise: {
+    name: "enterprise",
+    storageLimitBytes: 1024 * 1024 * 1024 * 1024, // 1 TB
+    monthlyReadLimitOps: 100_000_000,
+    monthlyWriteLimitOps: 10_000_000,
+    bandwidthLimitBytes: 5 * 1024 * 1024 * 1024 * 1024,
+    egressRateLimitMbps: 10000,
+    maxObjectSizeBytes: 5 * 1024 * 1024 * 1024,
+  },
+} as const;
+
 export const tenants = pgTable(
   "storage_tenants",
   {
@@ -31,10 +61,20 @@ export const tenants = pgTable(
     plan: text("plan").notNull().default("free"),
     storageLimitBytes: bigint("storage_limit_bytes", { mode: "number" })
       .notNull()
-      .default(10 * 1024 * 1024 * 1024), // 10 GB
+      .default(512 * 1024 * 1024), // 512 MB for free plan
+    storageUsedBytes: bigint("storage_used_bytes", { mode: "number" })
+      .notNull()
+      .default(0),
+    fileCount: integer("file_count").notNull().default(0),
+    monthlyReadLimitOps: integer("monthly_read_limit_ops")
+      .notNull()
+      .default(100_000), // 100k read operations for free plan
+    monthlyWriteLimitOps: integer("monthly_write_limit_ops")
+      .notNull()
+      .default(100_000), // 100k write operations for free plan
     bandwidthLimitBytes: bigint("bandwidth_limit_bytes", { mode: "number" })
       .notNull()
-      .default(50 * 1024 * 1024 * 1024), // 50 GB
+      .default(5 * 1024 * 1024 * 1024), // 5 GB
     egressRateLimitMbps: integer("egress_rate_limit_mbps").notNull().default(100),
     trialEndsAt: text("trial_ends_at"),
     createdAt: text("created_at").notNull(),
@@ -98,10 +138,12 @@ export const usageDaily = pgTable(
     projectId: text("project_id"),
     date: text("date").notNull(), // YYYY-MM-DD
     storageBytesAvg: bigint("storage_bytes_avg", { mode: "number" }).notNull().default(0),
+    storageBytesPeak: bigint("storage_bytes_peak", { mode: "number" }).notNull().default(0),
+    fileCount: integer("file_count").notNull().default(0),
     egressBytes: bigint("egress_bytes", { mode: "number" }).notNull().default(0),
     ingressBytes: bigint("ingress_bytes", { mode: "number" }).notNull().default(0),
-    readOps: integer("read_ops").notNull().default(0),
-    writeOps: integer("write_ops").notNull().default(0),
+    readOps: integer("read_ops").notNull().default(0), // Class B operations (GET, HEAD)
+    writeOps: integer("write_ops").notNull().default(0), // Class A operations (PUT, COPY, DELETE, LIST)
     deleteOps: integer("delete_ops").notNull().default(0),
     updatedAt: text("updated_at").notNull(),
   },
@@ -124,7 +166,8 @@ export const usageEvents = pgTable(
       .references(() => tenants.id, { onDelete: "cascade" }),
     projectId: text("project_id"),
     timestamp: text("timestamp").notNull(),
-    eventType: text("event_type").notNull(), // read | write | delete | egress
+    eventType: text("event_type").notNull(), // read | write | delete | list | copy | egress
+    classType: text("class_type").notNull().default("class_b"), // class_a | class_b
     bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
     ops: integer("ops").notNull().default(1),
   },

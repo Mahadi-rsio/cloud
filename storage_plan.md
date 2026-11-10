@@ -23,10 +23,13 @@ Here's a plan to build this as a production-grade service, in phases. A solo dev
   - Serve user-uploaded public content from a separate domain, so uploaded HTML can't attack your dashboard origin.
 - **API standards:** OpenAPI spec (`/api/v1/storage/openapi.json`), RFC 7807 error format, idempotency keys on writes, ETag and conditional requests, and rate-limit headers.
 
-## Phase 3: Metering, quotas, and billing hooks (week 4)
-- **Usage tracking:** increment bytes on write, handle deletes and direct writes through R2 event notifications and Queues, and reconcile nightly by listing each prefix.
-- **Quotas:** per-plan limits on storage bytes, request rate, and operations per month. Trial tenants should get hard, small caps, because R2's free tier is shared across your whole account, not per tenant.
-- **Cost model:** R2 charges $0.015/GB-month for Standard storage, $4.50 per million Class A (write/list) operations, and $0.36 per million Class B (read) operations, with no egress charges. The monthly free tier covers 10 GB of storage, 1 million Class A operations, and 10 million Class B operations. Price your plans on GB stored plus operations, and rate-limit list and write calls hardest.
+## Phase 3: Metering, quotas, and billing hooks (week 4) — [IN PROGRESS]
+- **Durable Object Metering:** SQLite-backed Cloudflare Durable Object (`TenantMeterDO`) providing atomic, single-threaded byte reservations and real-time Class A / Class B request counting.
+- **Free Plan Quotas:** 512 MB storage limit (`536,870,912` bytes), 100,000 monthly Class A write/list operations, and 100,000 monthly Class B read operations.
+- **Hard Quota Enforcement:** Upfront preflight checks reject oversized uploads and over-limit writes with HTTP `402 Quota Exceeded`.
+- **Usage tracking & ledger:** Neon PostgreSQL tables (`storage_usage_events`, `storage_usage_daily`, `storage_tenants`) track reconciled metrics with `class_type` classifications (migration `0006`).
+- **Live APIs:** `GET /api/v1/storage/usage` and `GET /api/v1/storage/tenants` inspect usage and limits.
+- **Nightly reconciliation (remaining):** Cloudflare Cron Trigger / Queue consumer to scan `t_<tenantId>/` prefixes and reconcile actual R2 stored bytes against the DO meter via `meter.reconcile()`.
 
 ## Phase 4: Security and abuse hardening (week 5)
 - **Isolation tests:** write automated tests that try to cross tenant boundaries (path tricks, encoded slashes, presigned URL reuse, key swapping). Run them in CI on every deploy.

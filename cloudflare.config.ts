@@ -1,4 +1,4 @@
-import { bindings, defineConfig, defineWorker, triggers } from "cf/config";
+import { bindings, defineConfig, defineWorker, exports, triggers } from "cf/config";
 import { createWorkersCacheConfig } from "@vinext/cloudflare/cache/config";
 
 const cache = await createWorkersCacheConfig();
@@ -17,8 +17,16 @@ export default defineConfig({
       notFoundHandling: "none",
       runWorkerFirst: ["/*", "!/_next/static/*", "!/*/_next/static/*"],
     },
+    exports: {
+      ...cache.exports,
+      TenantMeterDO: exports.durableObject({ storage: "sqlite" }),
+    },
     env: {
       ...cache.env,
+      STORAGE_METER: bindings.durableObject({
+        worker: "cloud",
+        exportName: "TenantMeterDO",
+      }),
       ASSETS: bindings.assets(),
       AUTH_JOBS: bindings.queue({ name: "auth-jobs" }),
       BUILD_JOBS: bindings.queue({ name: "build-jobs" }),

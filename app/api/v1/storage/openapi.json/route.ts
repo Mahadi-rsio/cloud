@@ -69,6 +69,17 @@ export async function GET() {
     },
     security: [{ ApiKeyHeader: [] }, { BearerAuth: [] }],
     paths: {
+      "/usage": {
+        get: {
+          summary: "Get current storage usage and quota limits",
+          responses: {
+            "200": {
+              description: "Current storage byte usage, monthly read/write operations, and tier limits",
+            },
+            "401": { description: "Unauthenticated" },
+          },
+        },
+      },
       "/namespaces": {
         get: {
           summary: "List all namespaces in current tenant",

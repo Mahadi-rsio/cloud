@@ -108,9 +108,13 @@ The platform includes a production-grade multi-tenant object storage service:
 4. The `referenceId` field on the verified key is the `userId`.
 5. `tenantId` is derived deterministically from `userId`; the tenant record is auto-created on first access and cached for 60s.
 
-**Phase 2 Core Data Plane Capabilities:**
+**Phase 2 & Phase 3 Core Data Plane & Metering:**
+- **Durable Object Metering & Hard Quotas**: Each tenant has a dedicated SQLite-backed Cloudflare Durable Object (`TenantMeterDO` bound as `STORAGE_METER`). The DO provides single-threaded atomic byte reservations, preventing race conditions on concurrent uploads.
+  - **Free Plan Allowances**: 512 MB storage limit (`536,870,912` bytes), 100,000 monthly Class A operations (PUT, COPY, DELETE, LIST), and 100,000 monthly Class B operations (GET, HEAD).
+  - **Hard 402 Rejections**: Exceeding the 512 MB storage capacity or monthly operation caps immediately rejects requests with HTTP `402 Quota Exceeded`.
+  - **Live Usage API**: `GET /api/v1/storage/usage` and `GET /api/v1/storage/tenants` inspect current byte counts, file count, and monthly ops.
 - **Presigned URLs via Signed Tokens**: For uploads/downloads over several MB, clients call `POST /api/v1/storage/namespaces/:ns/presign` to receive an HMAC-SHA256 signed capability token. Third-party clients then upload directly via `PUT /api/v1/storage/presigned/:token` without requiring the tenant's master API key.
-- **Server-Side File Copy**: `POST /api/v1/storage/namespaces/:ns/files/:path+` duplicates files and metadata within tenant namespaces without client round-trips.
+- **Server-Side File Copy**: `POST /api/v1/storage/namespaces/:ns/files/:path+` duplicates files and metadata within tenant namespaces without client round-trips, reserving destination quota beforehand.
 - **Conditional Requests (ETag & Last-Modified)**: `GET` and `HEAD` endpoints evaluate `If-None-Match` and `If-Modified-Since`, returning `304 Not Modified` without payload transfer when matching.
 - **Security & XSS Hardening**: HTML/SVG/XML uploads served from the control plane origin are forced to `Content-Type: application/octet-stream` and `Content-Disposition: attachment; filename="..."` with `X-Content-Type-Options: nosniff`.
 - **Upload Size Protection**: Enforces an upfront 100 MB max object size via `Content-Length` validation (returning `413 VALIDATION_ERROR` before reading body streams).

@@ -20,10 +20,12 @@ import {
   type StorageOperation,
 } from "./lifecycle";
 import { getStorageBucket, type PutObjectOptions, type StorageBucket } from "./r2";
+import { getTenantMeter, type TenantMeterInterface, type TenantUsageSnapshot } from "./quota-do";
 import {
   apiKeys,
   auditLog,
   projects,
+  STORAGE_PLANS,
   tenants,
   usageDaily,
   usageEvents,
@@ -77,14 +79,19 @@ export class StorageService {
     const now = new Date().toISOString();
     const trialEndsAt = calculateTrialEndDate(parsed.trialDays ?? 7);
 
+    const planConfig = STORAGE_PLANS[parsed.plan as TenantPlan] ?? STORAGE_PLANS.free;
     const values = {
       id,
       name: parsed.name,
       status: "trial" as TenantStatus,
       plan: parsed.plan as TenantPlan,
-      storageLimitBytes: parsed.storageLimitBytes ?? 10 * 1024 * 1024 * 1024,
-      bandwidthLimitBytes: parsed.bandwidthLimitBytes ?? 50 * 1024 * 1024 * 1024,
-      egressRateLimitMbps: parsed.egressRateLimitMbps ?? 100,
+      storageLimitBytes: parsed.storageLimitBytes ?? planConfig.storageLimitBytes,
+      storageUsedBytes: 0,
+      fileCount: 0,
+      monthlyReadLimitOps: planConfig.monthlyReadLimitOps,
+      monthlyWriteLimitOps: planConfig.monthlyWriteLimitOps,
+      bandwidthLimitBytes: parsed.bandwidthLimitBytes ?? planConfig.bandwidthLimitBytes,
+      egressRateLimitMbps: parsed.egressRateLimitMbps ?? planConfig.egressRateLimitMbps,
       trialEndsAt,
       createdAt: now,
       updatedAt: now,
@@ -134,8 +141,18 @@ export class StorageService {
 
     if (input.name !== undefined) updates.name = input.name;
     if (input.status !== undefined) updates.status = input.status;
-    if (input.plan !== undefined) updates.plan = input.plan;
+    if (input.plan !== undefined) {
+      updates.plan = input.plan;
+      const planConfig = STORAGE_PLANS[input.plan as TenantPlan];
+      if (planConfig) {
+        if (input.storageLimitBytes === undefined) updates.storageLimitBytes = planConfig.storageLimitBytes;
+        updates.monthlyReadLimitOps = planConfig.monthlyReadLimitOps;
+        updates.monthlyWriteLimitOps = planConfig.monthlyWriteLimitOps;
+      }
+    }
     if (input.storageLimitBytes !== undefined) updates.storageLimitBytes = input.storageLimitBytes;
+    if (input.monthlyReadLimitOps !== undefined) updates.monthlyReadLimitOps = input.monthlyReadLimitOps;
+    if (input.monthlyWriteLimitOps !== undefined) updates.monthlyWriteLimitOps = input.monthlyWriteLimitOps;
     if (input.bandwidthLimitBytes !== undefined) updates.bandwidthLimitBytes = input.bandwidthLimitBytes;
     if (input.egressRateLimitMbps !== undefined) updates.egressRateLimitMbps = input.egressRateLimitMbps;
     if (input.trialEndsAt !== undefined) updates.trialEndsAt = input.trialEndsAt;
@@ -446,13 +463,67 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", `Namespace '${namespaceName}' not found`, 404);
     }
 
+    const meter = await getTenantMeter(tenant.id);
+
+    // 1. Check monthly write quota (100k on free plan)
+    const writeCheck = await meter.checkOperationQuota("class_a", tenant.monthlyWriteLimitOps);
+    if (!writeCheck.ok) {
+      throw new HttpError(
+        "FORBIDDEN",
+        `Monthly write operation quota exceeded (${writeCheck.count}/${writeCheck.limit} ops; 100k free tier limit)`,
+        402,
+      );
+    }
+
+    // 2. Pre-flight quota check if size is known
+    let preflightSize = 0;
+    if (typeof body === "string") preflightSize = new TextEncoder().encode(body).length;
+    else if (body instanceof Uint8Array) preflightSize = body.byteLength;
+    else if (body instanceof ArrayBuffer) preflightSize = body.byteLength;
+    else if (typeof Blob !== "undefined" && body instanceof Blob) preflightSize = body.size;
+
+    if (preflightSize > 0) {
+      const reservation = await meter.reserveBytes(preflightSize, tenant.storageLimitBytes);
+      if (!reservation.ok) {
+        throw new HttpError(
+          "FORBIDDEN",
+          `Storage quota exceeded: ${reservation.usedBytes} bytes currently used; limit is ${reservation.limitBytes} bytes (512 MB free tier limit)`,
+          402,
+        );
+      }
+    }
+
     const r2Key = formatObjectKey(tenant.id, namespace.name, validated.normalized);
     const bucket = await this.bucket();
 
-    const stored = await bucket.put(r2Key, body, options);
+    let stored;
+    try {
+      stored = await bucket.put(r2Key, body, options);
+    } catch (err) {
+      if (preflightSize > 0) {
+        await meter.releaseBytes(preflightSize);
+      }
+      throw err;
+    }
 
-    // Record usage
-    await this.recordUsage(tenant.id, namespace.id, "write", stored.size, 1);
+    // If size was not known before upload, check & reserve post-upload
+    if (preflightSize === 0) {
+      const reservation = await meter.reserveBytes(stored.size, tenant.storageLimitBytes);
+      if (!reservation.ok) {
+        await bucket.delete(r2Key).catch(() => {});
+        throw new HttpError(
+          "FORBIDDEN",
+          `Storage quota exceeded: upload of ${stored.size} bytes exceeds limit of ${reservation.limitBytes} bytes (512 MB free tier limit)`,
+          402,
+        );
+      }
+    }
+
+    // Commit bytes & record Class A write operation in DO
+    await meter.commitBytes(stored.size);
+
+    // Record usage in DB
+    await this.recordUsage(tenant.id, namespace.id, "write", stored.size, 1, "class_a");
 
     return {
       namespace: namespace.name,
@@ -483,6 +554,18 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", `Namespace '${namespaceName}' not found`, 404);
     }
 
+    const meter = await getTenantMeter(tenant.id);
+
+    // Check Class B read quota (100k on free plan)
+    const readCheck = await meter.recordOperation("class_b", "read", 0, tenant.monthlyReadLimitOps);
+    if (!readCheck.ok) {
+      throw new HttpError(
+        "FORBIDDEN",
+        `Monthly read operation quota exceeded (${readCheck.count}/${readCheck.limit} ops; 100k free tier limit)`,
+        402,
+      );
+    }
+
     const r2Key = formatObjectKey(tenant.id, namespace.name, validated.normalized);
     const bucket = await this.bucket();
 
@@ -492,7 +575,7 @@ export class StorageService {
     }
 
     // Record egress usage
-    await this.recordUsage(tenant.id, namespace.id, "read", object.size, 1);
+    await this.recordUsage(tenant.id, namespace.id, "read", object.size, 1, "class_b");
 
     return {
       namespace: namespace.name,
@@ -514,12 +597,29 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", `Namespace '${namespaceName}' not found`, 404);
     }
 
+    const meter = await getTenantMeter(tenant.id);
+
+    // Check Class A write quota
+    const writeCheck = await meter.checkOperationQuota("class_a", tenant.monthlyWriteLimitOps);
+    if (!writeCheck.ok) {
+      throw new HttpError(
+        "FORBIDDEN",
+        `Monthly write operation quota exceeded (${writeCheck.count}/${writeCheck.limit} ops)`,
+        402,
+      );
+    }
+
     const r2Key = formatObjectKey(tenant.id, namespace.name, validated.normalized);
     const bucket = await this.bucket();
 
-    await bucket.delete(r2Key);
+    // Check size first so meter accurately decrements
+    const existing = await bucket.head(r2Key);
+    const deletedBytes = existing?.size ?? 0;
 
-    await this.recordUsage(tenant.id, namespace.id, "delete", 0, 1);
+    await bucket.delete(r2Key);
+    await meter.deleteFile(deletedBytes);
+
+    await this.recordUsage(tenant.id, namespace.id, "delete", 0, 1, "class_a");
 
     return { success: true, namespace: namespace.name, path: validated.normalized };
   }
@@ -534,6 +634,17 @@ export class StorageService {
     const namespace = await this.getNamespace(tenant.id, namespaceName);
     if (!namespace) {
       throw new HttpError("NOT_FOUND", `Namespace '${namespaceName}' not found`, 404);
+    }
+
+    const meter = await getTenantMeter(tenant.id);
+    // Listing is a Class A operation in R2
+    const listCheck = await meter.recordOperation("class_a", "list", 0, tenant.monthlyWriteLimitOps);
+    if (!listCheck.ok) {
+      throw new HttpError(
+        "FORBIDDEN",
+        `Monthly write/list operation quota exceeded (${listCheck.count}/${listCheck.limit} ops; 100k free tier limit)`,
+        402,
+      );
     }
 
     const basePrefix = `t_${tenant.id.replace(/^t_/, "")}/${namespace.name}/`;
@@ -579,6 +690,16 @@ export class StorageService {
     const namespace = await this.getNamespace(tenant.id, namespaceName);
     if (!namespace) {
       throw new HttpError("NOT_FOUND", `Namespace '${namespaceName}' not found`, 404);
+    }
+
+    const meter = await getTenantMeter(tenant.id);
+    const readCheck = await meter.recordOperation("class_b", "read", 0, tenant.monthlyReadLimitOps);
+    if (!readCheck.ok) {
+      throw new HttpError(
+        "FORBIDDEN",
+        `Monthly read operation quota exceeded (${readCheck.count}/${readCheck.limit} ops; 100k free tier limit)`,
+        402,
+      );
     }
 
     const r2Key = formatObjectKey(tenant.id, namespace.name, validated.normalized);
@@ -633,6 +754,18 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", `Destination namespace '${destinationNamespace}' not found`, 404);
     }
 
+    const meter = await getTenantMeter(tenant.id);
+
+    // 1. Check Class A write quota
+    const writeCheck = await meter.checkOperationQuota("class_a", tenant.monthlyWriteLimitOps);
+    if (!writeCheck.ok) {
+      throw new HttpError(
+        "FORBIDDEN",
+        `Monthly write operation quota exceeded (${writeCheck.count}/${writeCheck.limit} ops)`,
+        402,
+      );
+    }
+
     const bucket = await this.bucket();
 
     // Download source object
@@ -642,17 +775,36 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", `Source file '${sourcePath}' not found`, 404);
     }
 
+    // 2. Reserve bytes for destination copy
+    const reservation = await meter.reserveBytes(srcObject.size, tenant.storageLimitBytes);
+    if (!reservation.ok) {
+      throw new HttpError(
+        "FORBIDDEN",
+        `Storage quota exceeded: copying ${srcObject.size} bytes exceeds limit of ${reservation.limitBytes} bytes (512 MB free tier limit)`,
+        402,
+      );
+    }
+
     // Re-upload to destination preserving content type and custom metadata
     const dstKey = formatObjectKey(tenant.id, dstNs.name, dstValidated.normalized);
     const body = await srcObject.arrayBuffer();
-    const stored = await bucket.put(dstKey, body, {
-      httpMetadata: srcObject.httpMetadata,
-      customMetadata: srcObject.customMetadata,
-    });
 
-    // Record usage for both the read and the write
-    await this.recordUsage(tenant.id, srcNs.id, "read", srcObject.size, 1);
-    await this.recordUsage(tenant.id, dstNs.id, "write", stored.size, 1);
+    let stored;
+    try {
+      stored = await bucket.put(dstKey, body, {
+        httpMetadata: srcObject.httpMetadata,
+        customMetadata: srcObject.customMetadata,
+      });
+    } catch (err) {
+      await meter.releaseBytes(srcObject.size);
+      throw err;
+    }
+
+    await meter.commitBytes(stored.size);
+
+    // Record usage for both the read (Class B) and the write (Class A)
+    await this.recordUsage(tenant.id, srcNs.id, "read", srcObject.size, 1, "class_b");
+    await this.recordUsage(tenant.id, dstNs.id, "write", stored.size, 1, "class_a");
 
     return {
       sourceNamespace: srcNs.name,
@@ -664,6 +816,11 @@ export class StorageService {
     };
   }
 
+  async getTenantUsage(tenantId: string): Promise<TenantUsageSnapshot> {
+    const meter = await getTenantMeter(tenantId);
+    return meter.getUsage();
+  }
+
   /* =========================================================================
    * Usage and Audit Logging
    * ========================================================================= */
@@ -671,9 +828,10 @@ export class StorageService {
   async recordUsage(
     tenantId: string,
     projectId: string | null,
-    eventType: "read" | "write" | "delete" | "egress",
+    eventType: "read" | "write" | "delete" | "list" | "copy" | "egress",
     bytes = 0,
     ops = 1,
+    classType: "class_a" | "class_b" = eventType === "read" || eventType === "egress" ? "class_b" : "class_a",
   ) {
     try {
       const db = await this.db();
@@ -687,6 +845,7 @@ export class StorageService {
         projectId,
         timestamp: now.toISOString(),
         eventType,
+        classType,
         bytes,
         ops,
       });
@@ -710,9 +869,9 @@ export class StorageService {
           projectId: projectId ?? "",
           date: today,
           egressBytes: eventType === "read" || eventType === "egress" ? bytes : 0,
-          ingressBytes: eventType === "write" ? bytes : 0,
-          readOps: eventType === "read" ? ops : 0,
-          writeOps: eventType === "write" ? ops : 0,
+          ingressBytes: eventType === "write" || eventType === "copy" ? bytes : 0,
+          readOps: classType === "class_b" ? ops : 0,
+          writeOps: classType === "class_a" ? ops : 0,
           deleteOps: eventType === "delete" ? ops : 0,
           updatedAt: now.toISOString(),
         });
@@ -722,16 +881,16 @@ export class StorageService {
           .update(usageDaily)
           .set({
             egressBytes: row.egressBytes + (eventType === "read" || eventType === "egress" ? bytes : 0),
-            ingressBytes: row.ingressBytes + (eventType === "write" ? bytes : 0),
-            readOps: row.readOps + (eventType === "read" ? ops : 0),
-            writeOps: row.writeOps + (eventType === "write" ? ops : 0),
+            ingressBytes: row.ingressBytes + (eventType === "write" || eventType === "copy" ? bytes : 0),
+            readOps: row.readOps + (classType === "class_b" ? ops : 0),
+            writeOps: row.writeOps + (classType === "class_a" ? ops : 0),
             deleteOps: row.deleteOps + (eventType === "delete" ? ops : 0),
             updatedAt: now.toISOString(),
           })
           .where(eq(usageDaily.id, row.id));
       }
-    } catch (err) {
-      console.error("[storage] failed to record usage", err);
+    } catch {
+      // Usage logging is best-effort and non-blocking
     }
   }
 

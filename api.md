@@ -299,14 +299,27 @@ Files are stored in R2 with the key: `<tenantId>/<namespace>/<path>`
 | `DELETE /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | — | 200 | Implemented |
 | `POST /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | `{ destinationPath, destinationNamespace? }` | `{ sourcePath, destinationPath, destinationNamespace, size, etag }` | Implemented |
 
-#### Presigned & OpenAPI endpoints
+#### Presigned, Quota & OpenAPI endpoints
 
 | Endpoint | Auth | Body / Query | Success | Status |
 | --- | --- | --- | --- | --- |
+| `GET /api/v1/storage/usage` | API key or session | — | `{ tenantId, plan, limits, usage }` | Implemented |
+| `GET /api/v1/storage/tenants` | API key or session | — | `{ tenant, usage }` | Implemented |
 | `POST /api/v1/storage/namespaces/:namespace/presign` | API key or session | `{ path, method?, expiresIn? }` | `{ token, url, method, path, expiresAt }` | Implemented |
 | `PUT /api/v1/storage/presigned/:token` | Presigned Token (URL) | raw file body (max 100 MB) | `{ namespace, path, size, etag, uploadedAt }` | Implemented |
 | `GET /api/v1/storage/presigned/:token` | Presigned Token (URL) | `?download=true` | raw file stream | Implemented |
 | `GET /api/v1/storage/openapi.json` | None (public) | — | OpenAPI 3.1 JSON specification | Implemented |
+
+#### Quota & Metering Specifications (Durable Object)
+Each tenant is backed by a dedicated Cloudflare SQLite Durable Object (`TenantMeterDO`) providing atomic, race-free byte reservations and Class A / Class B operation counters.
+- **Free Plan Allowances:**
+  - **Storage:** 512 MB (`536,870,912` bytes)
+  - **Class A Operations (PUT, COPY, DELETE, LIST):** 100,000 operations / month
+  - **Class B Operations (GET, HEAD):** 100,000 operations / month
+- **Hard Quota Enforcement:**
+  - Upfront preflight checks reject writes and copies exceeding the 512 MB cap with `402 Quota Exceeded`.
+  - Aborted or failed uploads automatically release reserved bytes.
+  - Exceeding the monthly 100k Class A or Class B request caps returns `402 Monthly Quota Exceeded`.
 
 #### Security & Header specifications
 - **XSS prevention:** user-uploaded markup files (`text/html`, `text/xml`, `image/svg+xml`, `application/xml`) are served with `Content-Type: application/octet-stream` and `Content-Disposition: attachment` unless a custom domain is configured.

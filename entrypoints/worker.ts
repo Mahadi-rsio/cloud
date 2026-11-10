@@ -2,6 +2,9 @@ import fetchHandler from "vinext/server/fetch-handler";
 import type { AuthJob } from "../lib/queue";
 import { processDeployJob, type DeployJob } from "../lib/build/process-job";
 import { recoverStaleDeployments } from "../lib/build/recovery";
+import { TenantMeterDO } from "../lib/storage/quota-do";
+
+export { TenantMeterDO };
 
 const handler = typeof fetchHandler === "function" ? { fetch: fetchHandler } : fetchHandler;
 
