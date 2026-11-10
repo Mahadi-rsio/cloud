@@ -2,7 +2,7 @@
 
 A serverless, multi-tenant cloud hosting platform that automatically discovers, builds, and deploys any web application or microservice from a GitHub repository (or Dockerfile) to [Fly.io](https://fly.io) Machines at the edge.
 
-Built on **Next.js (Vinext on Cloudflare Workers)**, **Better Auth**, **Drizzle ORM + Neon PostgreSQL**, **BuildKit**, **Railpack**, and deterministic **Project Discovery** powered by `@vercel/frameworks` and `@vercel/fs-detectors`.
+Built on **Next.js (Vinext on Cloudflare Workers)**, **Better Auth** (with API key plugin), **Drizzle ORM + Neon PostgreSQL**, **Cloudflare R2**, **BuildKit**, **Railpack**, and deterministic **Project Discovery** powered by `@vercel/frameworks` and `@vercel/fs-detectors`.
 
 ---
 
@@ -38,6 +38,7 @@ Built on **Next.js (Vinext on Cloudflare Workers)**, **Better Auth**, **Drizzle 
 - **Multi-Tenant Database Service**: Managed multi-tenant libSQL (`sqld`) service providing instant, sub-millisecond per-tenant SQLite database isolation, copy-on-write branching, and stateless Ed25519 cryptographic token authentication.
 - **Real-Time Build Streaming**: Streams live build and deployment logs from the builder to the user dashboard using Server-Sent Events (SSE) with heartbeat and cursor resumption.
 - **Edge Deployment**: Provisions user applications onto Fly.io Machines with automated free Anycast shared IPv4 routing (`https://<app>.fly.dev`).
+- **Object Storage Service**: Multi-tenant file storage backed by Cloudflare R2. Each authenticated user gets an isolated tenant namespace. Files are organized into named namespaces (buckets) and accessed via a versioned REST API authenticated with Better Auth API keys.
 
 ---
 
@@ -51,13 +52,18 @@ graph TD
     Edge --> Auth[Better Auth / Sessions]
     Edge --> Dash[Dashboard UI & Server Components]
     Edge --> API[REST API v1 /api/v1/*]
+    Edge --> StorageAPI[Storage API /api/v1/storage/*]
     Edge --> Rate[Upstash Redis Rate Limiting]
     Edge --> Q[(Cloudflare Queue: build-jobs)]
+    Auth --> APIKey[Better Auth apiKey plugin]
+    StorageAPI -->|verifyApiKey| APIKey
+    StorageAPI --> R2[(cloud-storage R2 Bucket)]
   end
 
   subgraph DataLayer[Data Layer]
-    Auth <-->|neon-http| Neon[(Neon Serverless Postgres)]
+    Auth <-->|neon-http| Neon[(Neon Serverless Postgres\nauth + product + storage_* tables)]
     API <-->|Drizzle ORM| Neon
+    StorageAPI <-->|Drizzle ORM| Neon
   end
 
   subgraph FlyPlatform[Fly.io Infrastructure]
@@ -81,7 +87,8 @@ graph TD
 | **Control Plane** | Next.js 16 (React 19), [Vinext](https://github.com/cloudflare/vinext) on Cloudflare Workers, TypeScript |
 | **Styling & UI** | Tailwind CSS v4, Radix UI primitives, shadcn/ui, Lucide icons |
 | **Client State & Cache** | TanStack Query v5, Zustand v5 |
-| **Authentication** | [Better Auth](https://www.better-auth.com/) with email/password and session management |
+| **Authentication** | [Better Auth](https://www.better-auth.com/) with email/password, session management, and `@better-auth/api-key` plugin for programmatic API access |
+| **Object Storage** | Cloudflare R2 (`cloud-storage` bucket) for multi-tenant file storage; control-plane metadata in Neon (`storage_*` tables) |
 | **Control Plane Database** | Neon Serverless PostgreSQL with Drizzle ORM (`drizzle-orm/neon-http`, `drizzle-kit`) |
 | **Tenant Database Service** | libSQL Server (`sqld` in namespace mode) on Fly.io with encrypted persistent volume |
 | **Queues & Rate Limiting** | Cloudflare Queues (`build-jobs`, `auth-jobs`), Upstash Redis |
@@ -116,15 +123,23 @@ graph TD
 │   ├── 0000_luxuriant_toad.sql
 │   ├── 0001_add_applications_and_machines.sql
 │   ├── 0002_add_deployments_and_deployment_logs.sql
-│   └── 0003_acoustic_kate_bishop.sql
+│   ├── 0003_acoustic_kate_bishop.sql
+│   ├── 0004_open_prism.sql        # Better Auth apikey table
+│   └── 0005_brief_trish_tilby.sql # Storage control-plane tables (storage_*)
 ├── entrypoints/                  # Cloudflare Worker entrypoint and queue consumer
 │   └── worker.ts
 ├── lib/                          # Core backend libraries
-│   ├── auth/                     # Better Auth configuration
+│   ├── auth/                     # Better Auth configuration (+ apiKey plugin)
 │   ├── build/                    # Build strategy, builder client, Railpack plan rewriting
-│   ├── db/                       # Drizzle schema definitions (auth schema, product schema)
+│   ├── db/                       # Drizzle schema definitions (auth, product, storage schemas)
 │   ├── fly/                      # Fly.io Machines API client
 │   ├── project-discovery/        # Deterministic project discovery engine
+│   ├── storage/                  # Multi-tenant object storage service
+│   │   ├── schema.ts             #   Drizzle schema for storage_* tables (Neon)
+│   │   ├── db.ts                 #   Storage DB helpers (reuses Neon via getDb())
+│   │   ├── service.ts            #   Business logic: tenant, namespace, file operations
+│   │   ├── request-auth.ts       #   Auth middleware: verifyApiKey → tenantId
+│   │   └── validators.ts         #   Zod schemas for storage API requests
 │   └── validators/               # Zod validation schemas
 ├── tests/                        # Comprehensive test suite (93+ unit & integration tests)
 ├── cloudflare.config.ts          # Cloudflare Worker bindings and queue configurations
@@ -216,7 +231,7 @@ GITHUB_API_TOKEN=ghp_optional_token
 
 ### 4. Database Provisioning & Migrations
 
-All tables are defined in [`lib/db/schema.ts`](file:///workspaces/cloud/lib/db/schema.ts) (Better Auth) and [`lib/db/product-schema.ts`](file:///workspaces/cloud/lib/db/product-schema.ts) (applications, machines, deployments, logs).
+All tables are defined in [`lib/db/schema.ts`](file:///workspaces/cloud/lib/db/schema.ts) (Better Auth — `user`, `account`, `apikey`), [`lib/db/product-schema.ts`](file:///workspaces/cloud/lib/db/product-schema.ts) (applications, machines, deployments, logs), and [`lib/storage/schema.ts`](file:///workspaces/cloud/lib/storage/schema.ts) (storage control-plane: `storage_tenants`, `storage_projects`, `storage_api_keys`, `storage_usage_daily`, `storage_usage_events`, `storage_audit_log`).
 
 Run migrations to sync your Neon PostgreSQL database:
 
@@ -307,7 +322,12 @@ The control plane deploys as a Cloudflare Worker using [`@vinext/cloudflare`](ht
    pnpm dlx wrangler queues create build-jobs
    ```
 
-3. **Set Worker Secrets**:
+3. **Create the R2 storage bucket**:
+   ```bash
+   pnpm dlx wrangler r2 bucket create cloud-storage
+   ```
+
+4. **Set Worker Secrets**:
    Upload the secrets from `.dev.vars` to Cloudflare:
    ```bash
    pnpm dlx wrangler secret put DATABASE_URL
@@ -327,7 +347,7 @@ The control plane deploys as a Cloudflare Worker using [`@vinext/cloudflare`](ht
    pnpm dlx wrangler secret put UPSTASH_REDIS_REST_TOKEN
    ```
 
-4. **Build & Deploy**:
+5. **Build & Deploy**:
    ```bash
    pnpm build
    pnpm deploy
@@ -356,10 +376,10 @@ Test coverage includes:
 
 | Document | Purpose |
 | --- | --- |
-| [`api.md`](./api.md) | Full REST API specifications, request/response formats, error codes, and rate limits |
+| [`api.md`](./api.md) | Full REST API specifications, request/response formats, error codes, and rate limits (includes Storage API §3.11) |
 | [`architecture.md`](./architecture.md) | In-depth system architecture, reliability models, and runtime boundaries |
 | [`builds.md`](./builds.md) | Build pipeline specifications, Railpack plan rewriting, and BuildKit daemon tuning |
-| [`db.md`](./db.md) | Database schema documentation, table relationships, and index design |
+| [`db.md`](./db.md) | Database schema documentation, table relationships, and index design (includes storage and apikey tables §1.5–§1.6) |
 | [`databases/README.md`](./databases/README.md) | Multi-tenant libSQL service, Admin API (port 8443), and Ed25519 token authentication |
 | [`todo.md`](./todo.md) | Engineering roadmap, MVP milestones, and operational checklist |
 

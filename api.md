@@ -118,6 +118,18 @@ All current endpoints are handled by the Better Auth catch-all route `app/api/au
 
 The `[...all]` catch-all also serves any other Better Auth route (`/callback/*`, `/error`, etc.). These are provider-managed and not documented individually.
 
+### 2.8 Better Auth API Key endpoints — [Implemented]
+
+Managed by the `@better-auth/api-key` plugin (`lib/auth/index.ts`). All endpoints require an active session cookie and the `Origin` header matching `BETTER_AUTH_URL` (CSRF guard).
+
+| Endpoint | Auth | Body | Success | Notes |
+| --- | --- | --- | --- | --- |
+| `POST /api/auth/api-key/create` | session + `Origin` header | `{ name: string }` | 200 key object (raw `key` exposed **only on creation**) | Use `x-api-key` or `Authorization: Bearer <key>` for Storage API |
+| `GET /api/auth/api-key/list` | session | — | 200 `[apiKey…]` (key hash only, not raw value) | Lists all keys for the authenticated user |
+| `DELETE /api/auth/api-key/delete` | session | `{ keyId: string }` | 200 | Revokes the key immediately |
+
+> **Important:** The raw `key` value is returned **only once** at creation time and is never retrievable again. Store it securely.
+
 ## 3. Product API — Partially Implemented
 
 Endpoints marked **[Implemented]** exist today; endpoints marked **[Proposed]** do not yet exist. File paths are actual for implemented endpoints and proposed locations otherwise.
@@ -239,6 +251,81 @@ Deployments build a public GitHub repository into an OCI image (Railpack or Dock
 
 - `GET /api/health` — readiness/liveness; returns `{ status: "ok" }`.
 - Internal queue jobs run in `entrypoints/worker.ts` (no public HTTP endpoint); do not expose provider credentials or admin actions over the public API.
+
+### 3.11 Storage API — [Implemented]
+
+Multi-tenant object storage backed by Cloudflare R2. Routes live in `app/api/v1/storage/**`.
+
+#### Authentication
+
+Storage endpoints accept **either**:
+- `x-api-key: <key>` header (Better Auth API key)
+- `Authorization: Bearer <key>` header (Better Auth API key)
+- Session cookie (dashboard access, same mechanism as other `/api/v1/*` endpoints)
+
+Create an API key via `POST /api/auth/api-key/create` (see §2.8). The key grants access to the authenticated user's tenant namespace.
+
+#### Tenant auto-provisioning
+
+On the first authenticated storage request, a tenant is automatically created with a deterministic ID:
+
+```
+tenantId = "t_" + userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 24)
+```
+
+This ensures the same user always maps to the same tenant regardless of when their tenant record is first created.
+
+#### Object key layout
+
+Files are stored in R2 with the key: `<tenantId>/<namespace>/<path>`
+
+#### Namespace endpoints
+
+| Endpoint | Auth | Body / Query | Success | Status |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/storage/namespaces` | API key or session | — | `{ tenantId, namespaces[] }` | Implemented |
+| `POST /api/v1/storage/namespaces` | API key or session | `{ name, description? }` | `{ id, name, tenantId, createdAt }` | Implemented |
+| `GET /api/v1/storage/namespaces/:namespace` | API key or session | — | namespace detail object | Implemented |
+| `DELETE /api/v1/storage/namespaces/:namespace` | API key or session | — | 200 | Implemented |
+
+#### File endpoints
+
+| Endpoint | Auth | Body / Query | Success | Status |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/storage/namespaces/:namespace/files` | API key or session | `?prefix&limit&cursor` | `{ objects[], prefixes[], truncated }` | Implemented |
+| `PUT /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | raw file body | `{ namespace, path, size, etag, uploadedAt }` | Implemented |
+| `GET /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | — | raw file content (streamed) | Implemented |
+| `DELETE /api/v1/storage/namespaces/:namespace/files/:path+` | API key or session | — | 200 | Implemented |
+
+#### Error responses
+
+Storage endpoints use the standard product API envelope (§1.3). Additional error codes:
+
+| HTTP | Code | Meaning |
+| --- | --- | --- |
+| 401 | `UNAUTHENTICATED` | Missing or invalid API key / session |
+| 404 | `NOT_FOUND` | Namespace or file does not exist |
+| 409 | `CONFLICT` | Namespace name already exists for this tenant |
+
+#### Example: upload and download a file
+
+```bash
+# 1. Create a namespace
+curl -X POST https://cloud.rsioex.workers.dev/api/v1/storage/namespaces \
+  -H "x-api-key: <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"my-files"}'
+
+# 2. Upload a file
+curl -X PUT https://cloud.rsioex.workers.dev/api/v1/storage/namespaces/my-files/files/hello.txt \
+  -H "x-api-key: <your-api-key>" \
+  -H "Content-Type: text/plain" \
+  --data-binary "Hello, World!"
+
+# 3. Download the file
+curl https://cloud.rsioex.workers.dev/api/v1/storage/namespaces/my-files/files/hello.txt \
+  -H "x-api-key: <your-api-key>"
+```
 
 ## 4. Security and Reliability Requirements (All Endpoints)
 

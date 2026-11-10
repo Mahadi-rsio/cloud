@@ -1,6 +1,6 @@
 # Architecture — Cloud Hosting Platform
 
-> **Status:** This document separates the **current** architecture (verified in source at commit `d6265a6`) from the **proposed target** architecture. Every proposed component is explicitly labeled.
+> **Status:** This document separates the **current** architecture (verified in source at commits `d6265a6`–`70a8c40`) from the **proposed target** architecture. Every proposed component is explicitly labeled.
 > **Related documents:** [`prd.md`](./prd.md), [`api.md`](./api.md), [`db.md`](./db.md), [`plan.md`](./plan.md), [`todo.md`](./todo.md)
 
 ## 1. Current Architecture
@@ -11,7 +11,10 @@
 | --- | --- | --- |
 | Next.js app (vinext) | `app/**`, `components/**`, `stores/**` | Server-rendered dashboard UI; server components call `getSession()` |
 | Better Auth | `lib/auth/index.ts`, `app/api/auth/[...all]/route.ts` | Email/password auth, sessions, user management |
-| Drizzle ORM + Neon Postgres | `lib/db/index.ts`, `lib/db/schema.ts` | Authoritative store for users/accounts (Better Auth tables only) |
+| Better Auth API Key plugin | `lib/auth/index.ts` (`apiKey()` plugin), `lib/db/schema.ts` (`apikey` table, migration `0004`) | Programmatic API key issuance and verification for the Storage API |
+| Drizzle ORM + Neon Postgres | `lib/db/index.ts`, `lib/db/schema.ts`, `lib/db/product-schema.ts`, `lib/storage/schema.ts` | Authoritative store for users, accounts, apikeys, applications, deployments, and storage control-plane (`storage_*`) tables |
+| Storage Service | `lib/storage/**`, `app/api/v1/storage/**` | Multi-tenant object storage backed by Cloudflare R2 (`cloud-storage` bucket); control-plane metadata in Neon; auth via `verifyApiKey` |
+| Cloudflare R2 | `STORAGE_BUCKET` binding (`cloud-storage`) | Object data plane for the Storage Service; key layout: `<tenantId>/<namespace>/<path>` |
 | Cloudflare KV | `lib/auth/storage/kv.ts` (binding `AUTH_KV`) | Better Auth secondary storage (sessions/tokens); in-memory fallback outside Workers |
 | Cloudflare Queue | `cloudflare.config.ts` (binding `AUTH_JOBS`, name `auth-jobs`), `lib/queue.ts`, `entrypoints/worker.ts` | Async welcome-email job |
 | Cloudflare Worker | `entrypoints/worker.ts`, `cloudflare.config.ts`, `vite.config.ts` | Hosts the app; queue consumer; `nodejs_compat` |
@@ -28,10 +31,15 @@ graph TD
   subgraph CF[Cloudflare edge]
     W --> AUTH[Better Auth handler<br/>app/api/auth/*]
     W --> SSR[Server-rendered pages<br/>app/(app)/*]
+    W --> SAPI[Storage API<br/>app/api/v1/storage/*]
     AUTH --> KV[(AUTH_KV<br/>KV secondary storage)]
-    AUTH --> PG[(Neon Postgres<br/>user + account)]
+    AUTH --> PG[(Neon Postgres<br/>user + account + apikey)]
     AUTH --> Q[(auth-jobs Queue)]
+    AUTH --> APIKEY[apiKey plugin<br/>verifyApiKey]
     Q --> WQ[queue consumer<br/>entrypoints/worker.ts]
+    SAPI -->|verifyApiKey| APIKEY
+    SAPI -->|storage_* tables| PG
+    SAPI --> R2[(cloud-storage<br/>R2 Bucket)]
   end
   SSR -->|getSession| AUTH
 ```
@@ -81,13 +89,36 @@ graph TD
   CP -->|12. Launch & verify port| FLY[Fly Machine]
 ```
 
+### 1.6 Storage Service (implemented)
+
+The platform includes a production-grade multi-tenant object storage service:
+
+**Data plane:** Cloudflare R2 bucket (`cloud-storage`, binding `STORAGE_BUCKET`).
+
+**Control plane:** Neon PostgreSQL, using the `storage_*` table prefix (migration `0005`):
+- `storage_tenants` — one row per user; `tenantId` is deterministic (`t_${userId.replace(/[^a-zA-Z0-9]/g,'').slice(0,24)}`)
+- `storage_projects` — named namespaces (sub-buckets) per tenant
+- `storage_api_keys` — legacy key registry (not used for auth; Better Auth `apikey` table is authoritative)
+- `storage_usage_daily`, `storage_usage_events`, `storage_audit_log` — metering and audit tables
+
+**Auth flow:**
+1. Client sends `x-api-key: <key>` or `Authorization: Bearer <key>` (created via `POST /api/auth/api-key/create`).
+2. `lib/storage/request-auth.ts` calls `auth.api.verifyApiKey({ headers })`.
+3. The `referenceId` field on the verified key is the `userId`.
+4. `tenantId` is derived deterministically from `userId`; the tenant record is auto-created on first access.
+
+**Object key layout:** `<tenantId>/<namespace>/<path>`
+
+> **Note:** `lib/storage/` is entirely independent of `databases/`. The `databases/` directory is the self-hosted multi-tenant libSQL (`sqld`) service on Fly.io — it is not used by the Storage API in any way.
+
 ## 2. Proposed Target Architecture
 
 ### 2.1 Responsibilities split
 
 - **Control plane** (this repo, deployed as a Cloudflare Worker): auth, dashboard, API, plans, subscriptions, payments, backups metadata, audit.
 - **Runtime plane** (Fly.io): Fly Machines and Volumes. Managed exclusively by the control plane backend through the Fly Machines API using a server-side token. [Partially implemented: `lib/fly/client.ts`; volumes pending]
-- **Backup/storage plane** (Cloudflare R2): backup objects and artifacts. [Proposed]
+- **Storage plane** (Cloudflare R2): multi-tenant object storage. [**Implemented** — `cloud-storage` R2 bucket, `lib/storage/**`, `app/api/v1/storage/**`; control-plane metadata in Neon `storage_*` tables]
+- **Backup plane** (Cloudflare R2): backup objects and artifacts. [Proposed]
 
 ### 2.2 Target architecture diagram
 
@@ -174,8 +205,8 @@ graph TD
 
 ### 2.12 Secrets (current + proposed)
 
-- Current secrets: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (Worker secret bindings in `cloudflare.config.ts`).
-- Proposed additions: `FLY_API_TOKEN` (least-privilege), `R2_*` credentials, `BKASH_*` merchant keys. Rotate via Worker secret rotation.
+- Current secrets: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (Worker secret bindings in `cloudflare.config.ts`). R2 bucket is bound via `STORAGE_BUCKET` (R2 binding — no credentials needed; uses binding auth).
+- Proposed additions: `FLY_API_TOKEN` (least-privilege), `BKASH_*` merchant keys. Rotate via Worker secret rotation.
 
 ### 2.13 Deployment environments and migration (proposed)
 

@@ -39,6 +39,8 @@ Index: `account_userId_idx` on `account(user_id)`.
 ### 1.2 Gaps vs target design
 
 - Auth tables plus `applications` and `machines` exist (migration `0001_add_applications_and_machines.sql`).
+- `apikey` table added in migration `0004_open_prism.sql` (Better Auth API key plugin).
+- Storage control-plane tables (`storage_*`) added in migration `0005_brief_trish_tilby.sql`; documented in §1.6.
 - Still missing: plans, subscriptions, payments, volumes, backups, operations, usage, idempotency, outbox, and audit tables.
 - No RLS; ownership must be enforced in the application layer (already the model used by Better Auth).
 - Lifecycle check constraints exist on `applications.status` and `machines.status`.
@@ -130,6 +132,121 @@ Indexes: `deployments_user_created_idx` on `(user_id, created_at)`, unique parti
 Index: `deployment_logs_deployment_id_id_idx` on `(deployment_id, id)` for keyset pagination.
 
 Status transitions are enforced by the application layer (`lib/build/status.ts`); see §3.
+
+### 1.5 Better Auth API Key table (implemented)
+
+Source: `lib/db/schema.ts`; migration `drizzle/0004_open_prism.sql`. Owned and managed by the `@better-auth/api-key` plugin.
+
+**`apikey`** — API key records for programmatic access.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | text | PK |
+| `name` | text | nullable (user-defined label) |
+| `start` | text | nullable (prefix shown in UI) |
+| `prefix` | text | nullable |
+| `key` | text | not null (hashed; raw value never stored) |
+| `user_id` | text | not null, FK → `user.id` ON DELETE CASCADE |
+| `reference_id` | text | nullable (equals `user_id`; used to look up tenant) |
+| `enabled` | boolean | not null, default true |
+| `rate_limit_enabled` | boolean | nullable |
+| `rate_limit_time_window` | integer | nullable |
+| `rate_limit_max` | integer | nullable |
+| `request_count` | integer | not null, default 0 |
+| `remaining` | integer | nullable |
+| `last_refill_at` | timestamp | nullable |
+| `expires_at` | timestamp | nullable |
+| `last_used_at` | timestamp | nullable |
+| `created_at` / `updated_at` | timestamp | not null |
+| `permissions` | text | nullable |
+| `metadata` | text | nullable |
+
+> **Note:** `verifyApiKey` resolves `referenceId` → `userId` → deterministic `tenantId` for the Storage API. The raw key is only returned once at creation; subsequent reads return the hash only.
+
+### 1.6 Storage control-plane tables (implemented)
+
+Source: `lib/storage/schema.ts`; migration `drizzle/0005_brief_trish_tilby.sql`. All tables use the `storage_` prefix and are defined with `pgTable` (Neon PostgreSQL). Storage data (file bytes) lives in Cloudflare R2 — only control-plane metadata is stored here.
+
+**`storage_tenants`** — one record per platform user.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | text | PK (deterministic: `t_${userId.replace(/[^a-zA-Z0-9]/g,'').slice(0,24)}`) |
+| `user_id` | text | not null, unique, FK → `user.id` |
+| `name` | text | nullable |
+| `plan` | text | not null, default `free` |
+| `status` | text | not null, default `active` |
+| `storage_used` | bigint | not null, default 0 (bytes) |
+| `storage_limit` | bigint | not null, default 5368709120 (5 GB) |
+| `created_at` / `updated_at` | timestamp | not null |
+
+**`storage_projects`** — named namespaces (sub-buckets) per tenant.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | text | PK |
+| `tenant_id` | text | not null, FK → `storage_tenants.id` ON DELETE CASCADE |
+| `name` | text | not null |
+| `description` | text | nullable |
+| `object_count` | integer | not null, default 0 |
+| `storage_used` | bigint | not null, default 0 |
+| `created_at` / `updated_at` | timestamp | not null |
+
+Unique: `(tenant_id, name)`.
+
+**`storage_api_keys`** — legacy key registry (not used for auth — Better Auth `apikey` table is authoritative).
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | text | PK |
+| `tenant_id` | text | not null, FK → `storage_tenants.id` ON DELETE CASCADE |
+| `name` | text | not null |
+| `key_hash` | text | not null, unique |
+| `key_prefix` | text | not null |
+| `permissions` | text | not null, default `read,write` |
+| `enabled` | boolean | not null, default true |
+| `last_used_at` | timestamp | nullable |
+| `expires_at` | timestamp | nullable |
+| `created_at` / `updated_at` | timestamp | not null |
+
+**`storage_usage_daily`** — daily aggregated usage per tenant.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | text | PK |
+| `tenant_id` | text | not null, FK → `storage_tenants.id` ON DELETE CASCADE |
+| `date` | text | not null (YYYY-MM-DD) |
+| `bytes_uploaded` / `bytes_downloaded` / `bytes_deleted` | bigint | not null, default 0 |
+| `requests_read` / `requests_write` / `requests_delete` | integer | not null, default 0 |
+| `storage_used` | bigint | not null, default 0 |
+
+Unique: `(tenant_id, date)`.
+
+**`storage_usage_events`** — per-operation event log for fine-grained metering.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | text | PK |
+| `tenant_id` | text | not null, FK → `storage_tenants.id` ON DELETE CASCADE |
+| `project_id` | text | nullable |
+| `event_type` | text | not null (`upload`, `download`, `delete`, `list`) |
+| `object_key` | text | nullable |
+| `bytes` | bigint | not null, default 0 |
+| `metadata` | jsonb | nullable |
+| `created_at` | timestamp | not null |
+
+**`storage_audit_log`** — administrative audit trail for the storage service.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | text | PK |
+| `tenant_id` | text | not null, FK → `storage_tenants.id` ON DELETE CASCADE |
+| `action` | text | not null |
+| `actor_id` | text | nullable |
+| `target_type` / `target_id` | text | nullable |
+| `metadata` | jsonb | nullable |
+| `ip` | text | nullable |
+| `created_at` | timestamp | not null |
 
 ## 2. Proposed Normalized Target Schema
 
