@@ -129,8 +129,9 @@ export function UploadFileDialog({
                   type="file"
                   className="hidden"
                   onChange={(e) => {
-                    if (e.target.files && e.dataTransfer?.files?.[0] || e.target.files?.[0]) {
-                      handleFileSelection(e.target.files[0]);
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleFileSelection(file);
                     }
                   }}
                   disabled={isUploading}

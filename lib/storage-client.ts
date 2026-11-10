@@ -202,9 +202,11 @@ export async function uploadStorageFile(
   if (!response.ok) {
     let msg = `Upload failed (${response.status})`;
     try {
-      const data = await response.json();
-      if (data?.error?.message) {
-        msg = data.error.message;
+      const errBody = await response.json();
+      if (errBody?.error?.message) {
+        msg = errBody.error.message;
+      } else if (errBody?.message) {
+        msg = errBody.message;
       }
     } catch {
       // Fallback
@@ -212,7 +214,9 @@ export async function uploadStorageFile(
     throw new Error(msg);
   }
 
-  return (await response.json()) as { path: string; size: number; etag: string };
+  // Server wraps the response as { success: true, data: { path, size, etag, ... } }
+  const body = await response.json() as ApiOkResponse<{ path: string; size: number; etag: string; namespace?: string; uploadedAt?: string }>;
+  return { path: body.data.path, size: body.data.size, etag: body.data.etag };
 }
 
 export async function downloadStorageFile(
