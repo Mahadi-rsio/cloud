@@ -1,6 +1,9 @@
 import { apiV1 } from "@/lib/api-v1";
 import { extractErrorMessage } from "@/lib/errors";
 
+/** Shape returned by the server via jsonOk() */
+type ApiOkResponse<T> = { success: true; data: T };
+
 export interface StorageUsageResponse {
   tenantId: string;
   status: string;
@@ -66,23 +69,83 @@ export interface CreateApiKeyResult {
 }
 
 export async function fetchStorageUsage(): Promise<StorageUsageResponse> {
-  const { data } = await apiV1.get<StorageUsageResponse>("/storage/usage");
-  return data;
+  const { data } = await apiV1.get<
+    ApiOkResponse<{
+      tenantId: string;
+      plan: string;
+      limits: {
+        storageLimitBytes: number;
+        monthlyReadLimitOps: number;
+        monthlyWriteLimitOps: number;
+        bandwidthLimitBytes?: number;
+        egressRateLimitMbps?: number;
+      };
+      usage: {
+        usedBytes: number;
+        fileCount: number;
+        monthlyReadOps: number;
+        monthlyWriteOps: number;
+        peakDailyBytes?: number;
+      };
+    }>
+  >("/storage/usage");
+
+  const { tenantId, plan, limits, usage } = data.data;
+  const usedBytes = usage.usedBytes ?? 0;
+  const storageLimitBytes = limits.storageLimitBytes ?? 536_870_912;
+  const monthlyReadOps = usage.monthlyReadOps ?? 0;
+  const monthlyReadLimitOps = limits.monthlyReadLimitOps ?? 100_000;
+  const monthlyWriteOps = usage.monthlyWriteOps ?? 0;
+  const monthlyWriteLimitOps = limits.monthlyWriteLimitOps ?? 100_000;
+
+  return {
+    tenantId,
+    plan,
+    status: "ok",
+    usedBytes,
+    storageLimitBytes,
+    storagePercent:
+      storageLimitBytes > 0
+        ? Math.min(100, (usedBytes / storageLimitBytes) * 100)
+        : 0,
+    fileCount: usage.fileCount ?? 0,
+    monthlyReadOps,
+    monthlyReadLimitOps,
+    monthlyReadPercent:
+      monthlyReadLimitOps > 0
+        ? Math.min(100, (monthlyReadOps / monthlyReadLimitOps) * 100)
+        : 0,
+    monthlyWriteOps,
+    monthlyWriteLimitOps,
+    monthlyWritePercent:
+      monthlyWriteLimitOps > 0
+        ? Math.min(100, (monthlyWriteOps / monthlyWriteLimitOps) * 100)
+        : 0,
+    peakDailyBytes: usage.peakDailyBytes ?? 0,
+  };
 }
 
 export async function fetchNamespaces(): Promise<StorageNamespace[]> {
-  const { data } = await apiV1.get<{ namespaces: StorageNamespace[] }>("/storage/namespaces");
-  return data.namespaces;
+  const { data } = await apiV1.get<
+    ApiOkResponse<{ tenantId: string; namespaces: StorageNamespace[] }>
+  >("/storage/namespaces");
+  const namespaces = data.data?.namespaces;
+  return Array.isArray(namespaces) ? namespaces : [];
 }
 
 export async function fetchNamespaceDetails(name: string): Promise<StorageNamespace> {
-  const { data } = await apiV1.get<StorageNamespace>(`/storage/namespaces/${encodeURIComponent(name)}`);
-  return data;
+  const { data } = await apiV1.get<ApiOkResponse<StorageNamespace>>(
+    `/storage/namespaces/${encodeURIComponent(name)}`
+  );
+  return data.data;
 }
 
 export async function createStorageNamespace(name: string): Promise<StorageNamespace> {
-  const { data } = await apiV1.post<StorageNamespace>("/storage/namespaces", { name });
-  return data;
+  const { data } = await apiV1.post<ApiOkResponse<StorageNamespace>>(
+    "/storage/namespaces",
+    { name }
+  );
+  return data.data;
 }
 
 export async function deleteStorageNamespace(name: string): Promise<void> {
@@ -100,10 +163,12 @@ export async function fetchFiles(
   const url = `/storage/namespaces/${encodeURIComponent(namespace)}/files${
     params.toString() ? `?${params.toString()}` : ""
   }`;
-  const { data } = await apiV1.get<{ objects: StorageObject[]; prefixes?: string[] }>(url);
+  const { data } = await apiV1.get<
+    ApiOkResponse<{ namespace: string; objects: StorageObject[]; prefixes?: string[]; cursor?: string; truncated?: boolean }>
+  >(url);
   return {
-    objects: data.objects || [],
-    prefixes: data.prefixes || [],
+    objects: Array.isArray(data.data?.objects) ? data.data.objects : [],
+    prefixes: Array.isArray(data.data?.prefixes) ? data.data.prefixes : [],
   };
 }
 
@@ -203,13 +268,19 @@ export async function deleteStorageFile(namespace: string, path: string): Promis
 }
 
 export async function fetchApiKeys(): Promise<StorageApiKey[]> {
-  const { data } = await apiV1.get<{ keys: StorageApiKey[] }>("/storage/api-keys");
-  return data.keys;
+  const { data } = await apiV1.get<ApiOkResponse<{ keys: StorageApiKey[] }>>(
+    "/storage/api-keys"
+  );
+  const keys = data.data?.keys;
+  return Array.isArray(keys) ? keys : [];
 }
 
 export async function createStorageApiKey(input: CreateApiKeyInput): Promise<CreateApiKeyResult> {
-  const { data } = await apiV1.post<CreateApiKeyResult>("/storage/api-keys", input);
-  return data;
+  const { data } = await apiV1.post<ApiOkResponse<CreateApiKeyResult>>(
+    "/storage/api-keys",
+    input
+  );
+  return data.data;
 }
 
 export async function deleteStorageApiKey(keyId: string): Promise<void> {

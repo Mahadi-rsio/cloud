@@ -135,13 +135,14 @@ export function StoragePage() {
       ]);
 
       setUsage(usageData);
-      setNamespaces(nsData);
+      const safeNs = Array.isArray(nsData) ? nsData : [];
+      setNamespaces(safeNs);
 
       // Auto-select first namespace if none selected or previous one disappeared
-      if (nsData.length > 0) {
+      if (safeNs.length > 0) {
         setSelectedNamespace((prev) => {
-          if (prev && nsData.some((ns) => ns.name === prev)) return prev;
-          return nsData[0].name;
+          if (prev && safeNs.some((ns) => ns.name === prev)) return prev;
+          return safeNs[0].name;
         });
       } else {
         setSelectedNamespace("");
