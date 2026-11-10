@@ -15,11 +15,12 @@ import {
   KeyRound,
   Check,
   Copy,
-  Table,
   Activity,
   HardDrive,
   ArrowUpRight,
+  Table2,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState, ErrorState } from "@/components/shared/empty-state";
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
@@ -37,7 +38,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { CreateDatabaseDialog } from "./create-database-dialog";
 import { ConnectDatabaseDialog } from "./connect-database-dialog";
-import { DatabaseStudioDialog } from "./database-studio-dialog";
 import {
   listDatabases,
   deleteDatabase,
@@ -46,6 +46,7 @@ import {
 import { formatBytes } from "@/lib/storage-client";
 import { cn } from "@/lib/utils";
 import { extractErrorMessage } from "@/lib/errors";
+import { useStudioIntentStore } from "@/stores/studio-intent";
 
 const FREE_PLAN_LIMITS = {
   rowsRead: 1_000_000,
@@ -54,6 +55,7 @@ const FREE_PLAN_LIMITS = {
 };
 
 export function DatabasesPage() {
+  const router = useRouter();
   const [databases, setDatabases] = React.useState<DatabaseItem[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -62,7 +64,6 @@ export function DatabasesPage() {
   // Dialog states
   const [createOpen, setCreateOpen] = React.useState(false);
   const [connectDb, setConnectDb] = React.useState<DatabaseItem | null>(null);
-  const [studioDb, setStudioDb] = React.useState<DatabaseItem | null>(null);
   const [deleteDb, setDeleteDb] = React.useState<DatabaseItem | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
@@ -86,6 +87,14 @@ export function DatabasesPage() {
   React.useEffect(() => {
     void loadDatabases();
   }, [loadDatabases]);
+
+  const openStudio = (db: DatabaseItem) => {
+    useStudioIntentStore.getState().setIntent({
+      databaseId: db.id,
+      name: db.name,
+    });
+    router.push("/admin/db");
+  };
 
   const handleCopyToken = async (db: DatabaseItem) => {
     try {
@@ -318,12 +327,12 @@ export function DatabasesPage() {
                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0">
                     <Button
                       type="button"
-                      variant="default"
+                      variant="outline"
                       size="sm"
-                      onClick={() => setStudioDb(db)}
-                      className="gap-1.5 shadow-2xs flex-1 sm:flex-initial"
+                      onClick={() => openStudio(db)}
+                      className="gap-1.5 flex-1 sm:flex-initial"
                     >
-                      <Table className="size-3.5" />
+                      <Table2 className="size-3.5" />
                       Studio
                     </Button>
 
@@ -367,9 +376,9 @@ export function DatabasesPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuItem onClick={() => setStudioDb(db)}>
-                          <Table className="mr-2 size-4 text-primary" />
-                          Explore Data (Studio)
+                        <DropdownMenuItem onClick={() => openStudio(db)}>
+                          <Table2 className="mr-2 size-4" />
+                          Open in Studio
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setConnectDb(db)}>
                           <Code2 className="mr-2 size-4" />
@@ -534,15 +543,6 @@ export function DatabasesPage() {
         open={Boolean(connectDb)}
         onOpenChange={(open) => {
           if (!open) setConnectDb(null);
-        }}
-      />
-
-      {/* LibSQL Studio GUI Dialog */}
-      <DatabaseStudioDialog
-        database={studioDb}
-        open={Boolean(studioDb)}
-        onOpenChange={(open) => {
-          if (!open) setStudioDb(null);
         }}
       />
 
