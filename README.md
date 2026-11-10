@@ -38,7 +38,7 @@ Built on **Next.js (Vinext on Cloudflare Workers)**, **Better Auth** (with API k
 - **Multi-Tenant Database Service**: Managed multi-tenant libSQL (`sqld`) service providing instant, sub-millisecond per-tenant SQLite database isolation, copy-on-write branching, and stateless Ed25519 cryptographic token authentication.
 - **Real-Time Build Streaming**: Streams live build and deployment logs from the builder to the user dashboard using Server-Sent Events (SSE) with heartbeat and cursor resumption.
 - **Edge Deployment**: Provisions user applications onto Fly.io Machines with automated free Anycast shared IPv4 routing (`https://<app>.fly.dev`).
-- **Object Storage Service**: Multi-tenant file storage backed by Cloudflare R2. Each authenticated user gets an isolated tenant namespace. Files are organized into named namespaces (buckets) and accessed via a versioned REST API authenticated with Better Auth API keys.
+- **Object Storage Service**: High-performance, multi-tenant file storage backed by Cloudflare R2 and Neon PostgreSQL. Features versioned REST APIs, Better Auth API key authentication with fast 60s Redis caching, short-lived HMAC presigned upload/download tokens, file copy operations, conditional requests (`If-None-Match`/`If-Modified-Since`), upload size caps (100 MB), XSS security hardening (forced attachment for markup types), rate-limit response headers, and an OpenAPI 3.1 schema.
 
 ---
 
@@ -137,11 +137,13 @@ graph TD
 │   ├── storage/                  # Multi-tenant object storage service
 │   │   ├── schema.ts             #   Drizzle schema for storage_* tables (Neon)
 │   │   ├── db.ts                 #   Storage DB helpers (reuses Neon via getDb())
-│   │   ├── service.ts            #   Business logic: tenant, namespace, file operations
-│   │   ├── request-auth.ts       #   Auth middleware: verifyApiKey → tenantId
+│   │   ├── service.ts            #   Business logic: tenant, namespace, file operations, copy
+│   │   ├── request-auth.ts       #   Auth middleware: verifyApiKey → tenantId with 60s Redis cache
+│   │   ├── presign.ts            #   HMAC-SHA256 presigned token generation & verification
+│   │   ├── rate-limit-headers.ts #   Standard rate-limit response headers helper
 │   │   └── validators.ts         #   Zod schemas for storage API requests
 │   └── validators/               # Zod validation schemas
-├── tests/                        # Comprehensive test suite (93+ unit & integration tests)
+├── tests/                        # Comprehensive test suite (17 suites, 97+ unit & integration tests)
 ├── cloudflare.config.ts          # Cloudflare Worker bindings and queue configurations
 ├── drizzle.config.ts             # Drizzle Kit configuration
 └── fly.toml                      # Fly.io builder machine deployment manifest
@@ -357,7 +359,7 @@ The control plane deploys as a Cloudflare Worker using [`@vinext/cloudflare`](ht
 
 ### 8. Testing & Verification
 
-Run the comprehensive unit and integration test suite (16 suites, 93 tests):
+Run the comprehensive unit and integration test suite (17 suites, 97 tests):
 
 ```bash
 node --experimental-transform-types --import ./tests/register.js --test tests/*.test.ts
@@ -369,6 +371,7 @@ Test coverage includes:
 - **Railpack Plan Rewriter**: Idempotent builder plan rewriting and cache key injection.
 - **Deployment State Machine**: Forward status transitions, cancellation, and retry semantics.
 - **SSE Log Streaming**: Keyset pagination, chunk splitting, and event serialization.
+- **Storage Phase 2 Data Plane**: Path traversal prevention, deterministic tenant key layout, HMAC presigned token lifecycle, upload/download/head/copy operations via in-memory bucket abstraction.
 
 ---
 

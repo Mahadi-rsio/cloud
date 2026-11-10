@@ -57,6 +57,23 @@
 - [ ] Make `welcome-email` consumer robust: retries, logging, DLQ (proposed; currently only `console.log`)
 - [ ] Add product job queues (provisioning/lifecycle/backups) with idempotent consumers (proposed)
 
+### Object Storage Service (Phase 0, 1 & 2 implemented end-to-end)
+- [x] Phase 0 tenancy model: `t_<tenantId>/<namespace>/<path>` key layout with deterministic user-derived tenant IDs
+- [x] Phase 1 control-plane schema (`storage_tenants`, `storage_projects`, `storage_api_keys`, `storage_usage_daily`, `storage_usage_events`, `storage_audit_log` in Neon via Drizzle migration `0005`)
+- [x] Phase 1 R2 bucket binding (`STORAGE_BUCKET` / `cloud-storage`) with in-memory fallback for testing
+- [x] Phase 2 Better Auth API key integration (`@better-auth/api-key`, `apikey` table migration `0004`) with 60-second Redis auth cache
+- [x] Phase 2 CRUD operations: PUT, GET, HEAD, DELETE, list with delimiter and cursor pagination
+- [x] Phase 2 Server-side file copy: `POST /api/v1/storage/namespaces/:ns/files/:path+`
+- [x] Phase 2 Presigned capability tokens: `POST .../presign` + direct upload/download `PUT|GET /api/v1/storage/presigned/:token`
+- [x] Phase 2 Conditional requests: `If-None-Match` and `If-Modified-Since` returning `304 Not Modified`
+- [x] Phase 2 Safety hardening: nosniff, forced download disposition and safe octet-stream MIME for HTML/SVG/XML uploads
+- [x] Phase 2 Upfront size limit enforcement (100 MB max object size returning 413)
+- [x] Phase 2 Rate-limit response headers (`X-RateLimit-*`) on all storage endpoints
+- [x] Phase 2 OpenAPI 3.1 specification exposed at `GET /api/v1/storage/openapi.json`
+- [x] Phase 2 Dedicated test suite (`tests/storage-phase2.test.ts`) covering path traversal, HMAC tokens, and CRUD/copy operations
+- [ ] Phase 3: Byte-level usage metering, billing hooks, and hard quota enforcement (proposed)
+- [ ] Phase 4: CI boundary isolation tests and tenant suspension switch (proposed)
+
 ### Applications and provisioning (partially implemented)
 - [x] `applications` and `machines` tables plus create/update/delete/list/detail API (`lib/db/product-schema.ts`, `app/api/v1/applications/**`)
 - [x] Application creation with runtime/region selection (no plan/quota selection yet)

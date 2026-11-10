@@ -103,9 +103,19 @@ The platform includes a production-grade multi-tenant object storage service:
 
 **Auth flow:**
 1. Client sends `x-api-key: <key>` or `Authorization: Bearer <key>` (created via `POST /api/auth/api-key/create`).
-2. `lib/storage/request-auth.ts` calls `auth.api.verifyApiKey({ headers })`.
-3. The `referenceId` field on the verified key is the `userId`.
-4. `tenantId` is derived deterministically from `userId`; the tenant record is auto-created on first access.
+2. `lib/storage/request-auth.ts` checks a fast-path 60-second Redis/in-memory cache (`storage:apikey:<hash>`).
+3. On cache miss, it calls `auth.api.verifyApiKey({ body: { key } })`.
+4. The `referenceId` field on the verified key is the `userId`.
+5. `tenantId` is derived deterministically from `userId`; the tenant record is auto-created on first access and cached for 60s.
+
+**Phase 2 Core Data Plane Capabilities:**
+- **Presigned URLs via Signed Tokens**: For uploads/downloads over several MB, clients call `POST /api/v1/storage/namespaces/:ns/presign` to receive an HMAC-SHA256 signed capability token. Third-party clients then upload directly via `PUT /api/v1/storage/presigned/:token` without requiring the tenant's master API key.
+- **Server-Side File Copy**: `POST /api/v1/storage/namespaces/:ns/files/:path+` duplicates files and metadata within tenant namespaces without client round-trips.
+- **Conditional Requests (ETag & Last-Modified)**: `GET` and `HEAD` endpoints evaluate `If-None-Match` and `If-Modified-Since`, returning `304 Not Modified` without payload transfer when matching.
+- **Security & XSS Hardening**: HTML/SVG/XML uploads served from the control plane origin are forced to `Content-Type: application/octet-stream` and `Content-Disposition: attachment; filename="..."` with `X-Content-Type-Options: nosniff`.
+- **Upload Size Protection**: Enforces an upfront 100 MB max object size via `Content-Length` validation (returning `413 VALIDATION_ERROR` before reading body streams).
+- **Idempotency & Rate Limiting**: `PUT` requests accept an optional `Idempotency-Key` header stored in R2 metadata; all responses include standard `X-RateLimit-*` headers.
+- **OpenAPI 3.1 Spec**: Exposed at `GET /api/v1/storage/openapi.json`.
 
 **Object key layout:** `<tenantId>/<namespace>/<path>`
 
