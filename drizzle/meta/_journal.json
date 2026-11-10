@@ -29,6 +29,13 @@
       "when": 1793337735582,
       "tag": "0003_acoustic_kate_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794285290472,
+      "tag": "0004_open_prism",
+      "breakpoints": true
     }
   ]
 }

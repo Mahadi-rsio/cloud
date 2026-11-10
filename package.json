@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "^1.7.12",
+    "@better-auth/api-key": "^1.7.18",
+    "@better-auth/drizzle-adapter": "^1.7.18",
     "@libsql/client": "^0.18.0",
     "@neondatabase/serverless": "^1.2.0",
     "@radix-ui/react-label": "^2.1.17",
@@ -21,7 +22,7 @@
     "@vercel/fs-detectors": "7.11.3",
     "@vinext/cloudflare": "^1.2.0",
     "axios": "^1.20.0",
-    "better-auth": "^1.7.12",
+    "better-auth": "^1.7.18",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.5.0",

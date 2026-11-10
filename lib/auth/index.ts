@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { apiKey } from "@better-auth/api-key";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { redisSecondaryStorage } from "@/lib/auth/storage/redis";
@@ -26,6 +27,26 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
       maxPasswordLength: 72,
     },
     socialProviders: {},
+    plugins: [
+      apiKey({
+        // Allow getSession() to work with x-api-key header
+        enableSessionForAPIKeys: true,
+        // Rate limiting disabled by default; adjust per use-case
+        rateLimit: {
+          enabled: false,
+        },
+        // Store arbitrary JSON metadata with each key
+        enableMetadata: true,
+        // Also look for key in Authorization header (Bearer <key>)
+        customAPIKeyGetter: (ctx) => {
+          return (
+            ctx.request?.headers.get("x-api-key") ??
+            ctx.request?.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
+            null
+          );
+        },
+      }),
+    ],
     advanced: {
       cookiePrefix: "better-auth",
     },
