@@ -196,8 +196,8 @@ export function DatabasesPage() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-full sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search databases by name or namespace..."
@@ -309,13 +309,13 @@ export function DatabasesPage() {
                   </div>
 
                   {/* Database Actions */}
-                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0">
                     <Button
                       type="button"
                       variant="default"
                       size="sm"
                       onClick={() => setStudioDb(db)}
-                      className="gap-1.5 shadow-2xs"
+                      className="gap-1.5 shadow-2xs flex-1 sm:flex-initial"
                     >
                       <Table className="size-3.5" />
                       Studio
@@ -326,7 +326,7 @@ export function DatabasesPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => setConnectDb(db)}
-                      className="gap-1.5"
+                      className="gap-1.5 flex-1 sm:flex-initial"
                     >
                       <Code2 className="size-3.5" />
                       Connect
@@ -337,7 +337,7 @@ export function DatabasesPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => void handleCopyToken(db)}
-                      className="gap-1 text-xs"
+                      className="gap-1 text-xs shrink-0"
                       title="Copy Primary Auth Token"
                     >
                       {hasCopiedToken ? (
@@ -355,7 +355,7 @@ export function DatabasesPage() {
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-sm" className="size-8">
+                        <Button variant="ghost" size="icon-sm" className="size-8 shrink-0">
                           <MoreHorizontal className="size-4" />
                           <span className="sr-only">Open menu</span>
                         </Button>
