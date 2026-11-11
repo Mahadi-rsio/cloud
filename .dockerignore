@@ -1,0 +1,12 @@
+node_modules
+.git
+.opencode
+.cloudflare
+.databases
+databases
+.bolt
+.wrangler
+dist
+build
+.next
+*.log
