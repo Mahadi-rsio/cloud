@@ -1,10 +1,13 @@
 "use client";
 
+import * as React from "react";
 import { useEffect } from "react";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import { Moon, Sun } from "lucide-react";
 import { useThemeStore } from "@/stores/theme-store";
+import { cn } from "cn";
 
-/** Icon-only theme toggle for the top bar. */
 export function ThemeToggleButton({
   className,
 }: {
@@ -17,18 +20,29 @@ export function ThemeToggleButton({
   }, []);
 
   const dark = store.theme === "dark";
+  const label = dark ? "Switch to light theme" : "Switch to dark theme";
 
   return (
-    <button
-      type="button"
-      aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
-      className={
-        "inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 " +
-        (className ?? "")
-      }
-      onClick={() => store.setTheme(dark ? "light" : "dark")}
-    >
-      {dark ? <Sun className="size-4.5" /> : <Moon className="size-4.5" />}
-    </button>
+    <Tooltip title={label} arrow>
+      <IconButton
+        size="small"
+        aria-label={label}
+        onClick={() => store.setTheme(dark ? "light" : "dark")}
+        sx={{
+          color: "var(--muted-foreground)",
+          borderRadius: "8px",
+          width: 36,
+          height: 36,
+          transition: "all 0.15s ease",
+          "&:hover": {
+            backgroundColor: "var(--accent)",
+            color: "var(--foreground)",
+          },
+        }}
+        className={cn("shrink-0", className)}
+      >
+        {dark ? <Sun className="size-4.5" /> : <Moon className="size-4.5" />}
+      </IconButton>
+    </Tooltip>
   );
 }

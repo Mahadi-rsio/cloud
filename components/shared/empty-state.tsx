@@ -1,8 +1,12 @@
+"use client";
+
 import * as React from "react";
+import Paper from "@mui/material/Paper";
+import Typography from "@mui/material/Typography";
+import Box from "@mui/material/Box";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 
-/** Empty state shown when a list has no items. */
 export function EmptyState({
   icon,
   title,
@@ -17,29 +21,44 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div
+    <Paper
+      variant="outlined"
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 py-14 text-center",
+        "flex flex-col items-center justify-center gap-3.5 rounded-2xl border-dashed border-border/80 px-6 py-12 sm:py-16 text-center bg-card/40 transition-colors",
         className
       )}
+      sx={{
+        backgroundImage:
+          "radial-gradient(ellipse at center, rgba(56, 189, 248, 0.03), transparent 70%)",
+      }}
     >
       {icon && (
-        <div className="inline-flex size-11 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <Box className="inline-flex size-12 items-center justify-center rounded-xl bg-muted/70 text-primary border border-border/60 shadow-xs">
           {icon}
-        </div>
+        </Box>
       )}
-      <div className="flex flex-col gap-1">
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+      <Box className="flex flex-col gap-1 max-w-md">
+        <Typography
+          variant="h6"
+          component="h3"
+          sx={{ fontWeight: 600, color: "var(--foreground)", fontSize: "1rem" }}
+        >
+          {title}
+        </Typography>
         {description && (
-          <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
+          <Typography
+            variant="body2"
+            sx={{ color: "var(--muted-foreground)", lineHeight: 1.5 }}
+          >
+            {description}
+          </Typography>
         )}
-      </div>
-      {action && <div className="mt-1">{action}</div>}
-    </div>
+      </Box>
+      {action && <Box className="mt-2">{action}</Box>}
+    </Paper>
   );
 }
 
-/** Error state with a retry button. */
 export function ErrorState({
   title = "Something went wrong",
   description,
@@ -52,23 +71,40 @@ export function ErrorState({
   className?: string;
 }) {
   return (
-    <div
+    <Paper
+      variant="outlined"
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-xl border px-6 py-14 text-center",
+        "flex flex-col items-center justify-center gap-3 rounded-2xl border-destructive/30 bg-destructive/5 px-6 py-12 sm:py-14 text-center",
         className
       )}
     >
-      <div className="flex flex-col gap-1">
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+      <Box className="flex flex-col gap-1 max-w-md">
+        <Typography
+          variant="h6"
+          component="h3"
+          sx={{ fontWeight: 600, color: "var(--foreground)", fontSize: "1rem" }}
+        >
+          {title}
+        </Typography>
         {description && (
-          <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
+          <Typography
+            variant="body2"
+            sx={{ color: "var(--muted-foreground)", lineHeight: 1.5 }}
+          >
+            {description}
+          </Typography>
         )}
-      </div>
+      </Box>
       {onRetry && (
-        <Button type="button" variant="outline" onClick={onRetry}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onRetry}
+          className="mt-1"
+        >
           Try again
         </Button>
       )}
-    </div>
+    </Paper>
   );
 }

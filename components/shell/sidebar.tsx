@@ -1,7 +1,18 @@
 "use client";
 
+import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { cn } from "cn";
+import Drawer from "@mui/material/Drawer";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
+import Tooltip from "@mui/material/Tooltip";
+import Divider from "@mui/material/Divider";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+import IconButton from "@mui/material/IconButton";
 import {
   AppWindow,
   BookOpen,
@@ -16,15 +27,9 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { Dialog as DialogPrimitive } from "radix-ui";
 import { api } from "@/lib/api";
 import { useShellStore } from "@/stores/shell-store";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { Wordmark } from "@/components/shell/wordmark";
 import { UserAvatar } from "@/components/shell/user-avatar";
 
@@ -59,31 +64,64 @@ function NavItem({
   const pathname = usePathname();
   const active = pathname === href || pathname.startsWith(`${href}/`);
 
-  const item = (
-    <a
-      href={href}
-      onClick={onNavigate}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "flex h-11 items-center gap-3 rounded-lg text-sm font-semibold text-muted-foreground outline-none transition-colors",
-        "hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        active && "bg-accent text-foreground",
-        collapsed ? "justify-center px-0" : "px-3"
-      )}
-    >
-      <Icon className="size-4.5 shrink-0" />
-      {!collapsed && <span className="flex-1 truncate text-left">{label}</span>}
-    </a>
+  const itemButton = (
+    <ListItem disablePadding sx={{ mb: 0.5 }}>
+      <ListItemButton
+        component="a"
+        href={href}
+        onClick={onNavigate}
+        selected={active}
+        sx={{
+          minHeight: 40,
+          borderRadius: "8px",
+          px: collapsed ? 1.5 : 2,
+          justifyContent: collapsed ? "center" : "flex-start",
+          transition: "all 0.15s ease",
+          color: active ? "var(--foreground)" : "var(--muted-foreground)",
+          backgroundColor: active ? "var(--accent)" : "transparent",
+          borderLeft: active ? "3px solid var(--primary)" : "3px solid transparent",
+          "&:hover": {
+            backgroundColor: "var(--accent)",
+            color: "var(--foreground)",
+          },
+          "&.Mui-selected": {
+            backgroundColor: "var(--accent)",
+            color: "var(--foreground)",
+            "&:hover": {
+              backgroundColor: "var(--accent)",
+            },
+          },
+        }}
+      >
+        <ListItemIcon
+          sx={{
+            minWidth: 0,
+            mr: collapsed ? 0 : 2,
+            justifyContent: "center",
+            color: active ? "var(--primary)" : "inherit",
+          }}
+        >
+          <Icon className="size-4.5 shrink-0" />
+        </ListItemIcon>
+        {!collapsed && (
+          <ListItemText
+            primary={label}
+            primaryTypographyProps={{
+              fontSize: "0.875rem",
+              fontWeight: active ? 600 : 500,
+              noWrap: true,
+            }}
+          />
+        )}
+      </ListItemButton>
+    </ListItem>
   );
 
-  if (!collapsed) return item;
+  if (!collapsed) return itemButton;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{item}</TooltipTrigger>
-      <TooltipContent side="right" sideOffset={10}>
-        {label}
-      </TooltipContent>
+    <Tooltip title={label} placement="right" arrow>
+      {itemButton}
     </Tooltip>
   );
 }
@@ -98,11 +136,34 @@ export function Sidebar({
   const shell = useShellStore();
 
   return (
-    <div className="flex h-full flex-col gap-6 px-3 py-4">
-      <div className={cn("flex items-center", collapsed ? "justify-center" : "px-1")}>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        p: 2,
+        gap: 2,
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: collapsed ? "center" : "flex-start",
+          px: collapsed ? 0 : 1,
+          py: 0.5,
+          minHeight: 40,
+        }}
+      >
         <Wordmark collapsed={collapsed} />
-      </div>
-      <nav className="flex flex-col gap-1" aria-label="Main">
+      </Box>
+
+      <List
+        component="nav"
+        aria-label="Main navigation"
+        disablePadding
+        sx={{ mt: 1 }}
+      >
         {PRIMARY_NAV.map((link) => (
           <NavItem
             key={link.href}
@@ -111,9 +172,15 @@ export function Sidebar({
             onNavigate={() => shell.setSidebarOpen(false)}
           />
         ))}
-      </nav>
-      <div className="mt-auto" />
-      <nav className="flex flex-col gap-1" aria-label="Support">
+      </List>
+
+      <Box sx={{ mt: "auto" }} />
+
+      <List
+        component="nav"
+        aria-label="Support navigation"
+        disablePadding
+      >
         {SECONDARY_NAV.map((link) => (
           <NavItem
             key={link.href}
@@ -122,38 +189,67 @@ export function Sidebar({
             onNavigate={() => shell.setSidebarOpen(false)}
           />
         ))}
-      </nav>
-      <div className={cn("flex flex-col gap-2 border-t pt-3", collapsed && "items-center")}>
-        <div className={cn("flex items-center gap-2.5 px-1", collapsed && "px-0")}>
+      </List>
+
+      <Divider sx={{ borderColor: "var(--border)" }} />
+
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 1.5,
+          alignItems: collapsed ? "center" : "stretch",
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1.5,
+            px: collapsed ? 0 : 1,
+            py: 0.5,
+          }}
+        >
           <UserAvatar name={user.name} />
           {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-foreground">
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography
+                variant="subtitle2"
+                noWrap
+                sx={{ fontWeight: 600, color: "var(--foreground)", fontSize: "0.8125rem" }}
+              >
                 {user.name}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-            </div>
+              </Typography>
+              <Typography
+                variant="caption"
+                noWrap
+                sx={{ color: "var(--muted-foreground)", display: "block" }}
+              >
+                {user.email}
+              </Typography>
+            </Box>
           )}
-        </div>
+        </Box>
+
         <Button
           type="button"
           variant="ghost"
           size={collapsed ? "icon" : "sm"}
-          className={cn("text-muted-foreground", !collapsed && "justify-start px-3")}
+          className={collapsed ? "" : "w-full justify-start px-2.5 text-muted-foreground"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={() => shell.setRailCollapsed(!collapsed)}
         >
           {collapsed ? (
             <PanelLeftOpen className="size-4" />
           ) : (
-            <>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
               <PanelLeftClose className="size-4" />
-              <span>Collapse</span>
-            </>
+              <span>Collapse sidebar</span>
+            </Box>
           )}
         </Button>
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
@@ -166,69 +262,134 @@ export function MobileSidebar({
   const router = useRouter();
 
   return (
-    <DialogPrimitive.Root open={shell.sidebarOpen} onOpenChange={shell.setSidebarOpen}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 flex h-full w-72 max-w-[85vw] flex-col bg-background shadow-lg outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left">
-          <div className="flex items-center gap-2 border-b px-4 py-3">
-            <Wordmark />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="ml-auto size-8"
-              aria-label="Close menu"
-              onClick={() => shell.setSidebarOpen(false)}
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-3 py-4">
-            <nav className="flex flex-col gap-1" aria-label="Main">
-              {PRIMARY_NAV.map((link) => (
-                <NavItem
-                  key={link.href}
-                  {...link}
-                  collapsed={false}
-                  onNavigate={() => shell.setSidebarOpen(false)}
-                />
-              ))}
-            </nav>
-            <nav className="mt-6 flex flex-col gap-1" aria-label="Support">
-              {SECONDARY_NAV.map((link) => (
-                <NavItem
-                  key={link.href}
-                  {...link}
-                  collapsed={false}
-                  onNavigate={() => shell.setSidebarOpen(false)}
-                />
-              ))}
-            </nav>
-          </div>
-          <div className="flex items-center gap-2.5 border-t px-4 py-3">
-            <UserAvatar name={user.name} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-foreground">
-                {user.name}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-            </div>
-            <button
-              type="button"
-              aria-label="Log out"
-              className="inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              onClick={async () => {
-                await api.post("/sign-out", {});
-                shell.setSidebarOpen(false);
-                router.push("/login");
-                router.refresh();
-              }}
-            >
-              <LogOut className="size-4.5" />
-            </button>
-          </div>
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+    <Drawer
+      anchor="left"
+      open={shell.sidebarOpen}
+      onClose={() => shell.setSidebarOpen(false)}
+      slotProps={{
+        backdrop: {
+          sx: {
+            backgroundColor: "rgba(0, 0, 0, 0.65)",
+            backdropFilter: "blur(4px)",
+          },
+        },
+      }}
+      PaperProps={{
+        sx: {
+          width: { xs: 280, sm: 300 },
+          maxWidth: "85vw",
+          backgroundColor: "var(--background)",
+          color: "var(--foreground)",
+          borderRight: "1px solid var(--border)",
+          backgroundImage: "none",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.4)",
+        },
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 2.5,
+          py: 2,
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <Wordmark />
+        <IconButton
+          size="small"
+          aria-label="Close menu"
+          onClick={() => shell.setSidebarOpen(false)}
+          sx={{
+            color: "var(--muted-foreground)",
+            borderRadius: "8px",
+            "&:hover": {
+              backgroundColor: "var(--accent)",
+              color: "var(--foreground)",
+            },
+          }}
+        >
+          <X className="size-4.5" />
+        </IconButton>
+      </Box>
+
+      <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 2 }}>
+        <List disablePadding>
+          {PRIMARY_NAV.map((link) => (
+            <NavItem
+              key={link.href}
+              {...link}
+              collapsed={false}
+              onNavigate={() => shell.setSidebarOpen(false)}
+            />
+          ))}
+        </List>
+
+        <Divider sx={{ my: 2, borderColor: "var(--border)" }} />
+
+        <List disablePadding>
+          {SECONDARY_NAV.map((link) => (
+            <NavItem
+              key={link.href}
+              {...link}
+              collapsed={false}
+              onNavigate={() => shell.setSidebarOpen(false)}
+            />
+          ))}
+        </List>
+      </Box>
+
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1.5,
+          borderTop: "1px solid var(--border)",
+          px: 2,
+          py: 2,
+          backgroundColor: "var(--card)",
+        }}
+      >
+        <UserAvatar name={user.name} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography
+            variant="subtitle2"
+            noWrap
+            sx={{ fontWeight: 600, color: "var(--foreground)" }}
+          >
+            {user.name}
+          </Typography>
+          <Typography
+            variant="caption"
+            noWrap
+            sx={{ color: "var(--muted-foreground)", display: "block" }}
+          >
+            {user.email}
+          </Typography>
+        </Box>
+        <IconButton
+          aria-label="Log out"
+          onClick={async () => {
+            await api.post("/sign-out", {});
+            shell.setSidebarOpen(false);
+            router.push("/login");
+            router.refresh();
+          }}
+          sx={{
+            color: "var(--muted-foreground)",
+            borderRadius: "8px",
+            "&:hover": {
+              backgroundColor: "rgba(229, 72, 77, 0.1)",
+              color: "var(--destructive)",
+            },
+          }}
+        >
+          <LogOut className="size-4.5" />
+        </IconButton>
+      </Box>
+    </Drawer>
   );
 }

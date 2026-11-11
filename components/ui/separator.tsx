@@ -1,24 +1,29 @@
-import * as React from "react"
-import { Separator as SeparatorPrimitive } from "radix-ui"
-import { cn } from "cn"
+"use client";
 
-function Separator({
+import * as React from "react";
+import Divider from "@mui/material/Divider";
+import { cn } from "cn";
+
+export function Separator({
   className,
   orientation = "horizontal",
+  flexItem,
   ...props
-}: React.ComponentProps<typeof SeparatorPrimitive.Root>) {
+}: {
+  className?: string;
+  orientation?: "horizontal" | "vertical";
+  flexItem?: boolean;
+  [key: string]: any;
+}) {
   return (
-    <SeparatorPrimitive.Root
-      data-slot="separator"
+    <Divider
       orientation={orientation}
-      className={cn(
-        "shrink-0 bg-border",
-        orientation === "horizontal" ? "h-px w-full" : "h-full w-px",
-        className
-      )}
+      flexItem={flexItem}
+      sx={{
+        borderColor: "var(--border)",
+      }}
+      className={cn("shrink-0", className)}
       {...props}
     />
-  )
+  );
 }
-
-export { Separator }

@@ -1,6 +1,13 @@
 "use client";
 
+import * as React from "react";
 import { usePathname } from "next/navigation";
+import MuiAppBar from "@mui/material/AppBar";
+import Toolbar from "@mui/material/Toolbar";
+import Breadcrumbs from "@mui/material/Breadcrumbs";
+import Typography from "@mui/material/Typography";
+import Box from "@mui/material/Box";
+import IconButton from "@mui/material/IconButton";
 import { Menu, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,15 +40,38 @@ function Breadcrumb() {
   const section = segments[0] ? SECTION_LABELS[segments[0]] ?? segments[0] : null;
 
   return (
-    <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 md:flex">
-      <span className="text-sm font-semibold text-muted-foreground">Cloudisy</span>
+    <Breadcrumbs
+      separator={<span className="text-muted-foreground text-xs">/</span>}
+      aria-label="breadcrumb"
+      sx={{
+        display: { xs: "none", md: "flex" },
+        "& .MuiBreadcrumbs-li": {
+          fontSize: "0.875rem",
+          fontWeight: 600,
+        },
+      }}
+    >
+      <Typography
+        sx={{
+          color: "var(--muted-foreground)",
+          fontSize: "0.875rem",
+          fontWeight: 600,
+        }}
+      >
+        Cloudisy
+      </Typography>
       {section && (
-        <>
-          <span aria-hidden="true" className="text-muted-foreground">/</span>
-          <span className="truncate text-sm font-semibold text-foreground">{section}</span>
-        </>
+        <Typography
+          sx={{
+            color: "var(--foreground)",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+          }}
+        >
+          {section}
+        </Typography>
       )}
-    </nav>
+    </Breadcrumbs>
   );
 }
 
@@ -53,43 +83,52 @@ function CommandSearch() {
           type="button"
           variant="outline"
           size="sm"
-          className="hidden h-9 w-56 justify-start gap-2 px-3 text-muted-foreground sm:flex"
+          className="hidden h-9 w-48 lg:w-56 justify-start gap-2 px-3 text-muted-foreground sm:flex border-border/80 bg-background/50 hover:bg-accent/60"
         >
-          <Search className="size-4 shrink-0" />
-          <span className="flex-1 truncate text-left">Search…</span>
-          <kbd className="pointer-events-none rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          <Search className="size-4 shrink-0 text-muted-foreground" />
+          <span className="flex-1 truncate text-left text-xs font-normal">
+            Search…
+          </span>
+          <kbd className="pointer-events-none rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
             ⌘K
           </kbd>
         </Button>
       </DialogTrigger>
       <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
+        <IconButton
+          size="small"
           className="sm:hidden"
           aria-label="Search"
+          sx={{
+            color: "var(--muted-foreground)",
+            borderRadius: "8px",
+            "&:hover": {
+              backgroundColor: "var(--accent)",
+              color: "var(--foreground)",
+            },
+          }}
         >
           <Search className="size-4.5" />
-        </Button>
+        </IconButton>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="sr-only">Search</DialogTitle>
-          <DialogDescription className="sr-only">
-            Search is coming soon.
+          <DialogTitle>Search</DialogTitle>
+          <DialogDescription>
+            Quickly jump to any resource or page across your projects.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex items-center gap-2 rounded-lg border border-input bg-muted/40 px-3">
+        <div className="flex items-center gap-2 rounded-xl border border-input bg-card/60 px-3 py-1.5 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <Input
-            className="border-0 bg-transparent shadow-none dark:bg-transparent"
-            placeholder="Search apps, databases, domains…"
+            className="border-0 bg-transparent shadow-none dark:bg-transparent h-9 px-1 focus:ring-0"
+            placeholder="Search apps, databases, storage..."
             aria-label="Search"
+            autoFocus
           />
         </div>
-        <p className="text-sm text-muted-foreground">
-          Search is coming soon. Use the sidebar to navigate for now.
+        <p className="text-xs text-muted-foreground">
+          Tip: You can use the sidebar to quickly navigate between services.
         </p>
       </DialogContent>
     </Dialog>
@@ -100,26 +139,56 @@ export function AppBar({ user }: { user: { name: string; email: string } }) {
   const shell = useShellStore();
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b bg-background/80 px-3 backdrop-blur-md sm:px-4">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="size-9 md:hidden"
-        aria-label="Open menu"
-        onClick={() => shell.setSidebarOpen(true)}
+    <MuiAppBar
+      position="sticky"
+      elevation={0}
+      sx={{
+        backgroundColor: "rgba(13, 20, 24, 0.85)",
+        backdropFilter: "blur(12px)",
+        borderBottom: "1px solid var(--border)",
+        color: "var(--foreground)",
+        zIndex: 30,
+      }}
+    >
+      <Toolbar
+        variant="dense"
+        sx={{
+          minHeight: { xs: 56, sm: 60 },
+          px: { xs: 2, sm: 3 },
+          gap: { xs: 1, sm: 2 },
+          display: "flex",
+          alignItems: "center",
+        }}
       >
-        <Menu className="size-4.5" />
-      </Button>
-      <span className="md:hidden">
-        <Wordmark />
-      </span>
-      <Breadcrumb />
-      <div className="ml-auto flex items-center gap-1">
-        <ThemeToggleButton />
-        <UserMenu user={user} />
-      </div>
-      <CommandSearch />
-    </header>
+        <IconButton
+          edge="start"
+          aria-label="Open menu"
+          onClick={() => shell.setSidebarOpen(true)}
+          sx={{
+            display: { md: "none" },
+            color: "var(--foreground)",
+            borderRadius: "8px",
+            mr: 0.5,
+          }}
+        >
+          <Menu className="size-5" />
+        </IconButton>
+
+        <Box sx={{ display: { xs: "flex", md: "none" }, alignItems: "center" }}>
+          <Wordmark />
+        </Box>
+
+        <Breadcrumb />
+
+        <Box sx={{ flexGrow: 1 }} />
+
+        <CommandSearch />
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <ThemeToggleButton />
+          <UserMenu user={user} />
+        </Box>
+      </Toolbar>
+    </MuiAppBar>
   );
 }

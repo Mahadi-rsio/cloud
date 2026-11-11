@@ -1,4 +1,7 @@
+"use client";
+
 import * as React from "react";
+import Avatar from "@mui/material/Avatar";
 import { cn } from "cn";
 
 function initials(name: string) {
@@ -10,23 +13,29 @@ export function UserAvatar({
   name,
   src,
   className,
+  size = 32,
 }: {
   name: string;
   src?: string;
   className?: string;
+  size?: number;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-xs font-medium text-secondary-foreground",
-        className
-      )}
+    <Avatar
+      src={src}
+      alt={name}
+      sx={{
+        width: size,
+        height: size,
+        fontSize: size <= 32 ? "0.75rem" : "0.875rem",
+        fontWeight: 600,
+        backgroundColor: "var(--accent)",
+        color: "var(--foreground)",
+        border: "1.5px solid var(--border)",
+      }}
+      className={cn("shrink-0 transition-transform", className)}
     >
-      {src ? (
-        <img src={src} alt={name} className="h-full w-full object-cover" />
-      ) : (
-        initials(name)
-      )}
-    </span>
+      {initials(name)}
+    </Avatar>
   );
 }

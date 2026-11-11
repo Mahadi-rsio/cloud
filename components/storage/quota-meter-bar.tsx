@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Database, HardDrive, ArrowDownToLine, ArrowUpToLine, FileText } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { HardDrive, ArrowDownToLine, ArrowUpToLine, FileText } from "lucide-react";
+import LinearProgress from "@mui/material/LinearProgress";
+import Chip from "@mui/material/Chip";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+import { Card } from "@/components/ui/card";
 import { formatBytes, type StorageUsageResponse } from "@/lib/storage-client";
-import { cn } from "cn";
 
 export function QuotaMeterBar({
   usage,
@@ -30,121 +33,217 @@ export function QuotaMeterBar({
 
   const fileCount = usage?.fileCount ?? 0;
 
-  const getProgressColor = (percent: number) => {
-    if (percent >= 90) return "bg-destructive";
-    if (percent >= 75) return "bg-amber-500";
-    return "bg-primary";
+  const getLinearColor = (percent: number) => {
+    if (percent >= 90) return "error";
+    if (percent >= 75) return "warning";
+    return "primary";
   };
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {/* Storage Capacity */}
-      <Card className="p-4 py-4 gap-3">
+      <Card hoverable className="p-4 sm:p-5 gap-3.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              color: "var(--muted-foreground)",
+              textTransform: "uppercase",
+            }}
+          >
             Storage Capacity
-          </span>
-          <HardDrive className="size-4 text-muted-foreground" />
+          </Typography>
+          <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <HardDrive className="size-4" />
+          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold tracking-tight text-foreground">
+            <Typography
+              variant="h5"
+              sx={{ fontWeight: 700, color: "var(--foreground)" }}
+            >
               {isLoading ? "—" : formatBytes(usedBytes)}
-            </span>
-            <span className="text-xs text-muted-foreground">
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ color: "var(--muted-foreground)" }}
+            >
               of {formatBytes(storageLimitBytes)}
-            </span>
+            </Typography>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn("h-full transition-all duration-300", getProgressColor(storagePercent))}
-              style={{ width: `${Math.max(2, storagePercent)}%` }}
-            />
-          </div>
-          <span className="text-[11px] text-muted-foreground">
-            {isLoading ? "..." : `${storagePercent.toFixed(1)}% free tier used`}
-          </span>
+          <LinearProgress
+            variant="determinate"
+            value={Math.max(2, storagePercent)}
+            color={getLinearColor(storagePercent)}
+            sx={{
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: "var(--muted)",
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}
+          >
+            {isLoading ? "Loading..." : `${storagePercent.toFixed(1)}% free tier used`}
+          </Typography>
         </div>
       </Card>
 
       {/* Monthly Reads */}
-      <Card className="p-4 py-4 gap-3">
+      <Card hoverable className="p-4 sm:p-5 gap-3.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Monthly Reads (Class B)
-          </span>
-          <ArrowDownToLine className="size-4 text-muted-foreground" />
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              color: "var(--muted-foreground)",
+              textTransform: "uppercase",
+            }}
+          >
+            Monthly Reads
+          </Typography>
+          <div className="flex size-7 items-center justify-center rounded-lg bg-sky-500/10 text-sky-500">
+            <ArrowDownToLine className="size-4" />
+          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold tracking-tight text-foreground">
+            <Typography
+              variant="h5"
+              sx={{ fontWeight: 700, color: "var(--foreground)" }}
+            >
               {isLoading ? "—" : readOps.toLocaleString()}
-            </span>
-            <span className="text-xs text-muted-foreground">
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ color: "var(--muted-foreground)" }}
+            >
               of {readLimit.toLocaleString()} ops
-            </span>
+            </Typography>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn("h-full transition-all duration-300", getProgressColor(readPercent))}
-              style={{ width: `${Math.max(2, readPercent)}%` }}
-            />
-          </div>
-          <span className="text-[11px] text-muted-foreground">
-            {isLoading ? "..." : `${(100 - readPercent).toFixed(1)}% allowance remaining`}
-          </span>
+          <LinearProgress
+            variant="determinate"
+            value={Math.max(2, readPercent)}
+            color={getLinearColor(readPercent)}
+            sx={{
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: "var(--muted)",
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}
+          >
+            {isLoading ? "Loading..." : `${(100 - readPercent).toFixed(1)}% remaining`}
+          </Typography>
         </div>
       </Card>
 
       {/* Monthly Writes */}
-      <Card className="p-4 py-4 gap-3">
+      <Card hoverable className="p-4 sm:p-5 gap-3.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Monthly Writes (Class A)
-          </span>
-          <ArrowUpToLine className="size-4 text-muted-foreground" />
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              color: "var(--muted-foreground)",
+              textTransform: "uppercase",
+            }}
+          >
+            Monthly Writes
+          </Typography>
+          <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+            <ArrowUpToLine className="size-4" />
+          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold tracking-tight text-foreground">
+            <Typography
+              variant="h5"
+              sx={{ fontWeight: 700, color: "var(--foreground)" }}
+            >
               {isLoading ? "—" : writeOps.toLocaleString()}
-            </span>
-            <span className="text-xs text-muted-foreground">
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ color: "var(--muted-foreground)" }}
+            >
               of {writeLimit.toLocaleString()} ops
-            </span>
+            </Typography>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn("h-full transition-all duration-300", getProgressColor(writePercent))}
-              style={{ width: `${Math.max(2, writePercent)}%` }}
-            />
-          </div>
-          <span className="text-[11px] text-muted-foreground">
-            {isLoading ? "..." : `${(100 - writePercent).toFixed(1)}% allowance remaining`}
-          </span>
+          <LinearProgress
+            variant="determinate"
+            value={Math.max(2, writePercent)}
+            color={getLinearColor(writePercent)}
+            sx={{
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: "var(--muted)",
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}
+          >
+            {isLoading ? "Loading..." : `${(100 - writePercent).toFixed(1)}% remaining`}
+          </Typography>
         </div>
       </Card>
 
       {/* Total Objects */}
-      <Card className="p-4 py-4 gap-3">
+      <Card hoverable className="p-4 sm:p-5 gap-3.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              color: "var(--muted-foreground)",
+              textTransform: "uppercase",
+            }}
+          >
             Stored Objects
-          </span>
-          <FileText className="size-4 text-muted-foreground" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold tracking-tight text-foreground">
-              {isLoading ? "—" : fileCount.toLocaleString()}
-            </span>
-            <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              {usage?.plan?.toUpperCase() || "FREE"}
-            </span>
+          </Typography>
+          <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
+            <FileText className="size-4" />
           </div>
-          <p className="text-[11px] text-muted-foreground pt-1.5">
-            Real-time Durable Object atomic tracking
-          </p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between">
+            <Typography
+              variant="h5"
+              sx={{ fontWeight: 700, color: "var(--foreground)" }}
+            >
+              {isLoading ? "—" : fileCount.toLocaleString()}
+            </Typography>
+            <Chip
+              label={usage?.plan?.toUpperCase() || "FREE TIER"}
+              size="small"
+              sx={{
+                height: 22,
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                backgroundColor: "rgba(56, 189, 248, 0.12)",
+                color: "var(--primary)",
+                border: "1px solid rgba(56, 189, 248, 0.3)",
+              }}
+            />
+          </div>
+          <Box sx={{ pt: 1 }}>
+            <Typography
+              variant="caption"
+              sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem", display: "block" }}
+            >
+              Real-time Durable Object storage & tracking
+            </Typography>
+          </Box>
         </div>
       </Card>
     </div>

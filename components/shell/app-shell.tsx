@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Box from "@mui/material/Box";
 import { Sidebar, MobileSidebar } from "@/components/shell/sidebar";
 import { AppBar } from "@/components/shell/app-bar";
 import { useShellStore } from "@/stores/shell-store";
@@ -20,34 +21,78 @@ export function AppShell({
 }) {
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex min-h-svh bg-background text-foreground">
+      <Box
+        sx={{
+          display: "flex",
+          minHeight: "100vh",
+          backgroundColor: "var(--background)",
+          color: "var(--foreground)",
+        }}
+      >
         <DesktopRail user={user} />
         <MobileSidebar user={user} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Box
+          component="div"
+          sx={{
+            display: "flex",
+            minHeight: 0,
+            minWidth: 0,
+            flex: "1 1 0%",
+            flexDirection: "column",
+          }}
+        >
           <AppBar user={user} />
-          <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+          <Box
+            component="main"
+            sx={{
+              display: "flex",
+              minHeight: 0,
+              flex: "1 1 0%",
+              flexDirection: "column",
+              overflowY: "auto",
+              px: { xs: 2, sm: 3.5, md: 5 },
+              py: { xs: 3, sm: 4, md: 5 },
+            }}
+          >
             {children}
-          </main>
-        </div>
-      </div>
+          </Box>
+        </Box>
+      </Box>
     </TooltipProvider>
   );
 }
 
 function DesktopRail({ user }: { user: ShellUser }) {
   const collapsed = useShellStore((state) => state.railCollapsed);
+  const railWidth = collapsed ? 64 : 240;
+
   return (
-    <aside
-      className={collapsed ? "hidden w-16 md:flex" : "hidden w-60 md:flex"}
+    <Box
+      component="aside"
+      sx={{
+        display: { xs: "none", md: "flex" },
+        width: railWidth,
+        flexShrink: 0,
+        transition: "width 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+      }}
     >
-      <div
-        className={
-          "sticky top-0 flex h-svh shrink-0 flex-col border-r bg-background transition-[width] duration-200 " +
-          (collapsed ? "w-16" : "w-60")
-        }
+      <Box
+        sx={{
+          position: "sticky",
+          top: 0,
+          display: "flex",
+          height: "100vh",
+          width: railWidth,
+          flexShrink: 0,
+          flexDirection: "column",
+          borderRight: "1px solid var(--border)",
+          backgroundColor: "var(--background)",
+          transition: "width 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+          overflowX: "hidden",
+        }}
       >
         <Sidebar user={user} collapsed={collapsed} />
-      </div>
-    </aside>
+      </Box>
+    </Box>
   );
 }

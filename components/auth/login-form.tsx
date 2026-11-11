@@ -10,6 +10,9 @@ import {
 import { isAxiosError } from "axios";
 import { useRouter } from "next/navigation";
 import { ZodError } from "zod";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 import { useAuthStore } from "@/stores/auth-store";
 import { api } from "@/lib/api";
 import { signInSchema, signUpSchema } from "@/lib/validators/auth";
@@ -23,6 +26,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Wordmark } from "@/components/shell/wordmark";
 
 function extractErrorMessage(error: unknown): string {
   if (error instanceof ZodError) {
@@ -80,93 +84,131 @@ function LoginForm() {
   const busy = signIn.isPending || signUp.isPending;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          {store.mode === "signin" ? "Welcome back" : "Create your account"}
-        </CardTitle>
-        <CardDescription>
-          {store.mode === "signin"
-            ? "Sign in to your account to continue."
-            : "Sign up with your email and a password."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={submit}>
-          {store.mode === "signup" && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="name">Name</Label>
+    <Box sx={{ width: "100%", maxWidth: 420, mx: "auto" }}>
+      <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
+        <Wordmark />
+      </Box>
+
+      <Card
+        elevation={2}
+        className="border-border/80 p-6 sm:p-7 shadow-xl rounded-2xl bg-card"
+      >
+        <CardHeader className="p-0 pb-5 border-none">
+          <CardTitle className="text-xl sm:text-2xl font-bold">
+            {store.mode === "signin" ? "Welcome back" : "Create an account"}
+          </CardTitle>
+          <CardDescription className="text-sm">
+            {store.mode === "signin"
+              ? "Sign in to deploy apps, manage databases, and object storage."
+              : "Get started with your free developer cloud account."}
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="p-0">
+          <form className="flex flex-col gap-4" onSubmit={submit}>
+            {store.mode === "signup" && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="name">Full Name</Label>
+                <Input
+                  id="name"
+                  name="name"
+                  type="text"
+                  autoComplete="name"
+                  placeholder="Ada Lovelace"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                />
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">Work Email</Label>
               <Input
-                id="name"
-                name="name"
-                type="text"
-                autoComplete="name"
-                placeholder="Ada Lovelace"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
               />
             </div>
-          )}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete={
-                store.mode === "signin" ? "current-password" : "new-password"
-              }
-              placeholder="••••••••"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </div>
-          {store.error && (
-            <p
-              role="alert"
-              className="text-sm text-destructive-foreground bg-destructive/10 rounded-md px-3 py-2"
+
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+              </div>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete={
+                  store.mode === "signin" ? "current-password" : "new-password"
+                }
+                placeholder="••••••••"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </div>
+
+            {store.error && (
+              <Alert
+                severity="error"
+                sx={{
+                  borderRadius: "10px",
+                  fontSize: "0.8125rem",
+                  py: 0.5,
+                }}
+              >
+                {store.error}
+              </Alert>
+            )}
+
+            <Button
+              type="submit"
+              disabled={busy}
+              className="w-full mt-2 h-10.5 text-sm font-semibold"
             >
-              {store.error}
-            </p>
-          )}
-          <Button type="submit" disabled={busy} className="w-full">
-            {busy
-              ? "Please wait…"
-              : store.mode === "signin"
-                ? "Sign in"
-                : "Sign up"}
-          </Button>
-        </form>
-      </CardContent>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">
-          {store.mode === "signin"
-            ? "Don't have an account?"
-            : "Already have an account?"}{" "}
-          <button
-            type="button"
-            className="font-medium text-foreground underline-offset-4 hover:underline"
-            onClick={() =>
-              store.setMode(store.mode === "signin" ? "signup" : "signin")
-            }
+              {busy
+                ? "Please wait…"
+                : store.mode === "signin"
+                  ? "Sign in"
+                  : "Create account"}
+            </Button>
+          </form>
+        </CardContent>
+
+        <Box
+          sx={{
+            mt: 4,
+            pt: 3,
+            borderTop: "1px solid var(--border)",
+            textAlign: "center",
+          }}
+        >
+          <Typography
+            variant="body2"
+            sx={{ color: "var(--muted-foreground)" }}
           >
-            {store.mode === "signin" ? "Sign up" : "Sign in"}
-          </button>
-        </p>
-      </CardContent>
-    </Card>
+            {store.mode === "signin"
+              ? "Don't have an account yet?"
+              : "Already have an account?"}{" "}
+            <Button
+              variant="link"
+              onClick={() =>
+                store.setMode(store.mode === "signin" ? "signup" : "signin")
+              }
+              className="font-semibold text-primary"
+            >
+              {store.mode === "signin" ? "Sign up" : "Sign in"}
+            </Button>
+          </Typography>
+        </Box>
+      </Card>
+    </Box>
   );
 }
 
