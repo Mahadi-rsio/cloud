@@ -57,7 +57,7 @@ export const darkTheme = responsiveFontSizes(
         secondary: "#8a9da6",
         disabled: "#51626c",
       },
-      divider: "#243239",
+      divider: "rgba(255, 255, 255, 0.08)",
       error: {
         main: "#e5484d",
         light: "#f87171",
@@ -104,8 +104,13 @@ export const darkTheme = responsiveFontSizes(
           root: {
             borderRadius: 8,
             boxShadow: "none",
+            whiteSpace: "nowrap",
             "&:hover": {
               boxShadow: "none",
+            },
+            "&:focus-visible": {
+              outline: "2px solid #38bdf8",
+              outlineOffset: 2,
             },
           },
           contained: {
@@ -118,7 +123,7 @@ export const darkTheme = responsiveFontSizes(
             },
           },
           outlined: {
-            borderColor: "#243239",
+            borderColor: "rgba(255, 255, 255, 0.08)",
             "&:hover": {
               borderColor: "#38bdf8",
               backgroundColor: "rgba(56, 189, 248, 0.06)",
@@ -131,7 +136,7 @@ export const darkTheme = responsiveFontSizes(
           root: {
             backgroundImage: "none",
             backgroundColor: "#141e24",
-            border: "1px solid #243239",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
           },
           elevation1: {
             boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.37), 0 1px 2px -1px rgba(0, 0, 0, 0.37)",
@@ -142,13 +147,13 @@ export const darkTheme = responsiveFontSizes(
         styleOverrides: {
           root: {
             backgroundColor: "#141e24",
-            border: "1px solid #243239",
-            borderRadius: 12,
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            borderRadius: 16,
             backgroundImage: "none",
             boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.25)",
             transition: "border-color 0.15s ease, box-shadow 0.15s ease",
             "&:hover": {
-              borderColor: "#334550",
+              borderColor: "rgba(255, 255, 255, 0.16)",
             },
           },
         },
@@ -184,8 +189,9 @@ export const darkTheme = responsiveFontSizes(
       MuiChip: {
         styleOverrides: {
           root: {
-            borderRadius: 6,
+            borderRadius: 8,
             fontWeight: 500,
+            whiteSpace: "nowrap",
           },
         },
       },
@@ -277,8 +283,13 @@ export const lightTheme = responsiveFontSizes(
           root: {
             borderRadius: 8,
             boxShadow: "none",
+            whiteSpace: "nowrap",
             "&:hover": {
               boxShadow: "none",
+            },
+            "&:focus-visible": {
+              outline: "2px solid #0284c7",
+              outlineOffset: 2,
             },
           },
           contained: {
@@ -316,7 +327,7 @@ export const lightTheme = responsiveFontSizes(
           root: {
             backgroundColor: "#ffffff",
             border: "1px solid #d8e0e6",
-            borderRadius: 12,
+            borderRadius: 16,
             backgroundImage: "none",
             boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
             transition: "border-color 0.15s ease, box-shadow 0.15s ease",
@@ -357,8 +368,9 @@ export const lightTheme = responsiveFontSizes(
       MuiChip: {
         styleOverrides: {
           root: {
-            borderRadius: 6,
+            borderRadius: 8,
             fontWeight: 500,
+            whiteSpace: "nowrap",
           },
         },
       },

@@ -58,6 +58,9 @@ import type {
   StudioTableDetails,
 } from "@/lib/studio/types";
 import { DataGrid } from "@/components/studio/DataGrid";
+import { ScrollableTable } from "@/components/shared/scrollable-table";
+import { SegmentedControl } from "@/components/shared/segmented-control";
+import { SurfaceCard, ToneBadge } from "@/components/shared/surface-card";
 import { RowEditorDialog } from "@/components/studio/RowEditorDialog";
 import { toCsv, toJsonExport, toSqlInserts } from "@/components/studio/format";
 
@@ -327,54 +330,28 @@ export function TableView({ tab }: { tab: StudioTab }) {
             {table}
           </Typography>
           {rowsQuery.data && (
-            <Chip
-              size="small"
-              label={`${rowsQuery.data.total.toLocaleString()} rows`}
-              sx={{
-                height: 20,
-                fontSize: 11,
-                fontFamily: "var(--font-mono)",
-                bgcolor: "var(--muted)",
-              }}
-            />
+            <ToneBadge tone="muted" mono>
+              {rowsQuery.data.total.toLocaleString()} {rowsQuery.data.total === 1 ? "row" : "rows"}
+            </ToneBadge>
           )}
         </Stack>
 
         {/* Segmented View Switcher */}
-        <Stack
-          direction="row"
-          spacing={0.5}
+        <SegmentedControl
+          value={tableState.view}
+          onChange={(v) => setView(table, v)}
+          ariaLabel="Table view mode"
+          options={[
+            { value: "data", label: "Data" },
+            { value: "structure", label: "Structure" },
+            { value: "ddl", label: "DDL" },
+          ]}
           sx={{
-            borderRadius: "8px",
-            border: "1px solid var(--border)",
-            bgcolor: "var(--background)",
-            p: 0.35,
+            width: { xs: "100%", sm: "auto" },
+            minWidth: { sm: 264 },
+            order: { xs: 3, sm: 0 },
           }}
-        >
-          {(["data", "structure", "ddl"] as const).map((v) => {
-            const active = tableState.view === v;
-            const label = v === "data" ? "Data" : v === "structure" ? "Structure" : "DDL";
-            return (
-              <Button
-                key={v}
-                type="button"
-                size="small"
-                variant={active ? "contained" : "text"}
-                onClick={() => setView(table, v)}
-                sx={{
-                  minHeight: 24,
-                  height: 24,
-                  py: 0,
-                  px: 1.25,
-                  fontSize: 11.5,
-                  borderRadius: "6px",
-                }}
-              >
-                {label}
-              </Button>
-            );
-          })}
-        </Stack>
+        />
 
         <Box sx={{ flex: 1 }} />
 
@@ -480,31 +457,45 @@ export function TableView({ tab }: { tab: StudioTab }) {
           </Stack>
         )}
 
-        <Tooltip title="Query this table in SQL Editor">
-          <IconButton
-            size="small"
-            onClick={() =>
-              openQuery(`SELECT * FROM "${table.replace(/"/g, '""')}" LIMIT 100;`, `Query ${table}`)
-            }
-            sx={{ width: 30, height: 30, border: "1px solid var(--border)", borderRadius: "6px" }}
-          >
-            <Terminal size={14} />
-          </IconButton>
-        </Tooltip>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexShrink: 0, ml: "auto" }}>
+          <Tooltip title="Query this table in SQL Editor" arrow>
+            <IconButton
+              aria-label="Query this table in SQL Editor"
+              onClick={() =>
+                openQuery(`SELECT * FROM "${table.replace(/"/g, '""')}" LIMIT 100;`, `Query ${table}`)
+              }
+              sx={{
+                width: 44,
+                height: 44,
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                color: "var(--foreground)",
+              }}
+            >
+              <Terminal size={16} />
+            </IconButton>
+          </Tooltip>
 
-        <Tooltip title="Refresh table data">
-          <IconButton
-            size="small"
-            onClick={() => {
-              void queryClient.invalidateQueries({ queryKey: ["studio", "rows", table] });
-              void queryClient.invalidateQueries({ queryKey: ["studio", "table_details", table] });
-              void queryClient.invalidateQueries({ queryKey: ["studio", "tables"] });
-            }}
-            sx={{ width: 30, height: 30, border: "1px solid var(--border)", borderRadius: "6px" }}
-          >
-            <RefreshCw size={14} />
-          </IconButton>
-        </Tooltip>
+          <Tooltip title="Refresh table data" arrow>
+            <IconButton
+              aria-label="Refresh table data"
+              onClick={() => {
+                void queryClient.invalidateQueries({ queryKey: ["studio", "rows", table] });
+                void queryClient.invalidateQueries({ queryKey: ["studio", "table_details", table] });
+                void queryClient.invalidateQueries({ queryKey: ["studio", "tables"] });
+              }}
+              sx={{
+                width: 44,
+                height: 44,
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                color: "var(--foreground)",
+              }}
+            >
+              <RefreshCw size={16} />
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Box>
 
       {/* Filter Builder Bar */}
@@ -891,27 +882,44 @@ function StructureView({
   const columns = details?.columns ?? [];
   const foreignKeys = details?.foreignKeys ?? [];
   const indexes = details?.indexes ?? [];
+  const ddlUpper = (details?.sql ?? "").toUpperCase();
+  const uniqueCols = new Set(
+    indexes.filter((idx) => idx.unique && idx.columns.length === 1).map((idx) => idx.columns[0]),
+  );
 
   return (
-    <Box sx={{ minHeight: 0, flex: 1, overflow: "auto", p: 2.5, display: "flex", flexDirection: "column", gap: 3 }}>
+    <Box
+      sx={{
+        minHeight: 0,
+        flex: 1,
+        overflowY: "auto",
+        overflowX: "hidden",
+        WebkitOverflowScrolling: "touch",
+        p: { xs: 2, sm: 2.5 },
+        display: "flex",
+        flexDirection: "column",
+        gap: 2.5,
+      }}
+    >
       {/* Columns Section */}
-      <Paper variant="outlined" sx={{ borderRadius: "10px", overflow: "hidden" }}>
+      <SurfaceCard sx={{ p: 0, height: "auto", overflow: "visible" }}>
         <Box
           sx={{
             display: "flex",
+            flexWrap: "wrap",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: 1.5,
             px: 2,
             py: 1.5,
             borderBottom: "1px solid var(--border)",
-            bgcolor: "var(--card)",
           }}
         >
-          <Box>
-            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: 15, fontWeight: 600 }}>
               Columns ({columns.length})
             </Typography>
-            <Typography sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>
+            <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>
               Table columns, data types, constraints, and default expressions
             </Typography>
           </Box>
@@ -919,116 +927,201 @@ function StructureView({
             type="button"
             variant="outlined"
             size="small"
-            startIcon={<Plus size={14} />}
+            startIcon={<Plus size={15} />}
             onClick={() => setAddColOpen(true)}
-            sx={{ height: 28, fontSize: 12 }}
+            sx={{
+              height: 36,
+              minHeight: 36,
+              px: 1.5,
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+              borderRadius: "8px",
+              fontSize: 13,
+            }}
           >
             Add Column
           </Button>
         </Box>
 
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                #
-              </TableCell>
-              <TableCell sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                Column Name
-              </TableCell>
-              <TableCell sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                Data Type
-              </TableCell>
-              <TableCell sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                Nullable
-              </TableCell>
-              <TableCell sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                Default Value
-              </TableCell>
-              <TableCell sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                Primary Key
-              </TableCell>
-              <TableCell align="right" sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted-foreground)" }}>
-                Actions
-              </TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {columns.map((col) => (
-              <TableRow key={col.name} hover>
-                <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>
-                  {col.cid}
-                </TableCell>
-                <TableCell>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        {/* Mobile (<640px): Compact Stacked Column Cards */}
+        <Box
+          sx={{
+            display: { xs: "flex", sm: "none" },
+            flexDirection: "column",
+            divideY: "1px solid var(--border)",
+          }}
+        >
+          {columns.map((col, idx) => {
+            const isAutoInc =
+              col.pk &&
+              (col.type ?? "").toUpperCase().includes("INT") &&
+              ddlUpper.includes("AUTOINCREMENT");
+            const isUnique = uniqueCols.has(col.name);
+
+            return (
+              <Box
+                key={col.name}
+                sx={{
+                  p: 2,
+                  borderTop: idx === 0 ? "none" : "1px solid var(--border)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                }}
+              >
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, flex: 1 }}>
                     {col.pk ? (
-                      <KeyRound size={13} color="#f5a524" />
+                      <KeyRound size={14} color="var(--warning)" style={{ flexShrink: 0 }} />
                     ) : (
-                      <ListTree size={13} color="var(--muted-foreground)" />
+                      <ListTree size={14} color="var(--muted-foreground)" style={{ flexShrink: 0 }} />
                     )}
-                    <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5, fontWeight: 600 }}>
+                    <Typography
+                      noWrap
+                      sx={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 13.5,
+                        fontWeight: 600,
+                        minWidth: 0,
+                      }}
+                    >
                       {col.name}
                     </Typography>
-                  </Stack>
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    label={col.type || "ANY"}
-                    size="small"
-                    sx={{
-                      height: 20,
-                      fontSize: 11,
-                      fontFamily: "var(--font-mono)",
-                      bgcolor: "var(--muted)",
-                    }}
-                  />
-                </TableCell>
-                <TableCell sx={{ fontSize: 12 }}>
-                  {col.notNull || col.pk ? (
-                    <Chip label="NOT NULL" size="small" sx={{ height: 20, fontSize: 10.5 }} />
-                  ) : (
-                    <Typography component="span" sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-                      Nullable
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>
-                  {col.defaultValue ?? "—"}
-                </TableCell>
-                <TableCell sx={{ fontSize: 12 }}>
-                  {col.pk ? (
-                    <Chip
-                      label={`PK #${col.pkOrder}`}
-                      size="small"
-                      sx={{
-                        height: 20,
-                        fontSize: 10.5,
-                        color: "#f5a524",
-                        bgcolor: "rgba(245, 165, 36, 0.14)",
-                      }}
-                    />
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-                <TableCell align="right">
+                    <ToneBadge tone="primary" mono>
+                      {col.type || "ANY"}
+                    </ToneBadge>
+                  </Box>
+
                   {!col.pk && columns.length > 1 && (
-                    <Tooltip title="Drop column">
+                    <Tooltip title="Drop column" arrow>
                       <IconButton
-                        size="small"
+                        aria-label={`Drop column ${col.name}`}
                         onClick={() => setDropColTarget(col.name)}
-                        sx={{ color: "var(--muted-foreground)", "&:hover": { color: "var(--destructive)" } }}
+                        sx={{
+                          width: 36,
+                          height: 36,
+                          flexShrink: 0,
+                          color: "var(--muted-foreground)",
+                          "&:hover": { color: "var(--destructive)" },
+                        }}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={15} />
                       </IconButton>
                     </Tooltip>
                   )}
+                </Box>
+
+                <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0.75 }}>
+                  {col.pk && <ToneBadge tone="warning">PK #{col.pkOrder}</ToneBadge>}
+                  {isAutoInc && <ToneBadge tone="primary">AUTOINCREMENT</ToneBadge>}
+                  {isUnique && <ToneBadge tone="success">UNIQUE</ToneBadge>}
+                  {col.notNull || col.pk ? (
+                    <ToneBadge tone="muted">NOT NULL</ToneBadge>
+                  ) : (
+                    <ToneBadge tone="muted">NULLABLE</ToneBadge>
+                  )}
+                  {col.defaultValue != null && (
+                    <ToneBadge tone="muted" mono>
+                      DEFAULT {col.defaultValue}
+                    </ToneBadge>
+                  )}
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+
+        {/* Desktop (>=640px): Horizontally Scrollable Table with Sticky Header */}
+        <Box sx={{ display: { xs: "none", sm: "block" } }}>
+          <ScrollableTable minWidth={560}>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
+                  #
+                </TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
+                  Column Name
+                </TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
+                  Data Type
+                </TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
+                  Nullable
+                </TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
+                  Default Value
+                </TableCell>
+                <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
+                  Primary Key
+                </TableCell>
+                <TableCell align="right" sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
+                  Actions
                 </TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Paper>
+            </TableHead>
+            <TableBody>
+              {columns.map((col) => (
+                <TableRow key={col.name} hover>
+                  <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>
+                    {col.cid}
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                      {col.pk ? (
+                        <KeyRound size={13} color="var(--warning)" />
+                      ) : (
+                        <ListTree size={13} color="var(--muted-foreground)" />
+                      )}
+                      <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600 }}>
+                        {col.name}
+                      </Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <ToneBadge tone="primary" mono>
+                      {col.type || "ANY"}
+                    </ToneBadge>
+                  </TableCell>
+                  <TableCell sx={{ fontSize: 12 }}>
+                    {col.notNull || col.pk ? (
+                      <ToneBadge tone="muted">NOT NULL</ToneBadge>
+                    ) : (
+                      <Typography component="span" sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+                        Nullable
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted-foreground)" }}>
+                    {col.defaultValue ?? "—"}
+                  </TableCell>
+                  <TableCell sx={{ fontSize: 12 }}>
+                    {col.pk ? <ToneBadge tone="warning">PK #{col.pkOrder}</ToneBadge> : "—"}
+                  </TableCell>
+                  <TableCell align="right">
+                    {!col.pk && columns.length > 1 && (
+                      <Tooltip title="Drop column" arrow>
+                        <IconButton
+                          size="small"
+                          aria-label={`Drop column ${col.name}`}
+                          onClick={() => setDropColTarget(col.name)}
+                          sx={{
+                            width: 36,
+                            height: 36,
+                            color: "var(--muted-foreground)",
+                            "&:hover": { color: "var(--destructive)" },
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </ScrollableTable>
+        </Box>
+      </SurfaceCard>
 
       {/* Foreign Keys & Indexes Grid */}
       <Box
@@ -1039,39 +1132,48 @@ function StructureView({
         }}
       >
         {/* Foreign Keys */}
-        <Paper variant="outlined" sx={{ borderRadius: "10px", overflow: "hidden" }}>
+        <SurfaceCard sx={{ p: 0, height: "auto", overflow: "visible" }}>
           <Box
             sx={{
               px: 2,
               py: 1.5,
               borderBottom: "1px solid var(--border)",
-              bgcolor: "var(--card)",
             }}
           >
-            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>
+            <Typography sx={{ fontSize: 15, fontWeight: 600 }}>
               Foreign Keys ({foreignKeys.length})
             </Typography>
           </Box>
           {foreignKeys.length === 0 ? (
-            <Box sx={{ p: 2.5, fontSize: 12.5, color: "var(--muted-foreground)" }}>
-              No foreign key constraints defined on this table.
+            <Box
+              sx={{
+                p: 2.5,
+                display: "flex",
+                alignItems: "center",
+                gap: 1.25,
+                fontSize: 13,
+                color: "var(--muted-foreground)",
+              }}
+            >
+              <Link2 size={16} style={{ opacity: 0.65, flexShrink: 0 }} />
+              <span>No foreign key constraints defined on this table.</span>
             </Box>
           ) : (
-            <Table size="small">
+            <ScrollableTable minWidth={420}>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontSize: 11.5, fontWeight: 600 }}>Column</TableCell>
-                  <TableCell sx={{ fontSize: 11.5, fontWeight: 600 }}>References</TableCell>
-                  <TableCell sx={{ fontSize: 11.5, fontWeight: 600 }}>On Delete</TableCell>
+                  <TableCell sx={{ fontSize: 12, fontWeight: 600 }}>Column</TableCell>
+                  <TableCell sx={{ fontSize: 12, fontWeight: 600 }}>References</TableCell>
+                  <TableCell sx={{ fontSize: 12, fontWeight: 600 }}>On Delete</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {foreignKeys.map((fk, idx) => (
                   <TableRow key={`${fk.id}-${idx}`}>
-                    <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                    <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
                       {fk.from}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                    <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
                       <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
                         <Link2 size={12} color="var(--primary)" />
                         <span>
@@ -1079,65 +1181,76 @@ function StructureView({
                         </span>
                       </Stack>
                     </TableCell>
-                    <TableCell sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>
+                    <TableCell sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>
                       {fk.onDelete}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ScrollableTable>
           )}
-        </Paper>
+        </SurfaceCard>
 
         {/* Indexes */}
-        <Paper variant="outlined" sx={{ borderRadius: "10px", overflow: "hidden" }}>
+        <SurfaceCard sx={{ p: 0, height: "auto", overflow: "visible" }}>
           <Box
             sx={{
               px: 2,
               py: 1.5,
               borderBottom: "1px solid var(--border)",
-              bgcolor: "var(--card)",
             }}
           >
-            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>
+            <Typography sx={{ fontSize: 15, fontWeight: 600 }}>
               Indexes ({indexes.length})
             </Typography>
           </Box>
           {indexes.length === 0 ? (
-            <Box sx={{ p: 2.5, fontSize: 12.5, color: "var(--muted-foreground)" }}>
-              No secondary indexes defined on this table.
+            <Box
+              sx={{
+                p: 2.5,
+                display: "flex",
+                alignItems: "center",
+                gap: 1.25,
+                fontSize: 13,
+                color: "var(--muted-foreground)",
+              }}
+            >
+              <ListTree size={16} style={{ opacity: 0.65, flexShrink: 0 }} />
+              <span>No secondary indexes defined on this table.</span>
             </Box>
           ) : (
-            <Table size="small">
+            <ScrollableTable minWidth={420}>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontSize: 11.5, fontWeight: 600 }}>Index Name</TableCell>
-                  <TableCell sx={{ fontSize: 11.5, fontWeight: 600 }}>Columns</TableCell>
-                  <TableCell sx={{ fontSize: 11.5, fontWeight: 600 }}>Unique</TableCell>
+                  <TableCell sx={{ fontSize: 12, fontWeight: 600 }}>Index Name</TableCell>
+                  <TableCell sx={{ fontSize: 12, fontWeight: 600 }}>Columns</TableCell>
+                  <TableCell sx={{ fontSize: 12, fontWeight: 600 }}>Unique</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {indexes.map((idx) => (
                   <TableRow key={idx.name}>
-                    <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                    <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
                       {idx.name}
                     </TableCell>
-                    <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                    <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
                       {idx.columns.join(", ") || "—"}
                     </TableCell>
                     <TableCell sx={{ fontSize: 12 }}>
                       {idx.unique ? (
-                        <Chip label="UNIQUE" size="small" sx={{ height: 18, fontSize: 10 }} />
+                        <ToneBadge tone="success">UNIQUE</ToneBadge>
                       ) : (
-                        "No"
+                        <Typography component="span" sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+                          No
+                        </Typography>
                       )}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ScrollableTable>
           )}
-        </Paper>
+        </SurfaceCard>
       </Box>
 
       {/* Add Column Dialog */}
@@ -1258,6 +1371,50 @@ function StructureView({
   );
 }
 
+const SQL_KEYWORD_RE =
+  /(--[^\n]*|'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\b(?:CREATE|TABLE|IF|NOT|EXISTS|PRIMARY|KEY|AUTOINCREMENT|NULL|DEFAULT|UNIQUE|CHECK|FOREIGN|REFERENCES|ON|DELETE|UPDATE|CASCADE|SET|RESTRICT|NO|ACTION|INTEGER|INT|TEXT|REAL|BLOB|NUMERIC|BOOLEAN|DATETIME|TIMESTAMP|WITHOUT|ROWID|STRICT|CONSTRAINT|INDEX)\b|\b\d+(?:\.\d+)?\b)/gi;
+
+function highlightSql(sql: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  SQL_KEYWORD_RE.lastIndex = 0;
+
+  while ((match = SQL_KEYWORD_RE.exec(sql)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(sql.slice(lastIndex, match.index));
+    }
+    const token = match[0];
+    let color = "var(--foreground)";
+    let fontWeight: number | undefined;
+
+    if (token.startsWith("--")) {
+      color = "var(--muted-foreground)";
+    } else if (token.startsWith("'")) {
+      color = "var(--success)";
+    } else if (token.startsWith('"') || token.startsWith("`")) {
+      color = "var(--warning)";
+    } else if (/^\d/.test(token)) {
+      color = "var(--warning)";
+    } else {
+      color = "var(--primary)";
+      fontWeight = 600;
+    }
+
+    nodes.push(
+      <Box key={`${match.index}-${token}`} component="span" sx={{ color, fontWeight }}>
+        {token}
+      </Box>,
+    );
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < sql.length) {
+    nodes.push(sql.slice(lastIndex));
+  }
+  return nodes;
+}
+
 function DdlView({ table, sql }: { table: string; sql: string | null }) {
   const [copied, setCopied] = React.useState(false);
   const openQuery = useStudioStore((s) => s.openQuery);
@@ -1271,64 +1428,140 @@ function DdlView({ table, sql }: { table: string; sql: string | null }) {
   };
 
   return (
-    <Box sx={{ p: 2.5, overflow: "auto", flex: 1 }}>
-      <Paper variant="outlined" sx={{ borderRadius: "10px", overflow: "hidden" }}>
+    <Box
+      sx={{
+        p: { xs: 2, sm: 2.5 },
+        overflowY: "auto",
+        overflowX: "hidden",
+        WebkitOverflowScrolling: "touch",
+        flex: 1,
+      }}
+    >
+      <SurfaceCard sx={{ p: 0, height: "auto", overflow: "hidden" }}>
         <Box
           sx={{
             display: "flex",
-            alignItems: "center",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: { xs: "flex-start", sm: "center" },
             justifyContent: "space-between",
+            gap: 1.5,
             px: 2,
-            py: 1.25,
+            py: 1.5,
             borderBottom: "1px solid var(--border)",
-            bgcolor: "var(--card)",
           }}
         >
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-            <Code2 size={15} color="var(--primary)" />
-            <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
-              CREATE TABLE Statement
+            <Code2 size={16} color="var(--primary)" />
+            <Typography sx={{ fontSize: 15, fontWeight: 600 }}>
+              CREATE TABLE statement
             </Typography>
           </Stack>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
             <Button
               type="button"
               variant="outlined"
               size="small"
-              startIcon={copied ? <Check size={13} color="var(--success)" /> : <Copy size={13} />}
+              startIcon={copied ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
               onClick={handleCopy}
-              sx={{ height: 28, fontSize: 12 }}
+              sx={{
+                height: 36,
+                minHeight: 36,
+                px: 1.5,
+                py: 1,
+                borderRadius: "8px",
+                fontSize: 13,
+                whiteSpace: "nowrap",
+              }}
             >
-              {copied ? "Copied" : "Copy DDL"}
+              {copied ? "Copied" : "Copy"}
             </Button>
             <Button
               type="button"
               variant="outlined"
               size="small"
-              startIcon={<Terminal size={13} />}
+              startIcon={<Terminal size={14} />}
               onClick={() => openQuery(formattedSql, `DDL ${table}`)}
-              sx={{ height: 28, fontSize: 12 }}
+              sx={{
+                height: 36,
+                minHeight: 36,
+                px: 1.5,
+                py: 1,
+                borderRadius: "8px",
+                fontSize: 13,
+                whiteSpace: "nowrap",
+              }}
             >
-              Open in SQL Editor
+              Open in SQL
             </Button>
           </Stack>
         </Box>
+
         <Box
-          component="pre"
           sx={{
-            m: 0,
-            p: 2.5,
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            lineHeight: 1.6,
-            overflowX: "auto",
+            position: "relative",
             bgcolor: "var(--background)",
-            color: "var(--foreground)",
+            overflowX: "auto",
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+            maxHeight: { xs: "60vh", sm: "none" },
+            scrollbarWidth: "thin",
+            "&::-webkit-scrollbar": { width: 6, height: 6 },
+            "&::-webkit-scrollbar-thumb": {
+              backgroundColor: "color-mix(in oklab, var(--muted-foreground) 35%, transparent)",
+              borderRadius: "999px",
+            },
           }}
         >
-          {formattedSql}
+          <Box
+            sx={{
+              position: "sticky",
+              top: 8,
+              right: 8,
+              float: "right",
+              m: 1,
+              zIndex: 2,
+            }}
+          >
+            <Tooltip title={copied ? "Copied" : "Copy DDL"} arrow>
+              <IconButton
+                type="button"
+                aria-label="Copy DDL statement"
+                onClick={handleCopy}
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  bgcolor: "color-mix(in oklab, var(--card) 92%, transparent)",
+                  backdropFilter: "blur(8px)",
+                  color: copied ? "var(--success)" : "var(--muted-foreground)",
+                  "&:hover": {
+                    color: copied ? "var(--success)" : "var(--foreground)",
+                    bgcolor: "var(--accent)",
+                  },
+                }}
+              >
+                {copied ? <Check size={15} /> : <Copy size={15} />}
+              </IconButton>
+            </Tooltip>
+          </Box>
+
+          <Box
+            component="pre"
+            sx={{
+              m: 0,
+              p: 2,
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              lineHeight: 1.6,
+              whiteSpace: "pre",
+              color: "var(--foreground)",
+            }}
+          >
+            {highlightSql(formattedSql)}
+          </Box>
         </Box>
-      </Paper>
+      </SurfaceCard>
     </Box>
   );
 }

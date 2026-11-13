@@ -4,8 +4,8 @@ import * as React from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Card from "@mui/material/Card";
-import Chip from "@mui/material/Chip";
+import ButtonBase from "@mui/material/ButtonBase";
+import Collapse from "@mui/material/Collapse";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
@@ -13,10 +13,11 @@ import LinearProgress from "@mui/material/LinearProgress";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
-import Paper from "@mui/material/Paper";
 import Skeleton from "@mui/material/Skeleton";
+import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import {
   Database,
@@ -27,21 +28,22 @@ import {
   Trash2,
   MoreHorizontal,
   ExternalLink,
-  ShieldCheck,
-  Server,
   KeyRound,
   Check,
   Copy,
   Activity,
   Table2,
+  Globe,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState, ErrorState } from "@/components/shared/empty-state";
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
-import { CopyField } from "@/components/shared/copy-field";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { RelativeTime } from "@/components/shared/relative-time";
+import { ActionButton, SurfaceCard, ToneBadge } from "@/components/shared/surface-card";
 import { CreateDatabaseDialog } from "./create-database-dialog";
 import { ConnectDatabaseDialog } from "./connect-database-dialog";
 import {
@@ -59,6 +61,30 @@ const FREE_PLAN_LIMITS = {
   storageBytes: 512 * 1024 * 1024, // 512 MB
 };
 
+function truncateMiddle(value: string, head = 22, tail = 14): string {
+  if (value.length <= head + tail + 3) return value;
+  return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
+function copyText(text: string): Promise<void> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  }
+  fallbackCopy(text);
+  return Promise.resolve();
+}
+
+function fallbackCopy(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
 export function DatabasesPage() {
   const router = useRouter();
   const [databases, setDatabases] = React.useState<DatabaseItem[]>([]);
@@ -73,6 +99,9 @@ export function DatabasesPage() {
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   const [copiedTokenId, setCopiedTokenId] = React.useState<string | null>(null);
+  const [copiedUrlId, setCopiedUrlId] = React.useState<string | null>(null);
+  const [toastMessage, setToastMessage] = React.useState<string | null>(null);
+  const [expandedUsage, setExpandedUsage] = React.useState<Record<string, boolean>>({});
   const [menuAnchor, setMenuAnchor] = React.useState<{
     el: HTMLElement;
     db: DatabaseItem;
@@ -104,18 +133,17 @@ export function DatabasesPage() {
   };
 
   const handleCopyToken = async (db: DatabaseItem) => {
-    try {
-      await navigator.clipboard.writeText(db.defaultToken);
-    } catch {
-      const textarea = document.createElement("textarea");
-      textarea.value = db.defaultToken;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
-    }
+    await copyText(db.defaultToken);
     setCopiedTokenId(db.id);
-    setTimeout(() => setCopiedTokenId(null), 2000);
+    setToastMessage("Auth token copied");
+    setTimeout(() => setCopiedTokenId((curr) => (curr === db.id ? null : curr)), 2000);
+  };
+
+  const handleCopyUrl = async (db: DatabaseItem) => {
+    await copyText(db.libsqlUrl);
+    setCopiedUrlId(db.id);
+    setToastMessage("Connection URL copied");
+    setTimeout(() => setCopiedUrlId((curr) => (curr === db.id ? null : curr)), 2000);
   };
 
   const handleDeleteConfirm = async () => {
@@ -144,127 +172,49 @@ export function DatabasesPage() {
     );
   }, [databases, searchQuery]);
 
+  const activeCountLabel = `${databases.length} active ${databases.length === 1 ? "database" : "databases"}`;
+
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <PageHeader
-        title="Databases"
+        title={
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>
+            <span>Databases</span>
+            {!isLoading && (
+              <ToneBadge tone="primary" mono>
+                {activeCountLabel}
+              </ToneBadge>
+            )}
+          </Box>
+        }
         description="Serverless, distributed libSQL & SQLite databases with zero cold starts, replication, and instant branching."
         actions={
           <Stack direction="row" spacing={1}>
-            <Button
+            <ActionButton
               type="button"
               variant="outlined"
-              size="small"
               onClick={() => void loadDatabases()}
               disabled={isLoading}
               startIcon={
                 <RefreshCw
-                  size={14}
+                  size={16}
                   style={isLoading ? { animation: "spin 1s linear infinite" } : undefined}
                 />
               }
             >
               Refresh
-            </Button>
-            <Button
+            </ActionButton>
+            <ActionButton
               type="button"
               variant="contained"
-              size="small"
               onClick={() => setCreateOpen(true)}
               startIcon={<Plus size={16} />}
             >
               Create Database
-            </Button>
+            </ActionButton>
           </Stack>
         }
       />
-
-      {/* Quick Stats bar */}
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" },
-          gap: 2,
-        }}
-      >
-        <Card sx={{ display: "flex", alignItems: "center", gap: 1.5, p: 2 }}>
-          <Box
-            sx={{
-              display: "flex",
-              width: 40,
-              height: 40,
-              flexShrink: 0,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "8px",
-              backgroundColor: "rgba(56, 189, 248, 0.12)",
-              color: "var(--primary)",
-            }}
-          >
-            <Database size={20} />
-          </Box>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-              Active Databases
-            </Typography>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              {databases.length}
-            </Typography>
-          </Box>
-        </Card>
-
-        <Card sx={{ display: "flex", alignItems: "center", gap: 1.5, p: 2 }}>
-          <Box
-            sx={{
-              display: "flex",
-              width: 40,
-              height: 40,
-              flexShrink: 0,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "8px",
-              backgroundColor: "rgba(59, 130, 246, 0.12)",
-              color: "#3b82f6",
-            }}
-          >
-            <Server size={20} />
-          </Box>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-              Engine & Protocol
-            </Typography>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              libSQL / SQLite
-            </Typography>
-          </Box>
-        </Card>
-
-        <Card sx={{ display: "flex", alignItems: "center", gap: 1.5, p: 2 }}>
-          <Box
-            sx={{
-              display: "flex",
-              width: 40,
-              height: 40,
-              flexShrink: 0,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "8px",
-              backgroundColor: "rgba(61, 214, 140, 0.12)",
-              color: "#3dd68c",
-            }}
-          >
-            <ShieldCheck size={20} />
-          </Box>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-              Auth & Encryption
-            </Typography>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Ed25519 JWT + TLS
-            </Typography>
-          </Box>
-        </Card>
-      </Box>
 
       {/* Search Bar */}
       <Box sx={{ maxWidth: { xs: "100%", sm: 380 } }}>
@@ -276,6 +226,7 @@ export function DatabasesPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           slotProps={{
             input: {
+              sx: { minHeight: 44, borderRadius: "10px" },
               startAdornment: (
                 <InputAdornment position="start">
                   <Search size={16} />
@@ -325,6 +276,8 @@ export function DatabasesPage() {
         <Stack spacing={2}>
           {filteredDatabases.map((db) => {
             const hasCopiedToken = copiedTokenId === db.id;
+            const hasCopiedUrl = copiedUrlId === db.id;
+            const isUsageOpen = expandedUsage[db.id] ?? true;
             const stats = db.stats;
             const rowsRead = stats?.rowsReadCount ?? 0;
             const rowsWritten = stats?.rowsWrittenCount ?? 0;
@@ -345,271 +298,325 @@ export function DatabasesPage() {
             );
 
             return (
-              <Card
+              <SurfaceCard
                 key={db.id}
                 sx={{
-                  p: 2.5,
+                  p: 2,
+                  borderRadius: "16px",
                   display: "flex",
                   flexDirection: "column",
-                  gap: 2,
-                  transition: "border-color 0.15s ease",
-                  "&:hover": { borderColor: "text.secondary" },
+                  gap: 1.75,
                 }}
               >
+                {/* Header Row: DB icon + name (left), Status pill + More menu (top-right) */}
                 <Box
                   sx={{
                     display: "flex",
-                    flexDirection: { xs: "column", sm: "row" },
+                    alignItems: "center",
                     justifyContent: "space-between",
-                    alignItems: { sm: "center" },
-                    gap: 2,
+                    gap: 1,
+                    minWidth: 0,
                   }}
                 >
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0, flex: 1 }}>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          width: 32,
-                          height: 32,
-                          flexShrink: 0,
-                          alignItems: "center",
-                          justifyContent: "center",
-                          borderRadius: "8px",
-                          backgroundColor: "rgba(56, 189, 248, 0.12)",
-                          color: "var(--primary)",
-                        }}
-                      >
-                        <Database size={16} />
-                      </Box>
-                      <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
-                        {db.name}
-                      </Typography>
-                      <Chip
-                        size="small"
-                        label={db.namespace}
-                        sx={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: "0.7rem",
-                          height: 22,
-                          borderRadius: "6px",
-                        }}
-                      />
-                      <StatusBadge status={db.status} />
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={db.region.toUpperCase()}
-                        sx={{ fontSize: "0.7rem", height: 22 }}
-                      />
-                    </Box>
-
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0, flex: 1 }}>
                     <Box
                       sx={{
                         display: "flex",
-                        flexDirection: { xs: "column", sm: "row" },
-                        alignItems: { sm: "center" },
-                        gap: { xs: 0.75, sm: 2 },
+                        width: 36,
+                        height: 36,
+                        flexShrink: 0,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: "10px",
+                        backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)",
+                        color: "var(--primary)",
                       }}
                     >
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}>
-                        <Typography variant="caption" sx={{ fontWeight: 600, flexShrink: 0 }}>
-                          URL:
-                        </Typography>
-                        <CopyField
-                          value={db.libsqlUrl}
-                          sx={{
-                            borderRadius: "6px",
-                            backgroundColor: "var(--muted)",
-                            px: 1,
-                            py: 0.25,
-                            maxWidth: { xs: 300, sm: 420 },
-                          }}
-                        />
-                      </Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                        Created <RelativeTime value={db.createdAt} sx={{ fontWeight: 500 }} />
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  {/* Actions */}
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    sx={{
-                      alignItems: "center",
-                      flexShrink: 0,
-                      pt: { xs: 1.5, sm: 0 },
-                      borderTop: { xs: "1px solid var(--border)", sm: "none" },
-                      justifyContent: { xs: "flex-end", sm: "flex-start" },
-                    }}
-                  >
-                    <Button
-                      type="button"
-                      variant="outlined"
-                      size="small"
-                      startIcon={<Table2 size={14} />}
-                      onClick={() => openStudio(db)}
-                    >
-                      Studio
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outlined"
-                      size="small"
-                      startIcon={<Code2 size={14} />}
-                      onClick={() => setConnectDb(db)}
-                    >
-                      Connect
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="text"
-                      size="small"
-                      onClick={() => void handleCopyToken(db)}
-                      startIcon={
-                        hasCopiedToken ? (
-                          <Check size={14} color="#3dd68c" />
-                        ) : (
-                          <KeyRound size={14} />
-                        )
-                      }
-                      title="Copy Primary Auth Token"
-                    >
-                      {hasCopiedToken ? "Copied" : "Token"}
-                    </Button>
-                    <IconButton
-                      size="small"
-                      aria-label="Open menu"
-                      onClick={(e) => setMenuAnchor({ el: e.currentTarget, db })}
-                    >
-                      <MoreHorizontal size={16} />
-                    </IconButton>
-                  </Stack>
-                </Box>
-
-                {/* Usage & Metering */}
-                <Paper
-                  variant="outlined"
-                  sx={{
-                    p: 1.75,
-                    borderRadius: "10px",
-                    backgroundColor: "var(--muted)",
-                  }}
-                >
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      flexWrap: "wrap",
-                      gap: 1,
-                      mb: 1.5,
-                    }}
-                  >
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-                      <Activity size={14} color="var(--primary)" />
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                        Monthly Usage & Quotas
-                      </Typography>
-                      <Chip
-                        size="small"
-                        label="FREE TIER"
-                        sx={{
-                          height: 18,
-                          fontSize: "10px",
-                          fontWeight: 700,
-                          color: "var(--primary)",
-                          backgroundColor: "rgba(56, 189, 248, 0.12)",
-                        }}
-                      />
+                      <Database size={18} />
                     </Box>
                     <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                      variant="subtitle1"
+                      noWrap
+                      sx={{ fontWeight: 700, fontSize: 16, lineHeight: 1.3, minWidth: 0 }}
                     >
-                      {queryCount.toLocaleString()} queries processed
+                      {db.name}
                     </Typography>
                   </Box>
 
-                  <Box
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexShrink: 0 }}>
+                    <StatusBadge status={db.status} />
+                    <Tooltip title="Database actions">
+                      <IconButton
+                        aria-label={`Actions for ${db.name}`}
+                        onClick={(e) => setMenuAnchor({ el: e.currentTarget, db })}
+                        sx={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: "10px",
+                          color: "var(--muted-foreground)",
+                          "&:hover": { color: "var(--foreground)", bgcolor: "var(--accent)" },
+                        }}
+                      >
+                        <MoreHorizontal size={18} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Box>
+
+                {/* Subline: namespace (muted mono) + region chip with Globe icon & tooltip + created time */}
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 1,
+                    mt: -0.5,
+                  }}
+                >
+                  <Typography
+                    variant="caption"
                     sx={{
-                      display: "grid",
-                      gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" },
-                      gap: 2,
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12.5,
+                      color: "var(--muted-foreground)",
                     }}
                   >
-                    {/* Rows Read */}
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
-                        <Typography variant="caption" color="text.secondary">
-                          Rows Read
-                        </Typography>
-                        <Typography variant="caption" sx={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>
-                          {rowsRead.toLocaleString()}{" "}
-                          <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
-                            / 1M ({readPercent}%)
-                          </Box>
-                        </Typography>
-                      </Box>
-                      <LinearProgress
-                        variant="determinate"
-                        value={Math.max(readPercent > 0 ? 2 : 0, readPercent)}
-                        color={readPercent >= 100 ? "error" : readPercent > 80 ? "warning" : "primary"}
-                        sx={{ height: 6, borderRadius: 3 }}
-                      />
-                    </Box>
+                    {db.namespace}
+                  </Typography>
+                  <Tooltip title={`Region: ${db.region.toUpperCase()}`} arrow>
+                    <span>
+                      <ToneBadge
+                        tone="muted"
+                        mono
+                        icon={<Globe size={12} />}
+                      >
+                        {db.region.toUpperCase()}
+                      </ToneBadge>
+                    </span>
+                  </Tooltip>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12 }}>
+                    Created <RelativeTime value={db.createdAt} sx={{ fontWeight: 500 }} />
+                  </Typography>
+                </Box>
 
-                    {/* Rows Written */}
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
-                        <Typography variant="caption" color="text.secondary">
-                          Rows Written
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          color={writePercent > 80 ? "warning.main" : "text.primary"}
-                          sx={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}
-                        >
-                          {rowsWritten.toLocaleString()}{" "}
-                          <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
-                            / 100k ({writePercent}%)
-                          </Box>
-                        </Typography>
-                      </Box>
-                      <LinearProgress
-                        variant="determinate"
-                        value={Math.max(writePercent > 0 ? 2 : 0, writePercent)}
-                        color={writePercent >= 100 ? "error" : writePercent > 80 ? "warning" : "success"}
-                        sx={{ height: 6, borderRadius: 3 }}
-                      />
-                    </Box>
+                {/* Full-width read-only monospace Connection URL with middle ellipsis & 44px copy button */}
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    width: "100%",
+                    minHeight: 44,
+                    pl: 1.5,
+                    pr: 0.25,
+                    borderRadius: "10px",
+                    border: "1px solid var(--border)",
+                    bgcolor: "var(--background)",
+                  }}
+                >
+                  <Typography
+                    component="span"
+                    title={db.libsqlUrl}
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 13,
+                      color: "var(--foreground)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {truncateMiddle(db.libsqlUrl)}
+                  </Typography>
+                  <Tooltip title={hasCopiedUrl ? "Copied" : "Copy connection URL"} arrow>
+                    <IconButton
+                      type="button"
+                      aria-label={`Copy connection URL for ${db.name}`}
+                      onClick={() => void handleCopyUrl(db)}
+                      sx={{
+                        width: 44,
+                        height: 44,
+                        flexShrink: 0,
+                        borderRadius: "8px",
+                        color: hasCopiedUrl ? "var(--success)" : "var(--muted-foreground)",
+                        "&:hover": {
+                          color: hasCopiedUrl ? "var(--success)" : "var(--foreground)",
+                          bgcolor: "var(--accent)",
+                        },
+                      }}
+                    >
+                      {hasCopiedUrl ? <Check size={16} /> : <Copy size={16} />}
+                    </IconButton>
+                  </Tooltip>
+                </Box>
 
-                    {/* Storage */}
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
-                        <Typography variant="caption" color="text.secondary">
-                          Disk Storage
-                        </Typography>
-                        <Typography variant="caption" sx={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>
-                          {formatBytes(storageBytes)}{" "}
-                          <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
-                            / 512 MB ({storagePercent}%)
-                          </Box>
-                        </Typography>
-                      </Box>
-                      <LinearProgress
-                        variant="determinate"
-                        value={Math.max(storagePercent > 0 ? 2 : 0, storagePercent)}
-                        color="info"
-                        sx={{ height: 6, borderRadius: 3 }}
-                      />
+                {/* 3-Column Equal-Width Actions Grid */}
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: 1,
+                    width: "100%",
+                  }}
+                >
+                  <ActionButton
+                    type="button"
+                    variant="contained"
+                    startIcon={<Table2 size={16} />}
+                    onClick={() => openStudio(db)}
+                  >
+                    Studio
+                  </ActionButton>
+                  <ActionButton
+                    type="button"
+                    variant="outlined"
+                    startIcon={<Code2 size={16} />}
+                    onClick={() => setConnectDb(db)}
+                  >
+                    Connect
+                  </ActionButton>
+                  <ActionButton
+                    type="button"
+                    variant="outlined"
+                    onClick={() => void handleCopyToken(db)}
+                    startIcon={
+                      hasCopiedToken ? (
+                        <Check size={16} color="var(--success)" />
+                      ) : (
+                        <KeyRound size={16} />
+                      )
+                    }
+                    title="Copy Primary Auth Token"
+                  >
+                    {hasCopiedToken ? "Copied" : "Token"}
+                  </ActionButton>
+                </Box>
+
+                {/* Collapsible Usage & Quotas Section (no nested border-in-border) */}
+                <Box sx={{ borderTop: "1px solid var(--border)", pt: 1.25 }}>
+                  <ButtonBase
+                    type="button"
+                    onClick={() =>
+                      setExpandedUsage((prev) => ({
+                        ...prev,
+                        [db.id]: !(prev[db.id] ?? true),
+                      }))
+                    }
+                    aria-expanded={isUsageOpen}
+                    sx={{
+                      width: "100%",
+                      minHeight: 44,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 1,
+                      borderRadius: "8px",
+                      px: 0.5,
+                      textAlign: "left",
+                      "&:hover": { bgcolor: "var(--action-hover, rgba(255,255,255,0.03))" },
+                    }}
+                  >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                      <Activity size={14} color="var(--primary)" />
+                      <Typography sx={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
+                        Usage & quotas
+                      </Typography>
+                      <ToneBadge tone="primary">FREE TIER</ToneBadge>
                     </Box>
-                  </Box>
-                </Paper>
-              </Card>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 11.5,
+                          display: { xs: "none", sm: "inline" },
+                        }}
+                      >
+                        {queryCount.toLocaleString()} queries
+                      </Typography>
+                      {isUsageOpen ? (
+                        <ChevronUp size={16} color="var(--muted-foreground)" />
+                      ) : (
+                        <ChevronDown size={16} color="var(--muted-foreground)" />
+                      )}
+                    </Box>
+                  </ButtonBase>
+
+                  <Collapse in={isUsageOpen}>
+                    <Stack spacing={1.5} sx={{ pt: 1.25, pb: 0.5 }}>
+                      {/* Rows Read */}
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12 }}>
+                            Rows Read
+                          </Typography>
+                          <Typography variant="caption" sx={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600 }}>
+                            {rowsRead.toLocaleString()}{" "}
+                            <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
+                              / 1M
+                            </Box>
+                          </Typography>
+                        </Box>
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.max(readPercent > 0 ? 2 : 0, readPercent)}
+                          color={readPercent >= 100 ? "error" : readPercent > 80 ? "warning" : "primary"}
+                          sx={{ height: 6, borderRadius: 3 }}
+                        />
+                      </Box>
+
+                      {/* Rows Written */}
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12 }}>
+                            Rows Written
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color={writePercent > 80 ? "warning.main" : "text.primary"}
+                            sx={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600 }}
+                          >
+                            {rowsWritten.toLocaleString()}{" "}
+                            <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
+                              / 100k
+                            </Box>
+                          </Typography>
+                        </Box>
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.max(writePercent > 0 ? 2 : 0, writePercent)}
+                          color={writePercent >= 100 ? "error" : writePercent > 80 ? "warning" : "success"}
+                          sx={{ height: 6, borderRadius: 3 }}
+                        />
+                      </Box>
+
+                      {/* Disk Storage */}
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12 }}>
+                            Disk Storage
+                          </Typography>
+                          <Typography variant="caption" sx={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600 }}>
+                            {formatBytes(storageBytes)}{" "}
+                            <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
+                              / 512 MB
+                            </Box>
+                          </Typography>
+                        </Box>
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.max(storagePercent > 0 ? 2 : 0, storagePercent)}
+                          color="info"
+                          sx={{ height: 6, borderRadius: 3 }}
+                        />
+                      </Box>
+                    </Stack>
+                  </Collapse>
+                </Box>
+              </SurfaceCard>
             );
           })}
         </Stack>
@@ -743,6 +750,14 @@ export function DatabasesPage() {
         confirmLabel={isDeleting ? "Deleting..." : "Delete Database"}
         isPending={isDeleting}
         onConfirm={() => void handleDeleteConfirm()}
+      />
+
+      <Snackbar
+        open={Boolean(toastMessage)}
+        autoHideDuration={2000}
+        onClose={() => setToastMessage(null)}
+        message={toastMessage}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       />
     </Box>
   );

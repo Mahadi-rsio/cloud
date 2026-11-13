@@ -167,8 +167,9 @@ export function AppBar({ user }: { user: { name: string; email: string } }) {
       position="sticky"
       elevation={0}
       sx={{
-        backgroundColor: "rgba(13, 20, 24, 0.85)",
+        backgroundColor: "color-mix(in oklab, var(--card) 92%, transparent)",
         backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
         borderBottom: "1px solid var(--border)",
         color: "var(--foreground)",
         zIndex: 30,
