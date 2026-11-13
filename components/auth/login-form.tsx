@@ -282,7 +282,7 @@ function LoginForm() {
               >
                 <Building2 size={16} style={{ color: "var(--primary)", flexShrink: 0 }} />
                 <Typography variant="caption" sx={{ color: "var(--muted-foreground)" }}>
-                  A default organization will be created automatically when you sign up.
+                  A Personal organization will be created automatically when you sign up.
                 </Typography>
               </Box>
             )}

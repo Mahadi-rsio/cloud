@@ -75,11 +75,10 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
       user: {
         create: {
           after: async (user) => {
-            const displayBase = user.name?.trim() || user.email.split("@")[0] || "Personal";
             const orgId = crypto.randomUUID();
             const memberId = crypto.randomUUID();
-            const orgName = `${displayBase}'s Organization`;
-            const slug = toOrgSlug(displayBase);
+            const orgName = "Personal";
+            const slug = toOrgSlug("personal");
 
             try {
               await db.insert(organizationTable).values({

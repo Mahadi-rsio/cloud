@@ -19,7 +19,6 @@ import { useShellStore } from "@/stores/shell-store";
 import { ThemeToggleButton } from "@/components/theme/theme-toggle-button";
 import { UserMenu } from "@/components/shell/user-menu";
 import { Wordmark } from "@/components/shell/wordmark";
-import { OrgSwitcher } from "@/components/shell/org-switcher";
 
 const SECTION_LABELS: Record<string, string> = {
   apps: "Apps",
@@ -36,33 +35,20 @@ function Breadcrumb() {
   const segments = pathname.split("/").filter(Boolean);
   const section = segments[0] ? SECTION_LABELS[segments[0]] ?? segments[0] : null;
 
+  if (!section) return null;
+
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-      <OrgSwitcher variant="header" />
-      {section && (
-        <>
-          <Typography
-            component="span"
-            sx={{
-              display: { xs: "none", md: "inline" },
-              color: "var(--muted-foreground)",
-              fontSize: "0.75rem",
-            }}
-          >
-            /
-          </Typography>
-          <Typography
-            sx={{
-              display: { xs: "none", md: "inline" },
-              color: "var(--foreground)",
-              fontSize: "0.875rem",
-              fontWeight: 600,
-            }}
-          >
-            {section}
-          </Typography>
-        </>
-      )}
+      <Typography
+        sx={{
+          display: { xs: "none", md: "inline" },
+          color: "var(--foreground)",
+          fontSize: "0.875rem",
+          fontWeight: 600,
+        }}
+      >
+        {section}
+      </Typography>
     </Box>
   );
 }
