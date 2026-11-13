@@ -1,8 +1,13 @@
 import type {
+  CreateColumnInput,
+  CreateTableInput,
+  StudioCellValue,
+  StudioFilterCondition,
   StudioQueryResult,
   StudioRowsResult,
   StudioSchema,
   StudioSortDir,
+  StudioTableDetails,
   StudioTableInfo,
 } from "@/lib/studio/types";
 import { useStudioConnectionStore } from "@/stores/studio-connection";
@@ -52,13 +57,69 @@ async function call<T>(body: unknown): Promise<T> {
 export const studioApi = {
   tables: () => call<StudioTableInfo[]>({ action: "tables" }),
   schema: () => call<StudioSchema>({ action: "schema" }),
+  tableDetails: (table: string) =>
+    call<StudioTableDetails>({ action: "table_details", table }),
   rows: (input: {
     table: string;
     page: number;
     pageSize: number;
     sortColumn?: string;
     sortDir?: StudioSortDir;
+    filters?: StudioFilterCondition[];
+    search?: string;
   }) => call<StudioRowsResult>({ action: "rows", ...input }),
+  insertRow: (input: { table: string; row: Record<string, StudioCellValue> }) =>
+    call<{ rowsAffected: number; lastInsertRowid: string | null }>({
+      action: "insert_row",
+      ...input,
+    }),
+  updateRow: (input: {
+    table: string;
+    identity: Record<string, StudioCellValue>;
+    changes: Record<string, StudioCellValue>;
+  }) =>
+    call<{ rowsAffected: number }>({
+      action: "update_row",
+      ...input,
+    }),
+  deleteRows: (input: {
+    table: string;
+    identities: Array<Record<string, StudioCellValue>>;
+  }) =>
+    call<{ rowsAffected: number }>({
+      action: "delete_rows",
+      ...input,
+    }),
+  createTable: (input: CreateTableInput) =>
+    call<{ table: string; sql: string }>({
+      action: "create_table",
+      ...input,
+    }),
+  dropTable: (table: string) =>
+    call<{ table: string }>({
+      action: "drop_table",
+      table,
+    }),
+  truncateTable: (table: string) =>
+    call<{ table: string; rowsAffected: number }>({
+      action: "truncate_table",
+      table,
+    }),
+  addColumn: (input: { table: string; column: CreateColumnInput }) =>
+    call<{ table: string; column: string; sql: string }>({
+      action: "add_column",
+      ...input,
+    }),
+  dropColumn: (input: { table: string; column: string }) =>
+    call<{ table: string; column: string }>({
+      action: "drop_column",
+      ...input,
+    }),
+  renameTable: (input: { table: string; newName: string }) =>
+    call<{ oldName: string; newName: string }>({
+      action: "rename_table",
+      ...input,
+    }),
   query: (input: { sql: string; allowWrite: boolean }) =>
     call<StudioQueryResult>({ action: "query", ...input }),
 };

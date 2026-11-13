@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Database, PlugZap } from "lucide-react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -9,12 +10,15 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useStudioConnectionStore } from "@/stores/studio-connection";
 import { useStudioIntentStore } from "@/stores/studio-intent";
+import { useStudioStore } from "@/stores/studio-store";
 import { studioApi } from "@/lib/studio-api";
 import { listDatabases, type DatabaseItem } from "@/lib/databases/client";
 import { extractErrorMessage } from "@/lib/errors";
 
 export function ConnectScreen() {
+  const queryClient = useQueryClient();
   const persistedName = useStudioConnectionStore((s) => s.name);
+  const resetStore = useStudioStore((s) => s.reset);
 
   const [databases, setDatabases] = React.useState<DatabaseItem[]>([]);
   const [selectedId, setSelectedId] = React.useState("");
@@ -59,6 +63,11 @@ export function ConnectScreen() {
   const connectCore = async (databaseId: string, name: string) => {
     setError(null);
     setTesting(true);
+    const previousId = useStudioConnectionStore.getState().databaseId;
+    if (previousId && previousId !== databaseId) {
+      resetStore();
+      void queryClient.clear();
+    }
     useStudioConnectionStore.getState().connect(databaseId, name, false);
     try {
       await studioApi.tables();
@@ -88,59 +97,60 @@ export function ConnectScreen() {
         p: 3,
       }}
     >
-      <Box sx={{ width: "100%", maxWidth: 420 }}>
+      <Box sx={{ width: "100%", maxWidth: 440 }}>
         <Stack spacing={1} sx={{ alignItems: "center", textAlign: "center" }}>
           <Box
             sx={{
               display: "flex",
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               alignItems: "center",
               justifyContent: "center",
-              borderRadius: 2,
-              bgcolor: "rgba(59,130,246,0.12)",
+              borderRadius: "12px",
+              bgcolor: "rgba(56, 189, 248, 0.12)",
               color: "var(--primary)",
             }}
           >
-            <Database style={{ width: 20, height: 20 }} />
+            <Database style={{ width: 22, height: 22 }} />
           </Box>
-          <Typography variant="h1" sx={{ fontSize: 18, fontWeight: 600 }}>
-            Open a database
+          <Typography variant="h1" sx={{ fontSize: 19, fontWeight: 700 }}>
+            Connect to a Database
           </Typography>
           <Typography sx={{ fontSize: 13.5, color: "var(--muted-foreground)" }}>
-            Pick one of your databases to explore its tables, data, and schema.
+            Select one of your serverless SQLite databases to browse tables, inspect schemas, and edit records.
           </Typography>
         </Stack>
 
         <Stack component="form" onSubmit={handleConnect} spacing={2} sx={{ mt: 3 }}>
           <Stack spacing={1}>
-            <Typography sx={{ fontSize: 12, fontWeight: 500, color: "var(--muted-foreground)" }}>
-              Database
+            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
+              Available Databases
             </Typography>
             {loading ? (
               <Box
                 sx={{
                   display: "flex",
-                  height: 96,
+                  height: 112,
                   alignItems: "center",
                   justifyContent: "center",
-                  borderRadius: 1.5,
+                  borderRadius: 2,
                   border: "1px solid var(--border)",
+                  bgcolor: "var(--card)",
                 }}
               >
                 <CircularProgress size={20} sx={{ color: "var(--muted-foreground)" }} />
               </Box>
-            ) : error ? (
+            ) : error && !testing ? (
               <Stack
                 spacing={1}
                 sx={{
                   alignItems: "center",
-                  borderRadius: 1.5,
+                  borderRadius: 2,
                   border: "1px solid rgba(239,68,68,0.3)",
                   bgcolor: "rgba(239,68,68,0.06)",
                   p: 2,
                   textAlign: "center",
-                  fontSize: 12,
+                  fontSize: 12.5,
                   color: "var(--destructive)",
                 }}
               >
@@ -152,19 +162,19 @@ export function ConnectScreen() {
             ) : databases.length === 0 ? (
               <Box
                 sx={{
-                  borderRadius: 1.5,
+                  borderRadius: 2,
                   border: "1px solid var(--border)",
-                  bgcolor: "rgba(255,255,255,0.02)",
-                  p: 2,
+                  bgcolor: "var(--card)",
+                  p: 2.5,
                   textAlign: "center",
-                  fontSize: 12,
+                  fontSize: 12.5,
                   color: "var(--muted-foreground)",
                 }}
               >
-                You don&apos;t have any databases yet. Create one from the Dashboard.
+                You don&apos;t have any databases yet. Create one from the Databases page.
               </Box>
             ) : (
-              <Stack spacing={0.75} sx={{ maxHeight: 256, overflowY: "auto", pr: 0.5 }}>
+              <Stack spacing={0.75} sx={{ maxHeight: 280, overflowY: "auto", pr: 0.5 }}>
                 {databases.map((db) => {
                   const selected = selectedId === db.id;
                   return (
@@ -177,26 +187,34 @@ export function ConnectScreen() {
                         display: "flex",
                         alignItems: "center",
                         gap: 1.25,
-                        borderRadius: 1.5,
-                        border: selected ? "1px solid var(--primary)" : "1px solid var(--border)",
-                        bgcolor: selected ? "rgba(59,130,246,0.1)" : "transparent",
+                        borderRadius: "10px",
+                        border: selected ? "1.5px solid var(--primary)" : "1px solid var(--border)",
+                        bgcolor: selected ? "rgba(56, 189, 248, 0.1)" : "var(--card)",
                         px: 1.5,
-                        py: 1,
+                        py: 1.25,
                         textAlign: "left",
                         cursor: "pointer",
                         color: "inherit",
+                        transition: "all 0.12s",
                         "&:hover": {
-                          bgcolor: selected ? "rgba(59,130,246,0.12)" : "var(--muted)",
+                          bgcolor: selected ? "rgba(56, 189, 248, 0.14)" : "var(--accent)",
                         },
                       }}
                     >
                       <Database style={{ width: 16, height: 16, flexShrink: 0, color: "var(--primary)" }} />
                       <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Typography noWrap sx={{ fontSize: 13.5, fontWeight: 500 }}>
+                        <Typography noWrap sx={{ fontSize: 13.5, fontWeight: 600 }}>
                           {db.name}
                         </Typography>
-                        <Typography noWrap sx={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>
-                          {db.namespace}
+                        <Typography
+                          noWrap
+                          sx={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 11,
+                            color: "var(--muted-foreground)",
+                          }}
+                        >
+                          {db.namespace} · {db.region.toUpperCase()}
                         </Typography>
                       </Box>
                     </Box>
@@ -235,7 +253,7 @@ export function ConnectScreen() {
               )
             }
           >
-            {testing ? "Connecting…" : "Open"}
+            {testing ? "Connecting…" : "Open Studio"}
           </Button>
         </Stack>
       </Box>
