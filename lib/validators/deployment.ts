@@ -33,6 +33,15 @@ export const rootDirectorySchema = z
 export const createDeploymentSchema = z
   .object({
     url: repositoryUrl,
+    name: z.string().trim().min(2).max(64).optional(),
+    region: z.string().trim().regex(/^[a-z]{3}$/).optional(),
+    machine: z
+      .object({
+        cpuKind: z.enum(["shared", "performance"]).optional(),
+        cpus: z.number().int().min(1).max(16).optional(),
+        memoryMb: z.number().int().min(256).max(32768).optional(),
+      })
+      .optional(),
     branch: z
       .string()
       .trim()

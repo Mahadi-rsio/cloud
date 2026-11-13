@@ -85,6 +85,17 @@ export async function POST(request: NextRequest) {
         language: input.language ?? null,
         runtime: input.runtime ?? null,
         packageManager: input.packageManager ?? null,
+        discoveryMetadata: {
+          appName: input.name,
+          region: input.region,
+          guest: input.machine
+            ? {
+                cpu_kind: input.machine.cpuKind,
+                cpus: input.machine.cpus,
+                memory_mb: input.machine.memoryMb,
+              }
+            : undefined,
+        },
       })
       .returning();
 

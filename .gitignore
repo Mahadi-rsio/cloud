@@ -44,5 +44,6 @@ next-env.d.ts
 /dist/
 .vinext/
 .cloudflare/
+.playwright-mcp/
 
 

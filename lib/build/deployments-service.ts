@@ -400,13 +400,18 @@ export async function deployImageToFly(input: {
   skipPortDetection?: boolean;
 }): Promise<DeployImageResult> {
   const env = await getEnv();
-  const region = env.FLY_DEFAULT_REGION ?? "sin";
+  const meta = (input.deployment.discoveryMetadata as Record<string, any> | null) ?? {};
+  const region = (meta.region as string | undefined) ?? env.FLY_DEFAULT_REGION ?? "sin";
   const appName = await ensureDeploymentFlyApp(input.deployment);
 
   const runtime = {
     image: input.imageRef,
     internalPort: input.internalPort,
-    guest: { cpu_kind: "shared" as const, cpus: 1, memory_mb: 512 },
+    guest: {
+      cpu_kind: (meta.guest?.cpu_kind as "shared" | "performance") ?? "shared",
+      cpus: typeof meta.guest?.cpus === "number" ? meta.guest.cpus : 1,
+      memory_mb: typeof meta.guest?.memory_mb === "number" ? meta.guest.memory_mb : 512,
+    },
     env: { PORT: String(input.internalPort) },
   };
 
