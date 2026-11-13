@@ -1,20 +1,11 @@
 import type { NextRequest } from "next/server";
 import { errorResponse, HttpError, jsonOk, readJson } from "@/lib/http";
 import { authenticateStorageRequest } from "@/lib/storage/request-auth";
-import { getStorageService } from "@/lib/storage/service";
-import { addRateLimitHeaders, endOfCurrentHour } from "@/lib/storage/rate-limit-headers";
+import { getStorageService, MAX_UPLOAD_BYTES } from "@/lib/storage/service";
+import { checkStorageRateLimit } from "@/lib/storage/rate-limit-headers";
 
 type RouteContext = { params: Promise<{ namespace: string; path: string[] }> };
 
-/** Maximum allowed upload size: 100 MB */
-const MAX_UPLOAD_BYTES = 104_857_600;
-
-/**
- * Content types that browsers may execute or render as markup.
- * For user-uploaded objects of these types we override Content-Type with
- * application/octet-stream and force a download disposition so that a
- * GET response served from this API origin cannot be used for XSS.
- */
 const UNSAFE_CONTENT_TYPES = new Set([
   "text/html",
   "text/xml",
@@ -26,57 +17,108 @@ const UNSAFE_CONTENT_TYPES = new Set([
 
 function isUnsafeContentType(ct: string | undefined): boolean {
   if (!ct) return false;
-  // Compare only the MIME type part, ignore parameters like "; charset=utf-8"
   const base = ct.split(";")[0]?.trim().toLowerCase() ?? "";
   return UNSAFE_CONTENT_TYPES.has(base);
 }
 
-function parseRangeHeader(
-  rangeHeader: string | null,
-): { offset?: number; length?: number } | undefined {
-  if (!rangeHeader || !rangeHeader.startsWith("bytes=")) return undefined;
-
-  const parts = rangeHeader.slice(6).split("-");
-  const start = parts[0] ? parseInt(parts[0], 10) : undefined;
-  const end = parts[1] ? parseInt(parts[1], 10) : undefined;
-
-  if (start !== undefined && end !== undefined) {
-    return { offset: start, length: end - start + 1 };
-  }
-  if (start !== undefined) {
-    return { offset: start };
-  }
-  return undefined;
+export interface ParsedByteRange {
+  offset: number;
+  length: number;
+  start: number;
+  end: number;
 }
 
-/** Adds the standard static rate-limit headers to `headers`. */
-function applyRateLimitHeaders(headers: Headers): void {
-  addRateLimitHeaders(headers, 1000, 999, endOfCurrentHour());
+export function resolveByteRange(
+  rangeHeader: string | null,
+  totalSize: number,
+): { status: "none" } | { status: "invalid" } | { status: "ok"; range: ParsedByteRange } {
+  if (!rangeHeader) return { status: "none" };
+  const trimmed = rangeHeader.trim();
+  if (!trimmed.startsWith("bytes=")) {
+    return { status: "invalid" };
+  }
+
+  const spec = trimmed.slice(6).trim();
+  // Reject multi-range requests or malformed syntax
+  if (!spec || spec.includes(",")) {
+    return { status: "invalid" };
+  }
+
+  const dashIdx = spec.indexOf("-");
+  if (dashIdx === -1) {
+    return { status: "invalid" };
+  }
+
+  const startStr = spec.slice(0, dashIdx).trim();
+  const endStr = spec.slice(dashIdx + 1).trim();
+
+  if (totalSize <= 0) {
+    return { status: "invalid" };
+  }
+
+  let start: number;
+  let end: number;
+
+  if (startStr === "") {
+    // Suffix byte-range-spec: bytes=-500
+    if (!/^\d+$/.test(endStr)) return { status: "invalid" };
+    const suffixLength = parseInt(endStr, 10);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
+      return { status: "invalid" };
+    }
+    start = Math.max(0, totalSize - suffixLength);
+    end = totalSize - 1;
+  } else {
+    if (!/^\d+$/.test(startStr)) return { status: "invalid" };
+    start = parseInt(startStr, 10);
+    if (!Number.isFinite(start) || start < 0 || start >= totalSize) {
+      return { status: "invalid" };
+    }
+    if (endStr === "") {
+      end = totalSize - 1;
+    } else {
+      if (!/^\d+$/.test(endStr)) return { status: "invalid" };
+      end = parseInt(endStr, 10);
+      if (!Number.isFinite(end) || end < start) {
+        return { status: "invalid" };
+      }
+      end = Math.min(end, totalSize - 1);
+    }
+  }
+
+  return {
+    status: "ok",
+    range: {
+      start,
+      end,
+      offset: start,
+      length: end - start + 1,
+    },
+  };
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
+  const headers = new Headers();
   try {
-    const auth = await authenticateStorageRequest(request, "storage:read");
     const { namespace, path: pathSegments } = await context.params;
+    const auth = await authenticateStorageRequest(request, "storage:read", {
+      namespace,
+    });
+    await checkStorageRateLimit(auth.tenant.id, "read", headers);
+
     const filePath = pathSegments.join("/");
     const filename = pathSegments[pathSegments.length - 1] || "file";
 
-    // -----------------------------------------------------------------------
-    // Conditional request handling — check before fetching the object body
-    // -----------------------------------------------------------------------
-    // We fetch metadata first (HEAD) so we can respond 304 without streaming.
     const service = getStorageService();
     const meta = await service.headFile(auth.tenant, namespace, filePath);
 
     const ifNoneMatch = request.headers.get("if-none-match");
     if (ifNoneMatch) {
-      // ETag comparison (weak / strong)
       const clientEtags = ifNoneMatch.split(",").map((e) => e.trim().replace(/^W\//, ""));
       const serverEtag = meta.etag.replace(/^W\//, "");
       if (clientEtags.includes(serverEtag) || clientEtags.includes("*")) {
-        const h304 = new Headers();
-        applyRateLimitHeaders(h304);
-        return new Response(null, { status: 304, headers: h304 });
+        headers.set("ETag", meta.etag);
+        return new Response(null, { status: 304, headers });
       }
     }
 
@@ -84,30 +126,33 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (ifModifiedSince) {
       const clientDate = new Date(ifModifiedSince);
       if (!isNaN(clientDate.getTime()) && meta.uploaded <= clientDate) {
-        const h304 = new Headers();
-        applyRateLimitHeaders(h304);
-        return new Response(null, { status: 304, headers: h304 });
+        headers.set("ETag", meta.etag);
+        return new Response(null, { status: 304, headers });
       }
     }
 
-    // -----------------------------------------------------------------------
-    // Fetch the actual object (with optional range)
-    // -----------------------------------------------------------------------
-    const range = parseRangeHeader(request.headers.get("range"));
-    const downloaded = await service.downloadFile(auth.tenant, namespace, filePath, { range });
-    const { object } = downloaded;
+    const rangeResolution = resolveByteRange(request.headers.get("range"), meta.size);
+    if (rangeResolution.status === "invalid") {
+      headers.set("Content-Range", `bytes */${meta.size}`);
+      headers.set("Accept-Ranges", "bytes");
+      return new Response(null, { status: 416, headers });
+    }
 
-    // -----------------------------------------------------------------------
-    // Build response headers
-    // -----------------------------------------------------------------------
-    const headers = new Headers();
+    const range =
+      rangeResolution.status === "ok"
+        ? { offset: rangeResolution.range.offset, length: rangeResolution.range.length }
+        : undefined;
+
+    const downloaded = await service.downloadFile(auth.tenant, namespace, filePath, {
+      range,
+    });
+    const { object } = downloaded;
 
     const rawContentType = object.httpMetadata?.contentType;
     const url = new URL(request.url);
     const isExplicitDownload = url.searchParams.get("download") === "true";
 
     if (!isExplicitDownload && isUnsafeContentType(rawContentType)) {
-      // Force safe content type to prevent XSS from user-supplied HTML/SVG/XML
       headers.set("Content-Type", "application/octet-stream");
       headers.set("Content-Disposition", `attachment; filename="${filename}"`);
     } else {
@@ -118,54 +163,67 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     headers.set("Content-Length", object.size.toString());
+    headers.set("Accept-Ranges", "bytes");
     headers.set("ETag", object.etag);
     headers.set("Last-Modified", object.uploaded.toUTCString());
-
-    // Safety headers
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Cache-Control", "private, no-transform");
 
-    applyRateLimitHeaders(headers);
+    if (rangeResolution.status === "ok") {
+      headers.set(
+        "Content-Range",
+        `bytes ${rangeResolution.range.start}-${rangeResolution.range.end}/${meta.size}`,
+      );
+    }
 
-    const status = range ? 206 : 200;
+    const status = rangeResolution.status === "ok" ? 206 : 200;
     return new Response(object.body as unknown as BodyInit, {
       status,
       headers,
     });
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, headers);
   }
 }
 
 export async function PUT(request: NextRequest, context: RouteContext) {
+  const responseHeaders = new Headers();
   try {
-    const auth = await authenticateStorageRequest(request, "storage:write");
     const { namespace, path: pathSegments } = await context.params;
+    const auth = await authenticateStorageRequest(request, "storage:write", {
+      namespace,
+    });
+    await checkStorageRateLimit(auth.tenant.id, "write", responseHeaders);
+
     const filePath = pathSegments.join("/");
 
-    // -----------------------------------------------------------------------
-    // Max object size enforcement — check BEFORE consuming body
-    // -----------------------------------------------------------------------
+    let declaredContentLength: number | null = null;
     const contentLengthHeader = request.headers.get("content-length");
     if (contentLengthHeader !== null) {
-      const contentLength = parseInt(contentLengthHeader, 10);
-      if (!isNaN(contentLength) && contentLength > MAX_UPLOAD_BYTES) {
-        throw new HttpError(
-          "VALIDATION_ERROR",
-          "File exceeds maximum upload size of 100 MB.",
-          413,
-        );
+      const parsed = parseInt(contentLengthHeader, 10);
+      if (!isNaN(parsed) && parsed >= 0) {
+        declaredContentLength = parsed;
+        if (parsed > MAX_UPLOAD_BYTES) {
+          throw new HttpError(
+            "VALIDATION_ERROR",
+            "File exceeds maximum upload size of 100 MB.",
+            413,
+          );
+        }
       }
     }
 
     if (!request.body) {
-      throw new HttpError("VALIDATION_ERROR", "Request body is required for file upload.", 400);
+      throw new HttpError(
+        "VALIDATION_ERROR",
+        "Request body is required for file upload.",
+        400,
+      );
     }
 
     const contentType = request.headers.get("content-type") || "application/octet-stream";
     const cacheControl = request.headers.get("cache-control") || undefined;
 
-    // Extract custom metadata (x-storage-meta-*)
     const customMetadata: Record<string, string> = {};
     for (const [key, value] of request.headers.entries()) {
       if (key.startsWith("x-storage-meta-")) {
@@ -173,10 +231,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       }
     }
 
-    // -----------------------------------------------------------------------
-    // Idempotency key — store in customMetadata so it persists on the object
-    // -----------------------------------------------------------------------
-    const idempotencyKey = request.headers.get("idempotency-key");
+    const idempotencyKey = request.headers.get("idempotency-key") || undefined;
     if (idempotencyKey) {
       customMetadata["idempotency-key"] = idempotencyKey;
     }
@@ -190,14 +245,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       {
         httpMetadata: { contentType, cacheControl },
         customMetadata,
+        declaredContentLength,
+        maxUploadBytes: MAX_UPLOAD_BYTES,
+        idempotencyKey,
       },
     );
 
-    const responseHeaders = new Headers();
     if (idempotencyKey) {
       responseHeaders.set("Idempotency-Key", idempotencyKey);
     }
-    applyRateLimitHeaders(responseHeaders);
 
     return jsonOk(
       {
@@ -211,30 +267,31 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       responseHeaders,
     );
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, responseHeaders);
   }
 }
 
 export async function HEAD(request: NextRequest, context: RouteContext) {
+  const headers = new Headers();
   try {
-    const auth = await authenticateStorageRequest(request, "storage:read");
     const { namespace, path: pathSegments } = await context.params;
+    const auth = await authenticateStorageRequest(request, "storage:read", {
+      namespace,
+    });
+    await checkStorageRateLimit(auth.tenant.id, "read", headers);
+
     const filePath = pathSegments.join("/");
 
     const service = getStorageService();
     const meta = await service.headFile(auth.tenant, namespace, filePath);
 
-    // -----------------------------------------------------------------------
-    // Conditional request handling for HEAD
-    // -----------------------------------------------------------------------
     const ifNoneMatch = request.headers.get("if-none-match");
     if (ifNoneMatch) {
       const clientEtags = ifNoneMatch.split(",").map((e) => e.trim().replace(/^W\//, ""));
       const serverEtag = meta.etag.replace(/^W\//, "");
       if (clientEtags.includes(serverEtag) || clientEtags.includes("*")) {
-        const h304 = new Headers();
-        applyRateLimitHeaders(h304);
-        return new Response(null, { status: 304, headers: h304 });
+        headers.set("ETag", meta.etag);
+        return new Response(null, { status: 304, headers });
       }
     }
 
@@ -242,49 +299,53 @@ export async function HEAD(request: NextRequest, context: RouteContext) {
     if (ifModifiedSince) {
       const clientDate = new Date(ifModifiedSince);
       if (!isNaN(clientDate.getTime()) && meta.uploaded <= clientDate) {
-        const h304 = new Headers();
-        applyRateLimitHeaders(h304);
-        return new Response(null, { status: 304, headers: h304 });
+        headers.set("ETag", meta.etag);
+        return new Response(null, { status: 304, headers });
       }
     }
 
-    const headers = new Headers();
     headers.set("Content-Type", meta.httpMetadata?.contentType || "application/octet-stream");
     headers.set("Content-Length", meta.size.toString());
+    headers.set("Accept-Ranges", "bytes");
     headers.set("ETag", meta.etag);
     headers.set("Last-Modified", meta.uploaded.toUTCString());
     headers.set("X-Content-Type-Options", "nosniff");
-    applyRateLimitHeaders(headers);
 
     return new Response(null, { status: 200, headers });
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, headers);
   }
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
+  const headers = new Headers();
   try {
-    const auth = await authenticateStorageRequest(request, "storage:delete");
     const { namespace, path: pathSegments } = await context.params;
+    const auth = await authenticateStorageRequest(request, "storage:delete", {
+      namespace,
+    });
+    await checkStorageRateLimit(auth.tenant.id, "delete", headers);
+
     const filePath = pathSegments.join("/");
 
     const service = getStorageService();
     const result = await service.deleteFile(auth.tenant, namespace, filePath);
 
-    const headers = new Headers();
-    applyRateLimitHeaders(headers);
-
     return jsonOk(result, 200, headers);
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, headers);
   }
 }
 
-/** POST handler — copy a file to another location. */
 export async function POST(request: NextRequest, context: RouteContext) {
+  const headers = new Headers();
   try {
-    const auth = await authenticateStorageRequest(request, "storage:write");
     const { namespace, path: pathSegments } = await context.params;
+    const auth = await authenticateStorageRequest(request, "storage:write", {
+      namespace,
+    });
+    await checkStorageRateLimit(auth.tenant.id, "write", headers);
+
     const sourcePath = pathSegments.join("/");
 
     const body = await readJson(request);
@@ -305,7 +366,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // destinationNamespace defaults to the same namespace as the source
     const dstNamespace =
       typeof destinationNamespace === "string" && destinationNamespace
         ? destinationNamespace
@@ -320,9 +380,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       destinationPath,
     );
 
-    const headers = new Headers();
-    applyRateLimitHeaders(headers);
-
     return jsonOk(
       {
         sourcePath: result.sourcePath,
@@ -335,6 +392,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       headers,
     );
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, headers);
   }
 }

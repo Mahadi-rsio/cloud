@@ -1,5 +1,4 @@
 import { apiV1 } from "@/lib/api-v1";
-import { extractErrorMessage } from "@/lib/errors";
 
 /** Shape returned by the server via jsonOk() */
 type ApiOkResponse<T> = { success: true; data: T };
@@ -34,6 +33,7 @@ export interface StorageNamespace {
 export interface StorageObject {
   key: string;
   name: string;
+  path?: string;
   size: number;
   etag: string;
   uploaded: string;
@@ -59,13 +59,26 @@ export interface CreateApiKeyInput {
   name: string;
   environment?: "live" | "test";
   projectId?: string;
-  scopes?: string;
+  scopes?: string | string[];
   expiresInDays?: number;
 }
 
 export interface CreateApiKeyResult {
   apiKey: StorageApiKey;
   secretKey: string;
+}
+
+export interface ListFilesResult {
+  objects: StorageObject[];
+  prefixes: string[];
+  cursor?: string;
+  truncated: boolean;
+}
+
+export interface UploadStorageFileOptions {
+  contentType?: string;
+  signal?: AbortSignal;
+  onProgress?: (percent: number, loaded: number, total: number) => void;
 }
 
 export async function fetchStorageUsage(): Promise<StorageUsageResponse> {
@@ -135,7 +148,7 @@ export async function fetchNamespaces(): Promise<StorageNamespace[]> {
 
 export async function fetchNamespaceDetails(name: string): Promise<StorageNamespace> {
   const { data } = await apiV1.get<ApiOkResponse<StorageNamespace>>(
-    `/storage/namespaces/${encodeURIComponent(name)}`
+    `/storage/namespaces/${encodeURIComponent(name)}`,
   );
   return data.data;
 }
@@ -143,7 +156,7 @@ export async function fetchNamespaceDetails(name: string): Promise<StorageNamesp
 export async function createStorageNamespace(name: string): Promise<StorageNamespace> {
   const { data } = await apiV1.post<ApiOkResponse<StorageNamespace>>(
     "/storage/namespaces",
-    { name }
+    { name },
   );
   return data.data;
 }
@@ -154,21 +167,37 @@ export async function deleteStorageNamespace(name: string): Promise<void> {
 
 export async function fetchFiles(
   namespace: string,
-  options?: { prefix?: string; limit?: number }
-): Promise<{ objects: StorageObject[]; prefixes: string[] }> {
+  options?: {
+    prefix?: string;
+    delimiter?: string;
+    cursor?: string;
+    limit?: number;
+    signal?: AbortSignal;
+  },
+): Promise<ListFilesResult> {
   const params = new URLSearchParams();
   if (options?.prefix) params.set("prefix", options.prefix);
+  if (options?.delimiter) params.set("delimiter", options.delimiter);
+  if (options?.cursor) params.set("cursor", options.cursor);
   if (options?.limit) params.set("limit", options.limit.toString());
 
   const url = `/storage/namespaces/${encodeURIComponent(namespace)}/files${
     params.toString() ? `?${params.toString()}` : ""
   }`;
   const { data } = await apiV1.get<
-    ApiOkResponse<{ namespace: string; objects: StorageObject[]; prefixes?: string[]; cursor?: string; truncated?: boolean }>
-  >(url);
+    ApiOkResponse<{
+      namespace: string;
+      objects: StorageObject[];
+      prefixes?: string[];
+      cursor?: string;
+      truncated?: boolean;
+    }>
+  >(url, { signal: options?.signal });
   return {
     objects: Array.isArray(data.data?.objects) ? data.data.objects : [],
     prefixes: Array.isArray(data.data?.prefixes) ? data.data.prefixes : [],
+    cursor: data.data?.cursor,
+    truncated: Boolean(data.data?.truncated),
   };
 }
 
@@ -176,8 +205,13 @@ export async function uploadStorageFile(
   namespace: string,
   path: string,
   file: File | Blob,
-  contentType?: string
+  contentTypeOrOptions?: string | UploadStorageFileOptions,
 ): Promise<{ path: string; size: number; etag: string }> {
+  const opts: UploadStorageFileOptions =
+    typeof contentTypeOrOptions === "string"
+      ? { contentType: contentTypeOrOptions }
+      : (contentTypeOrOptions ?? {});
+
   const cleanPath = path.replace(/^\/+/, "");
   const encodedPath = cleanPath
     .split("/")
@@ -185,19 +219,84 @@ export async function uploadStorageFile(
     .join("/");
 
   const resolvedContentType =
-    contentType ||
+    opts.contentType ||
     (file instanceof File && file.type ? file.type : "application/octet-stream");
 
-  const response = await fetch(
-    `/api/v1/storage/namespaces/${encodeURIComponent(namespace)}/files/${encodedPath}`,
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": resolvedContentType,
-      },
-      body: file,
-    }
-  );
+  const endpoint = `/api/v1/storage/namespaces/${encodeURIComponent(namespace)}/files/${encodedPath}`;
+
+  // Use XMLHttpRequest when progress reporting is requested in the browser
+  if (opts.onProgress && typeof XMLHttpRequest !== "undefined") {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", endpoint, true);
+      xhr.setRequestHeader("Content-Type", resolvedContentType);
+
+      if (opts.signal) {
+        if (opts.signal.aborted) {
+          xhr.abort();
+          reject(new DOMException("Upload aborted", "AbortError"));
+          return;
+        }
+        opts.signal.addEventListener(
+          "abort",
+          () => {
+            xhr.abort();
+            reject(new DOMException("Upload aborted", "AbortError"));
+          },
+          { once: true },
+        );
+      }
+
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable && opts.onProgress) {
+          const pct = Math.min(100, Math.round((ev.loaded / ev.total) * 100));
+          opts.onProgress(pct, ev.loaded, ev.total);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const parsed = JSON.parse(xhr.responseText) as ApiOkResponse<{
+              path: string;
+              size: number;
+              etag: string;
+            }>;
+            opts.onProgress?.(100, file.size, file.size);
+            resolve({
+              path: parsed.data.path,
+              size: parsed.data.size,
+              etag: parsed.data.etag,
+            });
+          } catch {
+            reject(new Error("Invalid upload response from server"));
+          }
+        } else {
+          let msg = `Upload failed (${xhr.status})`;
+          try {
+            const errBody = JSON.parse(xhr.responseText);
+            if (errBody?.error?.message) msg = errBody.error.message;
+            else if (errBody?.message) msg = errBody.message;
+          } catch {
+            // Fallback
+          }
+          reject(new Error(msg));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.send(file);
+    });
+  }
+
+  const response = await fetch(endpoint, {
+    method: "PUT",
+    headers: {
+      "Content-Type": resolvedContentType,
+    },
+    body: file,
+    signal: opts.signal,
+  });
 
   if (!response.ok) {
     let msg = `Upload failed (${response.status})`;
@@ -214,15 +313,21 @@ export async function uploadStorageFile(
     throw new Error(msg);
   }
 
-  // Server wraps the response as { success: true, data: { path, size, etag, ... } }
-  const body = await response.json() as ApiOkResponse<{ path: string; size: number; etag: string; namespace?: string; uploadedAt?: string }>;
+  const body = (await response.json()) as ApiOkResponse<{
+    path: string;
+    size: number;
+    etag: string;
+    namespace?: string;
+    uploadedAt?: string;
+  }>;
+  opts.onProgress?.(100, file.size, file.size);
   return { path: body.data.path, size: body.data.size, etag: body.data.etag };
 }
 
 export async function downloadStorageFile(
   namespace: string,
   path: string,
-  filename?: string
+  filename?: string,
 ): Promise<void> {
   const cleanPath = path.replace(/^\/+/, "");
   const encodedPath = cleanPath
@@ -231,7 +336,7 @@ export async function downloadStorageFile(
     .join("/");
 
   const response = await fetch(
-    `/api/v1/storage/namespaces/${encodeURIComponent(namespace)}/files/${encodedPath}`
+    `/api/v1/storage/namespaces/${encodeURIComponent(namespace)}/files/${encodedPath}`,
   );
 
   if (!response.ok) {
@@ -266,23 +371,25 @@ export async function deleteStorageFile(namespace: string, path: string): Promis
     .join("/");
 
   const { data } = await apiV1.delete(
-    `/storage/namespaces/${encodeURIComponent(namespace)}/files/${encodedPath}`
+    `/storage/namespaces/${encodeURIComponent(namespace)}/files/${encodedPath}`,
   );
   return data;
 }
 
 export async function fetchApiKeys(): Promise<StorageApiKey[]> {
   const { data } = await apiV1.get<ApiOkResponse<{ keys: StorageApiKey[] }>>(
-    "/storage/api-keys"
+    "/storage/api-keys",
   );
   const keys = data.data?.keys;
   return Array.isArray(keys) ? keys : [];
 }
 
-export async function createStorageApiKey(input: CreateApiKeyInput): Promise<CreateApiKeyResult> {
+export async function createStorageApiKey(
+  input: CreateApiKeyInput,
+): Promise<CreateApiKeyResult> {
   const { data } = await apiV1.post<ApiOkResponse<CreateApiKeyResult>>(
     "/storage/api-keys",
-    input
+    input,
   );
   return data.data;
 }
@@ -291,12 +398,25 @@ export async function deleteStorageApiKey(keyId: string): Promise<void> {
   await apiV1.delete(`/storage/api-keys/${encodeURIComponent(keyId)}`);
 }
 
+/**
+ * Determine the status of an API key (`active`, `revoked`, or `expired`).
+ */
+export function getApiKeyStatus(
+  key: Pick<StorageApiKey, "revokedAt" | "expiresAt">,
+): "active" | "revoked" | "expired" {
+  if (key.revokedAt) return "revoked";
+  if (key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now()) {
+    return "expired";
+  }
+  return "active";
+}
+
 /** Formats byte size into human readable string (e.g. 512 KB, 12.4 MB) */
 export function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return "0 B";
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }

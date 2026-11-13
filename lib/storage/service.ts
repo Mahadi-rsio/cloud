@@ -1,7 +1,13 @@
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { HttpError } from "@/lib/http";
-import { getRedis } from "@/lib/redis";
-import { generateApiKey, hashApiKey, hasScope, type ApiKeyEnvironment, type StorageScope } from "./auth";
+import {
+  generateApiKey,
+  hashApiKey,
+  hasScope,
+  validateStorageScopes,
+  type ApiKeyEnvironment,
+  type StorageScope,
+} from "./auth";
 import { getStorageDb, type StorageDb } from "./db";
 import {
   formatObjectKey,
@@ -17,11 +23,11 @@ import {
   calculateTrialEndDate,
   canPerformStorageOperation,
   canTransitionStatus,
-  isTrialExpired,
   type StorageOperation,
 } from "./lifecycle";
 import { getStorageBucket, type PutObjectOptions, type StorageBucket } from "./r2";
-import { getTenantMeter, type TenantMeterInterface, type TenantUsageSnapshot } from "./quota-do";
+import { getTenantMeter, type TenantUsageSnapshot } from "./quota-do";
+import { invalidateApiKeyCache } from "./request-auth";
 import {
   apiKeys,
   auditLog,
@@ -42,12 +48,89 @@ import {
   createApiKeySchema,
   createTenantSchema,
   type CreateApiKeyInput,
-  type CreateProjectInput,
   type CreateTenantInput,
   type ListAuditLogsQuery,
   type ListUsageDailyQuery,
   type UpdateTenantInput,
 } from "./validators";
+
+export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100 MB default max single-upload size
+
+/**
+ * Wrap a ReadableStream in a byte-counting transform that aborts immediately if:
+ *   1. `maxUploadBytes` (default 100 MB) is exceeded -> 413 PAYLOAD_TOO_LARGE
+ *   2. `maxQuotaDeltaBytes` (remaining tenant storage quota) is exceeded -> 402/413 FORBIDDEN
+ *   3. `declaredContentLength` is exceeded -> 413 PAYLOAD_TOO_LARGE
+ */
+export function createBoundedUploadStream(
+  source: ReadableStream<Uint8Array>,
+  limits: {
+    maxUploadBytes?: number;
+    maxQuotaTotalBytes?: number;
+    declaredContentLength?: number | null;
+  },
+): {
+  stream: ReadableStream<Uint8Array>;
+  getBytesRead: () => number;
+} {
+  const maxUploadBytes = limits.maxUploadBytes ?? MAX_UPLOAD_BYTES;
+  const maxQuotaTotalBytes = limits.maxQuotaTotalBytes;
+  const declaredLength =
+    typeof limits.declaredContentLength === "number" &&
+    Number.isFinite(limits.declaredContentLength) &&
+    limits.declaredContentLength >= 0
+      ? limits.declaredContentLength
+      : null;
+
+  let bytesRead = 0;
+  const reader = source.getReader();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      if (value) {
+        bytesRead += value.byteLength;
+        if (bytesRead > maxUploadBytes) {
+          await reader.cancel("Upload exceeds maximum object size").catch(() => {});
+          throw new HttpError(
+            "VALIDATION_ERROR",
+            `Upload exceeds maximum size of ${Math.round(maxUploadBytes / (1024 * 1024))} MB`,
+            413,
+          );
+        }
+        if (declaredLength !== null && bytesRead > declaredLength) {
+          await reader.cancel("Stream exceeded declared Content-Length").catch(() => {});
+          throw new HttpError(
+            "VALIDATION_ERROR",
+            `Stream size (${bytesRead} bytes) exceeded declared Content-Length (${declaredLength} bytes)`,
+            413,
+          );
+        }
+        if (maxQuotaTotalBytes !== undefined && bytesRead > maxQuotaTotalBytes) {
+          await reader.cancel("Storage quota exceeded during streaming upload").catch(() => {});
+          throw new HttpError(
+            "FORBIDDEN",
+            `Storage quota exceeded during upload (${bytesRead} bytes exceeds remaining capacity of ${maxQuotaTotalBytes} bytes)`,
+            402,
+          );
+        }
+        controller.enqueue(value);
+      }
+    },
+    async cancel(reason) {
+      await reader.cancel(reason).catch(() => {});
+    },
+  });
+
+  return {
+    stream,
+    getBytesRead: () => bytesRead,
+  };
+}
 
 export class StorageService {
   private dbPromise: Promise<StorageDb>;
@@ -73,26 +156,38 @@ export class StorageService {
    * Tenants
    * ========================================================================= */
 
-  async createTenant(input: CreateTenantInput): Promise<Tenant> {
+  async createTenant(
+    input: CreateTenantInput & { allowCustomQuotas?: boolean },
+  ): Promise<Tenant> {
     const db = await this.db();
     const parsed = createTenantSchema.parse(input);
     const id = parsed.id ?? generateTenantId();
     const now = new Date().toISOString();
     const trialEndsAt = calculateTrialEndDate(parsed.trialDays ?? 7);
 
-    const planConfig = STORAGE_PLANS[parsed.plan as TenantPlan] ?? STORAGE_PLANS.free;
+    const planName: TenantPlan = input.allowCustomQuotas
+      ? (parsed.plan as TenantPlan)
+      : "free";
+    const planConfig = STORAGE_PLANS[planName] ?? STORAGE_PLANS.free;
+
     const values = {
       id,
       name: parsed.name,
       status: "trial" as TenantStatus,
-      plan: parsed.plan as TenantPlan,
-      storageLimitBytes: parsed.storageLimitBytes ?? planConfig.storageLimitBytes,
+      plan: planName,
+      storageLimitBytes: input.allowCustomQuotas
+        ? (parsed.storageLimitBytes ?? planConfig.storageLimitBytes)
+        : planConfig.storageLimitBytes,
       storageUsedBytes: 0,
       fileCount: 0,
       monthlyReadLimitOps: planConfig.monthlyReadLimitOps,
       monthlyWriteLimitOps: planConfig.monthlyWriteLimitOps,
-      bandwidthLimitBytes: parsed.bandwidthLimitBytes ?? planConfig.bandwidthLimitBytes,
-      egressRateLimitMbps: parsed.egressRateLimitMbps ?? planConfig.egressRateLimitMbps,
+      bandwidthLimitBytes: input.allowCustomQuotas
+        ? (parsed.bandwidthLimitBytes ?? planConfig.bandwidthLimitBytes)
+        : planConfig.bandwidthLimitBytes,
+      egressRateLimitMbps: input.allowCustomQuotas
+        ? (parsed.egressRateLimitMbps ?? planConfig.egressRateLimitMbps)
+        : planConfig.egressRateLimitMbps,
       trialEndsAt,
       createdAt: now,
       updatedAt: now,
@@ -107,7 +202,7 @@ export class StorageService {
       action: "tenant.create",
       resourceType: "tenant",
       resourceId: id,
-      metadata: JSON.stringify({ name: input.name, plan: input.plan }),
+      metadata: JSON.stringify({ name: input.name, plan: planName }),
     });
 
     const [created] = await db.select().from(tenants).where(eq(tenants.id, id));
@@ -146,7 +241,9 @@ export class StorageService {
       updates.plan = input.plan;
       const planConfig = STORAGE_PLANS[input.plan as TenantPlan];
       if (planConfig) {
-        if (input.storageLimitBytes === undefined) updates.storageLimitBytes = planConfig.storageLimitBytes;
+        if (input.storageLimitBytes === undefined) {
+          updates.storageLimitBytes = planConfig.storageLimitBytes;
+        }
         updates.monthlyReadLimitOps = planConfig.monthlyReadLimitOps;
         updates.monthlyWriteLimitOps = planConfig.monthlyWriteLimitOps;
       }
@@ -181,10 +278,11 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", "Tenant not found", 404);
     }
 
-    // Mark as deleted
-    await db.update(tenants).set({ status: "deleted", updatedAt: new Date().toISOString() }).where(eq(tenants.id, id));
+    await db
+      .update(tenants)
+      .set({ status: "deleted", updatedAt: new Date().toISOString() })
+      .where(eq(tenants.id, id));
 
-    // Cleanup tenant namespaces from R2
     const namespaces = await this.listNamespaces(id);
     for (const ns of namespaces) {
       await this.deleteNamespace(id, ns.id);
@@ -204,7 +302,11 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", "Tenant not found", 404);
     }
 
-    const check = canPerformStorageOperation(tenant.status as TenantStatus, tenant.trialEndsAt, "write");
+    const check = canPerformStorageOperation(
+      tenant.status as TenantStatus,
+      tenant.trialEndsAt,
+      "write",
+    );
     if (!check.allowed) {
       throw new HttpError("FORBIDDEN", check.reason, check.status);
     }
@@ -256,7 +358,9 @@ export class StorageService {
       .where(
         and(
           eq(projects.tenantId, tenantId),
-          nameOrId.startsWith("p_") ? eq(projects.id, nameOrId) : eq(projects.name, nameOrId),
+          nameOrId.startsWith("p_")
+            ? eq(projects.id, nameOrId)
+            : eq(projects.name, nameOrId),
         ),
       );
     return project ?? null;
@@ -269,12 +373,13 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", "Namespace not found", 404);
     }
 
-    // Delete all objects from R2 under this namespace
     const bucket = await this.bucket();
+    const meter = await getTenantMeter(tenantId);
     const prefix = `t_${tenantId.replace(/^t_/, "")}/${project.name}/`;
     const listed = await bucket.list({ prefix, limit: 1000 });
     for (const obj of listed.objects) {
       await bucket.delete(obj.key);
+      await meter.deleteFile(obj.size);
     }
 
     await db.delete(projects).where(eq(projects.id, project.id));
@@ -297,7 +402,26 @@ export class StorageService {
   async createApiKey(
     input: CreateApiKeyInput,
   ): Promise<{ apiKey: ApiKey; secretKey: string }> {
-    const validated = createApiKeySchema.parse(input);
+    const parsedResult = createApiKeySchema.safeParse(input);
+    if (!parsedResult.success) {
+      throw new HttpError(
+        "VALIDATION_ERROR",
+        parsedResult.error.issues[0]?.message ?? "Invalid API key input",
+        400,
+      );
+    }
+    const validated = parsedResult.data;
+    const scopeCheck = validateStorageScopes(validated.scopes);
+    if (!scopeCheck.valid) {
+      throw new HttpError(
+        "VALIDATION_ERROR",
+        scopeCheck.invalidScopes.length > 0
+          ? `Unsupported permission scope(s): ${scopeCheck.invalidScopes.join(", ")}`
+          : "At least one valid storage permission scope is required",
+        400,
+      );
+    }
+
     const db = await this.db();
     const tenant = await this.getTenant(validated.tenantId);
     if (!tenant) {
@@ -313,14 +437,20 @@ export class StorageService {
       projectId = project.id;
     }
 
-    const { key, prefix, keyHash } = await generateApiKey(validated.environment as ApiKeyEnvironment);
+    const { key, prefix, keyHash } = await generateApiKey(
+      validated.environment as ApiKeyEnvironment,
+    );
     const id = generateApiKeyId();
     const now = new Date().toISOString();
 
-    const scopesStr = Array.isArray(validated.scopes) ? validated.scopes.join(",") : validated.scopes;
-    const expiresAt = validated.expiresInDays
-      ? new Date(Date.now() + validated.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
-      : null;
+    const scopesStr = scopeCheck.scopes.join(",");
+    const expiresAt = validated.expiresAt
+      ? validated.expiresAt
+      : validated.expiresInDays
+        ? new Date(
+            Date.now() + validated.expiresInDays * 24 * 60 * 60 * 1000,
+          ).toISOString()
+        : null;
 
     await db.insert(apiKeys).values({
       id,
@@ -345,13 +475,16 @@ export class StorageService {
     });
 
     const [created] = await db.select().from(apiKeys).where(eq(apiKeys.id, id));
-    return { apiKey: created!, secretKey: key };
+    const { keyHash: _redacted, ...safeRecord } = created!;
+    return {
+      apiKey: { ...safeRecord, keyHash: "[REDACTED]" } as ApiKey,
+      secretKey: key,
+    };
   }
 
   async listApiKeys(tenantId: string): Promise<Omit<ApiKey, "keyHash">[]> {
     const db = await this.db();
     const keys = await db.select().from(apiKeys).where(eq(apiKeys.tenantId, tenantId));
-    // Never expose keyHash in responses
     return keys.map(({ keyHash: _, ...rest }) => rest);
   }
 
@@ -366,19 +499,12 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", "API key not found", 404);
     }
 
-    if (key.revokedAt) {
-      return; // Already revoked
+    if (!key.revokedAt) {
+      const now = new Date().toISOString();
+      await db.update(apiKeys).set({ revokedAt: now }).where(eq(apiKeys.id, keyId));
     }
 
-    const now = new Date().toISOString();
-    await db.update(apiKeys).set({ revokedAt: now }).where(eq(apiKeys.id, keyId));
-
-    try {
-      const redis = await getRedis();
-      await redis.del(`storage:apikey:${key.keyHash}`);
-    } catch {
-      // Non-blocking
-    }
+    await invalidateApiKeyCache({ keyId: key.id, keyHash: key.keyHash });
 
     await this.recordAudit({
       tenantId,
@@ -414,12 +540,16 @@ export class StorageService {
       throw new HttpError("FORBIDDEN", "This API key has been revoked", 403);
     }
 
-    if (key.expiresAt && new Date(key.expiresAt).getTime() < Date.now()) {
+    if (key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now()) {
       throw new HttpError("FORBIDDEN", "This API key has expired", 403);
     }
 
     if (!hasScope(key.scopes, requiredScope)) {
-      throw new HttpError("FORBIDDEN", `API key lacks required scope '${requiredScope}'`, 403);
+      throw new HttpError(
+        "FORBIDDEN",
+        `API key lacks required scope '${requiredScope}'`,
+        403,
+      );
     }
 
     const tenant = await this.getTenant(key.tenantId);
@@ -432,8 +562,10 @@ export class StorageService {
       project = await this.getNamespace(key.tenantId, key.projectId);
     }
 
-    // Touch lastUsedAt asynchronously
-    db.update(apiKeys).set({ lastUsedAt: new Date().toISOString() }).where(eq(apiKeys.id, key.id)).catch(() => {});
+    db.update(apiKeys)
+      .set({ lastUsedAt: new Date().toISOString() })
+      .where(eq(apiKeys.id, key.id))
+      .catch(() => {});
 
     return { tenant, apiKey: key, project };
   }
@@ -446,7 +578,11 @@ export class StorageService {
     tenant: Tenant,
     operation: StorageOperation,
   ): Promise<void> {
-    const check = canPerformStorageOperation(tenant.status as TenantStatus, tenant.trialEndsAt, operation);
+    const check = canPerformStorageOperation(
+      tenant.status as TenantStatus,
+      tenant.trialEndsAt,
+      operation,
+    );
     if (!check.allowed) {
       throw new HttpError("FORBIDDEN", check.reason, check.status);
     }
@@ -457,7 +593,11 @@ export class StorageService {
     namespaceName: string,
     filePath: string,
     body: ReadableStream | ArrayBuffer | Uint8Array | string | Blob,
-    options?: PutObjectOptions,
+    options?: PutObjectOptions & {
+      declaredContentLength?: number | null;
+      maxUploadBytes?: number;
+      idempotencyKey?: string;
+    },
   ) {
     await this.assertOperationAllowed(tenant, "write");
 
@@ -474,7 +614,10 @@ export class StorageService {
     const meter = await getTenantMeter(tenant.id);
 
     // 1. Check monthly write quota (100k on free plan)
-    const writeCheck = await meter.checkOperationQuota("class_a", tenant.monthlyWriteLimitOps);
+    const writeCheck = await meter.checkOperationQuota(
+      "class_a",
+      tenant.monthlyWriteLimitOps,
+    );
     if (!writeCheck.ok) {
       throw new HttpError(
         "FORBIDDEN",
@@ -483,54 +626,110 @@ export class StorageService {
       );
     }
 
-    // 2. Pre-flight quota check if size is known
+    const maxUploadBytes = options?.maxUploadBytes ?? MAX_UPLOAD_BYTES;
+    const r2Key = formatObjectKey(tenant.id, namespace.name, validated.normalized);
+    const bucket = await this.bucket();
+
+    // Check if object already exists so overwrites account for delta bytes rather than double-counting
+    const existingObj = await bucket.head(r2Key);
+    const existingBytes = existingObj?.size ?? 0;
+    const isOverwrite = existingObj !== null;
+
+    // 2. Determine preflight size if known
     let preflightSize = 0;
     if (typeof body === "string") preflightSize = new TextEncoder().encode(body).length;
     else if (body instanceof Uint8Array) preflightSize = body.byteLength;
     else if (body instanceof ArrayBuffer) preflightSize = body.byteLength;
     else if (typeof Blob !== "undefined" && body instanceof Blob) preflightSize = body.size;
-
-    if (preflightSize > 0) {
-      const reservation = await meter.reserveBytes(preflightSize, tenant.storageLimitBytes);
-      if (!reservation.ok) {
-        throw new HttpError(
-          "FORBIDDEN",
-          `Storage quota exceeded: ${reservation.usedBytes} bytes currently used; limit is ${reservation.limitBytes} bytes (512 MB free tier limit)`,
-          402,
-        );
-      }
+    else if (
+      typeof options?.declaredContentLength === "number" &&
+      Number.isFinite(options.declaredContentLength) &&
+      options.declaredContentLength > 0
+    ) {
+      preflightSize = options.declaredContentLength;
     }
 
-    const r2Key = formatObjectKey(tenant.id, namespace.name, validated.normalized);
-    const bucket = await this.bucket();
+    if (preflightSize > maxUploadBytes) {
+      throw new HttpError(
+        "VALIDATION_ERROR",
+        `Upload exceeds maximum size of ${Math.round(maxUploadBytes / (1024 * 1024))} MB`,
+        413,
+      );
+    }
+
+    const idempotencyKey =
+      options?.idempotencyKey ?? options?.customMetadata?.["idempotency-key"];
+
+    // 3. Create atomic reservation before writing to R2
+    const reservationRes = await meter.createReservation({
+      requestedBytes: preflightSize,
+      existingBytes,
+      isOverwrite,
+      limitBytes: tenant.storageLimitBytes,
+      objectKey: r2Key,
+      idempotencyKey,
+    });
+
+    if (!reservationRes.ok || !reservationRes.reservation) {
+      throw new HttpError(
+        "FORBIDDEN",
+        `Storage quota exceeded: ${reservationRes.usedBytes} bytes currently used; limit is ${reservationRes.limitBytes} bytes (512 MB free tier limit)`,
+        402,
+      );
+    }
+
+    const reservationId = reservationRes.reservation.id;
+    const maxAllowedTotalBytes = Math.max(
+      0,
+      tenant.storageLimitBytes - reservationRes.usedBytes + existingBytes,
+    );
+
+    let uploadBody: ReadableStream | ArrayBuffer | Uint8Array | string | Blob = body;
+    if (body && typeof (body as ReadableStream).getReader === "function") {
+      const bounded = createBoundedUploadStream(body as ReadableStream<Uint8Array>, {
+        maxUploadBytes,
+        maxQuotaTotalBytes: maxAllowedTotalBytes,
+        declaredContentLength: options?.declaredContentLength,
+      });
+      uploadBody = bounded.stream;
+    }
 
     let stored;
     try {
-      stored = await bucket.put(r2Key, body, options);
+      stored = await bucket.put(r2Key, uploadBody, options);
     } catch (err) {
-      if (preflightSize > 0) {
-        await meter.releaseBytes(preflightSize);
+      await meter.releaseReservation(reservationId);
+      throw err;
+    }
+
+    // Verify final stored size against both maxUploadBytes and tenant quota
+    if (stored.size > maxUploadBytes) {
+      await meter.releaseReservation(reservationId);
+      await bucket.delete(r2Key).catch(() => {});
+      throw new HttpError(
+        "VALIDATION_ERROR",
+        `Upload exceeds maximum size of ${Math.round(maxUploadBytes / (1024 * 1024))} MB`,
+        413,
+      );
+    }
+
+    try {
+      await meter.commitReservation(reservationId, stored.size);
+    } catch (err) {
+      await meter.releaseReservation(reservationId);
+      if (!isOverwrite) {
+        await bucket.delete(r2Key).catch(() => {});
+      }
+      if (err instanceof Error && err.message === "STORAGE_QUOTA_EXCEEDED") {
+        throw new HttpError(
+          "FORBIDDEN",
+          `Storage quota exceeded: upload of ${stored.size} bytes exceeds limit of ${tenant.storageLimitBytes} bytes (512 MB free tier limit)`,
+          402,
+        );
       }
       throw err;
     }
 
-    // If size was not known before upload, check & reserve post-upload
-    if (preflightSize === 0) {
-      const reservation = await meter.reserveBytes(stored.size, tenant.storageLimitBytes);
-      if (!reservation.ok) {
-        await bucket.delete(r2Key).catch(() => {});
-        throw new HttpError(
-          "FORBIDDEN",
-          `Storage quota exceeded: upload of ${stored.size} bytes exceeds limit of ${reservation.limitBytes} bytes (512 MB free tier limit)`,
-          402,
-        );
-      }
-    }
-
-    // Commit bytes & record Class A write operation in DO
-    await meter.commitBytes(stored.size);
-
-    // Record usage in DB
     await this.recordUsage(tenant.id, namespace.id, "write", stored.size, 1, "class_a");
 
     return {
@@ -564,8 +763,12 @@ export class StorageService {
 
     const meter = await getTenantMeter(tenant.id);
 
-    // Check Class B read quota (100k on free plan)
-    const readCheck = await meter.recordOperation("class_b", "read", 0, tenant.monthlyReadLimitOps);
+    const readCheck = await meter.recordOperation(
+      "class_b",
+      "read",
+      0,
+      tenant.monthlyReadLimitOps,
+    );
     if (!readCheck.ok) {
       throw new HttpError(
         "FORBIDDEN",
@@ -582,7 +785,6 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", `File '${filePath}' not found`, 404);
     }
 
-    // Record egress usage
     await this.recordUsage(tenant.id, namespace.id, "read", object.size, 1, "class_b");
 
     return {
@@ -607,8 +809,10 @@ export class StorageService {
 
     const meter = await getTenantMeter(tenant.id);
 
-    // Check Class A write quota
-    const writeCheck = await meter.checkOperationQuota("class_a", tenant.monthlyWriteLimitOps);
+    const writeCheck = await meter.checkOperationQuota(
+      "class_a",
+      tenant.monthlyWriteLimitOps,
+    );
     if (!writeCheck.ok) {
       throw new HttpError(
         "FORBIDDEN",
@@ -620,16 +824,20 @@ export class StorageService {
     const r2Key = formatObjectKey(tenant.id, namespace.name, validated.normalized);
     const bucket = await this.bucket();
 
-    // Check size first so meter accurately decrements
+    // Only decrement quota & fileCount if the object actually existed in storage
     const existing = await bucket.head(r2Key);
-    const deletedBytes = existing?.size ?? 0;
+    if (existing) {
+      await bucket.delete(r2Key);
+      await meter.deleteFile(existing.size);
+      await this.recordUsage(tenant.id, namespace.id, "delete", 0, 1, "class_a");
+    }
 
-    await bucket.delete(r2Key);
-    await meter.deleteFile(deletedBytes);
-
-    await this.recordUsage(tenant.id, namespace.id, "delete", 0, 1, "class_a");
-
-    return { success: true, namespace: namespace.name, path: validated.normalized };
+    return {
+      success: true,
+      existed: existing !== null,
+      namespace: namespace.name,
+      path: validated.normalized,
+    };
   }
 
   async listFiles(
@@ -645,8 +853,12 @@ export class StorageService {
     }
 
     const meter = await getTenantMeter(tenant.id);
-    // Listing is a Class A operation in R2
-    const listCheck = await meter.recordOperation("class_a", "list", 0, tenant.monthlyWriteLimitOps);
+    const listCheck = await meter.recordOperation(
+      "class_a",
+      "list",
+      0,
+      tenant.monthlyWriteLimitOps,
+    );
     if (!listCheck.ok) {
       throw new HttpError(
         "FORBIDDEN",
@@ -667,7 +879,6 @@ export class StorageService {
       limit: options?.limit ?? 100,
     });
 
-    // Strip internal prefix from returned object paths
     const formattedObjects = result.objects.map((obj) => ({
       path: obj.key.slice(basePrefix.length),
       size: obj.size,
@@ -676,7 +887,9 @@ export class StorageService {
       httpMetadata: obj.httpMetadata,
     }));
 
-    const formattedPrefixes = result.delimitedPrefixes.map((p) => p.slice(basePrefix.length));
+    const formattedPrefixes = result.delimitedPrefixes.map((p) =>
+      p.slice(basePrefix.length),
+    );
 
     return {
       namespace: namespace.name,
@@ -701,7 +914,12 @@ export class StorageService {
     }
 
     const meter = await getTenantMeter(tenant.id);
-    const readCheck = await meter.recordOperation("class_b", "read", 0, tenant.monthlyReadLimitOps);
+    const readCheck = await meter.recordOperation(
+      "class_b",
+      "read",
+      0,
+      tenant.monthlyReadLimitOps,
+    );
     if (!readCheck.ok) {
       throw new HttpError(
         "FORBIDDEN",
@@ -730,7 +948,6 @@ export class StorageService {
 
   /**
    * Copies a file from one location to another within the same tenant.
-   * The destination namespace may differ from the source namespace.
    */
   async copyFile(
     tenant: Tenant,
@@ -742,7 +959,6 @@ export class StorageService {
     await this.assertOperationAllowed(tenant, "read");
     await this.assertOperationAllowed(tenant, "write");
 
-    // Validate both paths up front
     const srcValidated = validatePath(sourcePath);
     if (!srcValidated.valid) {
       throw new HttpError("VALIDATION_ERROR", srcValidated.error, 400);
@@ -752,20 +968,25 @@ export class StorageService {
       throw new HttpError("VALIDATION_ERROR", dstValidated.error, 400);
     }
 
-    // Resolve namespaces
     const srcNs = await this.getNamespace(tenant.id, sourceNamespace);
     if (!srcNs) {
       throw new HttpError("NOT_FOUND", `Source namespace '${sourceNamespace}' not found`, 404);
     }
     const dstNs = await this.getNamespace(tenant.id, destinationNamespace);
     if (!dstNs) {
-      throw new HttpError("NOT_FOUND", `Destination namespace '${destinationNamespace}' not found`, 404);
+      throw new HttpError(
+        "NOT_FOUND",
+        `Destination namespace '${destinationNamespace}' not found`,
+        404,
+      );
     }
 
     const meter = await getTenantMeter(tenant.id);
 
-    // 1. Check Class A write quota
-    const writeCheck = await meter.checkOperationQuota("class_a", tenant.monthlyWriteLimitOps);
+    const writeCheck = await meter.checkOperationQuota(
+      "class_a",
+      tenant.monthlyWriteLimitOps,
+    );
     if (!writeCheck.ok) {
       throw new HttpError(
         "FORBIDDEN",
@@ -776,16 +997,23 @@ export class StorageService {
 
     const bucket = await this.bucket();
 
-    // Download source object
     const srcKey = formatObjectKey(tenant.id, srcNs.name, srcValidated.normalized);
     const srcObject = await bucket.get(srcKey);
     if (!srcObject) {
       throw new HttpError("NOT_FOUND", `Source file '${sourcePath}' not found`, 404);
     }
 
-    // 2. Reserve bytes for destination copy
-    const reservation = await meter.reserveBytes(srcObject.size, tenant.storageLimitBytes);
-    if (!reservation.ok) {
+    const dstKey = formatObjectKey(tenant.id, dstNs.name, dstValidated.normalized);
+    const existingDst = await bucket.head(dstKey);
+
+    const reservation = await meter.createReservation({
+      requestedBytes: srcObject.size,
+      existingBytes: existingDst?.size ?? 0,
+      isOverwrite: existingDst !== null,
+      limitBytes: tenant.storageLimitBytes,
+      objectKey: dstKey,
+    });
+    if (!reservation.ok || !reservation.reservation) {
       throw new HttpError(
         "FORBIDDEN",
         `Storage quota exceeded: copying ${srcObject.size} bytes exceeds limit of ${reservation.limitBytes} bytes (512 MB free tier limit)`,
@@ -793,8 +1021,6 @@ export class StorageService {
       );
     }
 
-    // Re-upload to destination preserving content type and custom metadata
-    const dstKey = formatObjectKey(tenant.id, dstNs.name, dstValidated.normalized);
     const body = await srcObject.arrayBuffer();
 
     let stored;
@@ -804,13 +1030,12 @@ export class StorageService {
         customMetadata: srcObject.customMetadata,
       });
     } catch (err) {
-      await meter.releaseBytes(srcObject.size);
+      await meter.releaseReservation(reservation.reservation.id);
       throw err;
     }
 
-    await meter.commitBytes(stored.size);
+    await meter.commitReservation(reservation.reservation.id, stored.size);
 
-    // Record usage for both the read (Class B) and the write (Class A)
     await this.recordUsage(tenant.id, srcNs.id, "read", srcObject.size, 1, "class_b");
     await this.recordUsage(tenant.id, dstNs.id, "write", stored.size, 1, "class_a");
 
@@ -829,6 +1054,47 @@ export class StorageService {
     return meter.getUsage();
   }
 
+  /**
+   * Flush buffered usage events from the Durable Object outbox using two-phase
+   * claim + ack so failed DB writes never discard usage events.
+   */
+  async flushTenantOutbox(tenantId: string, limit = 200): Promise<{ flushed: number }> {
+    const meter = await getTenantMeter(tenantId);
+    const claimed = await meter.claimEvents(limit);
+    if (claimed.length === 0) {
+      return { flushed: 0 };
+    }
+
+    const ackedIds: Array<number | string> = [];
+    const nackedIds: Array<number | string> = [];
+
+    for (const evt of claimed) {
+      try {
+        await this.recordUsage(
+          tenantId,
+          null,
+          evt.eventType,
+          evt.bytes,
+          evt.ops,
+          evt.classType,
+          evt.id !== undefined ? `do_${tenantId}_${evt.id}` : undefined,
+        );
+        if (evt.id !== undefined) ackedIds.push(evt.id);
+      } catch {
+        if (evt.id !== undefined) nackedIds.push(evt.id);
+      }
+    }
+
+    if (ackedIds.length > 0) {
+      await meter.ackEvents(ackedIds);
+    }
+    if (nackedIds.length > 0) {
+      await meter.nackEvents(nackedIds);
+    }
+
+    return { flushed: ackedIds.length };
+  }
+
   /* =========================================================================
    * Usage and Audit Logging
    * ========================================================================= */
@@ -839,16 +1105,29 @@ export class StorageService {
     eventType: "read" | "write" | "delete" | "list" | "copy" | "egress",
     bytes = 0,
     ops = 1,
-    classType: "class_a" | "class_b" = eventType === "read" || eventType === "egress" ? "class_b" : "class_a",
+    classType: "class_a" | "class_b" = eventType === "read" || eventType === "egress"
+      ? "class_b"
+      : "class_a",
+    idempotentEventId?: string,
   ) {
     try {
       const db = await this.db();
       const now = new Date();
-      const today = now.toISOString().slice(0, 10); // YYYY-MM-DD
+      const today = now.toISOString().slice(0, 10);
+      const eventId = idempotentEventId ?? generateUsageEventId();
 
-      // 1. Insert granular usage event
+      if (idempotentEventId) {
+        const existingEvt = await db
+          .select()
+          .from(usageEvents)
+          .where(eq(usageEvents.id, idempotentEventId));
+        if (existingEvt.length > 0) {
+          return; // Already persisted idempotently
+        }
+      }
+
       await db.insert(usageEvents).values({
-        id: generateUsageEventId(),
+        id: eventId,
         tenantId,
         projectId,
         timestamp: now.toISOString(),
@@ -858,7 +1137,6 @@ export class StorageService {
         ops,
       });
 
-      // 2. Upsert daily aggregate
       const existing = await db
         .select()
         .from(usageDaily)
@@ -888,8 +1166,10 @@ export class StorageService {
         await db
           .update(usageDaily)
           .set({
-            egressBytes: row.egressBytes + (eventType === "read" || eventType === "egress" ? bytes : 0),
-            ingressBytes: row.ingressBytes + (eventType === "write" || eventType === "copy" ? bytes : 0),
+            egressBytes:
+              row.egressBytes + (eventType === "read" || eventType === "egress" ? bytes : 0),
+            ingressBytes:
+              row.ingressBytes + (eventType === "write" || eventType === "copy" ? bytes : 0),
             readOps: row.readOps + (classType === "class_b" ? ops : 0),
             writeOps: row.writeOps + (classType === "class_a" ? ops : 0),
             deleteOps: row.deleteOps + (eventType === "delete" ? ops : 0),

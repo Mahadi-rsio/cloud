@@ -141,9 +141,18 @@ class LogSink {
 
   push(stream, message) {
     if (this.closed) return;
-    const clean = String(message ?? "")
+    let clean = String(message ?? "")
       .replace(/\u0000/g, "")
       .slice(0, 20_000);
+    for (const secretVal of [
+      config.apiToken,
+      config.internalToken,
+      config.registryPassword,
+    ]) {
+      if (secretVal && secretVal.length >= 6) {
+        clean = clean.split(secretVal).join("[REDACTED]");
+      }
+    }
     this.entries.push({
       stream,
       message: clean.length > 0 ? clean : "(empty line)",
@@ -1304,11 +1313,36 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     const { repositoryUrl, branch, commitSha: inputSha } = discoverBody ?? {};
-    if (typeof repositoryUrl !== "string" || !repositoryUrl.startsWith("https://github.com/")) {
+    if (typeof repositoryUrl !== "string") {
       json(response, 400, { error: "Invalid repositoryUrl." });
       return;
     }
-    if (typeof branch !== "string" || !/^[A-Za-z0-9._\-\/]+$/.test(branch)) {
+    try {
+      const parsedRepoUrl = new URL(repositoryUrl);
+      const segments = parsedRepoUrl.pathname.replace(/^\/+|\/+$/g, "").split("/");
+      if (
+        parsedRepoUrl.protocol !== "https:" ||
+        parsedRepoUrl.hostname !== "github.com" ||
+        parsedRepoUrl.username ||
+        parsedRepoUrl.password ||
+        parsedRepoUrl.search ||
+        parsedRepoUrl.hash ||
+        segments.length !== 2 ||
+        !segments[0] ||
+        !segments[1]
+      ) {
+        json(response, 400, { error: "Invalid repositoryUrl." });
+        return;
+      }
+    } catch {
+      json(response, 400, { error: "Invalid repositoryUrl." });
+      return;
+    }
+    if (
+      typeof branch !== "string" ||
+      branch.startsWith("-") ||
+      !/^[A-Za-z0-9._\-\/]{1,200}$/.test(branch)
+    ) {
       json(response, 400, { error: "Invalid branch." });
       return;
     }

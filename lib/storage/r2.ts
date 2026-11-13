@@ -189,15 +189,19 @@ export class MemoryStorageBucket implements StorageBucket {
   async list(options?: ListObjectsOptions): Promise<ListObjectsResult> {
     const prefix = options?.prefix ?? "";
     const delimiter = options?.delimiter;
-    const limit = options?.limit ?? 1000;
+    const limit = Math.max(1, options?.limit ?? 1000);
+    const cursorKey = options?.cursor;
 
     const objects: StoredObjectMetadata[] = [];
     const delimitedPrefixes = new Set<string>();
 
     const allKeys = Array.from(this.store.keys()).sort();
+    let truncated = false;
+    let lastIncludedKey: string | undefined;
 
     for (const key of allKeys) {
       if (!key.startsWith(prefix)) continue;
+      if (cursorKey && key <= cursorKey) continue;
 
       if (delimiter) {
         const remaining = key.slice(prefix.length);
@@ -208,17 +212,23 @@ export class MemoryStorageBucket implements StorageBucket {
         }
       }
 
+      if (objects.length >= limit) {
+        truncated = true;
+        break;
+      }
+
       const item = this.store.get(key);
       if (item) {
         objects.push(item.metadata);
+        lastIncludedKey = key;
       }
-      if (objects.length >= limit) break;
     }
 
     return {
       objects,
       delimitedPrefixes: Array.from(delimitedPrefixes),
-      truncated: false,
+      cursor: truncated ? lastIncludedKey : undefined,
+      truncated,
     };
   }
 

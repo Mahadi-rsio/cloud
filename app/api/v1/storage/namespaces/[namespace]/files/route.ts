@@ -2,14 +2,18 @@ import type { NextRequest } from "next/server";
 import { errorResponse, jsonOk } from "@/lib/http";
 import { authenticateStorageRequest } from "@/lib/storage/request-auth";
 import { getStorageService } from "@/lib/storage/service";
-import { addRateLimitHeaders, endOfCurrentHour } from "@/lib/storage/rate-limit-headers";
+import { checkStorageRateLimit } from "@/lib/storage/rate-limit-headers";
 
 type RouteContext = { params: Promise<{ namespace: string }> };
 
 export async function GET(request: NextRequest, context: RouteContext) {
+  const headers = new Headers();
   try {
-    const auth = await authenticateStorageRequest(request, "storage:read");
     const { namespace: namespaceName } = await context.params;
+    const auth = await authenticateStorageRequest(request, "storage:read", {
+      namespace: namespaceName,
+    });
+    await checkStorageRateLimit(auth.tenant.id, "list", headers);
 
     const url = new URL(request.url);
     const prefix = url.searchParams.get("prefix") || undefined;
@@ -23,24 +27,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
       prefix,
       delimiter,
       cursor,
-      limit: Math.min(Math.max(limit, 1), 1000),
+      limit: Math.min(Math.max(Number.isFinite(limit) ? limit : 100, 1), 1000),
     });
-
-    const headers = new Headers();
-    addRateLimitHeaders(headers, 1000, 999, endOfCurrentHour());
 
     return jsonOk(
       {
         namespace: result.namespace,
-        // Normalize objects so the client always gets both `key` (full path)
-        // and `name` (filename component), matching the StorageObject interface.
         objects: result.objects.map((obj) => ({
           path: obj.path,
           key: obj.path,
           name: obj.path,
           size: obj.size,
           etag: obj.etag,
-          uploaded: obj.uploaded instanceof Date ? obj.uploaded.toISOString() : obj.uploaded,
+          uploaded:
+            obj.uploaded instanceof Date ? obj.uploaded.toISOString() : obj.uploaded,
           httpMetadata: obj.httpMetadata,
         })),
         prefixes: result.prefixes,
@@ -51,6 +51,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       headers,
     );
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, headers);
   }
 }

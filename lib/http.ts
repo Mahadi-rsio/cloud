@@ -54,9 +54,9 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-export function errorResponse(error: unknown) {
+export function errorResponse(error: unknown, headers?: HeadersInit) {
   if (error instanceof HttpError) {
-    return jsonError(error.code, error.message, error.status, error.details);
+    return jsonError(error.code, error.message, error.status, error.details, headers);
   }
   if (error instanceof ZodError) {
     return jsonError(
@@ -64,8 +64,9 @@ export function errorResponse(error: unknown) {
       error.issues[0]?.message ?? "Invalid request.",
       400,
       error.issues,
+      headers,
     );
   }
   console.error("[api] unhandled error", error);
-  return jsonError("INTERNAL", "Something went wrong. Please try again.", 500);
+  return jsonError("INTERNAL", "Something went wrong. Please try again.", 500, undefined, headers);
 }
