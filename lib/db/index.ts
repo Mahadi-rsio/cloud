@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { drizzle as drizzleNeon } from "drizzle-orm/neon-http";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool } from "pg";
 import * as authSchema from "./schema";
 import * as productSchema from "./product-schema";
@@ -33,11 +34,18 @@ async function resolveHyperdriveConnectionString(): Promise<string | null> {
   return null;
 }
 
-function createPgDb(connectionString: string): { db: AppDb; pool: Pool } {
+const dbScope = new AsyncLocalStorage<{ db?: AppDb }>();
+
+/** Run fn with a request-scoped DB client shared by all getDb() calls inside it. */
+export function withDbScope<T>(fn: () => T): T {
+  return dbScope.run({}, fn);
+}
+
+function createPgDb(connectionString: string, max = 5): { db: AppDb; pool: Pool } {
   const pool = new Pool({
     connectionString,
-    // Keep per-isolate pool small; Hyperdrive manages the upstream connection pool to Neon.
-    max: 5,
+    // Keep pool small; Hyperdrive manages the upstream connection pool to Neon.
+    max,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 5_000,
   });
@@ -68,19 +76,19 @@ function createNeonHttpDb(url: string): AppDb {
 export async function getDb(): Promise<AppDb> {
   const hyperdriveUrl = await resolveHyperdriveConnectionString();
   if (hyperdriveUrl) {
-    const sourceKey = `hd:${hyperdriveUrl}`;
-    if (cachedDb && cachedSourceKey === sourceKey) {
-      return cachedDb;
+    // In Cloudflare Workers, pg.Pool TCP sockets are bound to the active request's
+    // I/O context and must not be reused across requests in module scope.
+    // Hyperdrive manages the persistent upstream connection pool to Neon.
+    // Share ONE pool per request scope (see withDbScope) so a request never opens more
+    // than Workers' simultaneous-connection limit (6), which would otherwise hang.
+    const scope = dbScope.getStore();
+    if (scope) {
+      if (!scope.db) {
+        scope.db = createPgDb(hyperdriveUrl, 3).db;
+      }
+      return scope.db;
     }
-    if (cachedPool) {
-      await cachedPool.end().catch(() => {});
-      cachedPool = undefined;
-    }
-    const { db, pool } = createPgDb(hyperdriveUrl);
-    cachedDb = db;
-    cachedPool = pool;
-    cachedSourceKey = sourceKey;
-    return cachedDb;
+    return createPgDb(hyperdriveUrl, 3).db;
   }
 
   const env = await getEnv();

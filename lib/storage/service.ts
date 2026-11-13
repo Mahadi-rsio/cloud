@@ -728,7 +728,24 @@ export class StorageService {
 
     let stored;
     try {
-      stored = await bucket.put(r2Key, uploadBody, options);
+      if (uploadBody && typeof (uploadBody as ReadableStream).getReader === "function") {
+        // R2 requires a known-length stream. Use FixedLengthStream when the length is declared,
+        // otherwise buffer (the bounded stream still enforces size/quota limits while reading).
+        const FixedLen = (globalThis as unknown as {
+          FixedLengthStream?: new (n: number) => TransformStream<Uint8Array, Uint8Array>;
+        }).FixedLengthStream;
+        const declared = options?.declaredContentLength;
+        if (FixedLen && typeof declared === "number" && declared >= 0) {
+          const fixed = new FixedLen(declared);
+          const piping = (uploadBody as ReadableStream<Uint8Array>).pipeTo(fixed.writable);
+          const putPromise = bucket.put(r2Key, fixed.readable, options);
+          const [, putResult] = await Promise.all([piping, putPromise]);
+          stored = putResult;
+        } else if (FixedLen) {
+          uploadBody = await new Response(uploadBody as ReadableStream).arrayBuffer();
+        }
+      }
+      if (!stored) stored = await bucket.put(r2Key, uploadBody, options);
     } catch (err) {
       await meter.releaseReservation(reservationId);
       throw err;
@@ -1428,6 +1445,10 @@ export class StorageService {
 let globalStorageService: StorageService | undefined;
 
 export function getStorageService(): StorageService {
+  // In production the service captures a request-bound DB pool, so it must not outlive the request.
+  if (!(process.env.VITEST || process.env.NODE_ENV === "test")) {
+    return new StorageService();
+  }
   if (!globalStorageService) {
     globalStorageService = new StorageService();
   }

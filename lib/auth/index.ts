@@ -18,8 +18,6 @@ function toOrgSlug(input: string): string {
   return `${base || "workspace"}-${suffix}`;
 }
 
-let cached: ReturnType<typeof createAuth> | undefined;
-
 function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallbackURL: string) {
   return betterAuth({
     database: drizzleAdapter(db, {
@@ -149,12 +147,10 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
 }
 
 export async function getAuth() {
-  if (cached) return cached;
   const env = await getEnv();
   const db = await getDb();
   if (!env.BETTER_AUTH_SECRET) {
     throw new Error("BETTER_AUTH_SECRET is required");
   }
-  cached = createAuth(db, env.BETTER_AUTH_SECRET, env.BETTER_AUTH_URL || "http://localhost:3001");
-  return cached;
+  return createAuth(db, env.BETTER_AUTH_SECRET, env.BETTER_AUTH_URL || "http://localhost:3001");
 }

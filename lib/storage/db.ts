@@ -367,9 +367,9 @@ export async function getStorageDb(_config?: StorageDbConfig): Promise<StorageDb
     _overrideDb = createMemoryStorageDb();
     return _overrideDb;
   }
+  // Do not cache: the Hyperdrive pg pool is bound to the request I/O context.
   const appDb = await getDb();
-  _overrideDb = appDb as unknown as StorageDb;
-  return _overrideDb;
+  return appDb as unknown as StorageDb;
 }
 
 export function resetStorageDb(): void {
