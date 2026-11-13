@@ -19,15 +19,19 @@ export default async function LoginPage() {
     <Box
       component="main"
       sx={{
+        position: "relative",
         display: "flex",
         minHeight: "100svh",
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        px: 3,
+        px: { xs: 2, sm: 3 },
+        py: 4,
+        background:
+          "radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 70%), var(--background)",
       }}
     >
-      <Box sx={{ mx: "auto", width: "100%", maxWidth: 400 }}>
+      <Box sx={{ mx: "auto", width: "100%", maxWidth: 440 }}>
         <LoginFormProvider />
       </Box>
     </Box>

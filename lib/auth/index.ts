@@ -1,10 +1,23 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { organization } from "better-auth/plugins";
 import { apiKey } from "@better-auth/api-key";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
+import { member as memberTable, organization as organizationTable } from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
 import { redisSecondaryStorage } from "@/lib/auth/storage/redis";
 import { enqueueAuthJob } from "@/lib/queue";
+
+function toOrgSlug(input: string): string {
+  const base = input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+  const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 6);
+  return `${base || "workspace"}-${suffix}`;
+}
 
 let cached: ReturnType<typeof createAuth> | undefined;
 
@@ -28,6 +41,9 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
     },
     socialProviders: {},
     plugins: [
+      organization({
+        allowUserToCreateOrganization: true,
+      }),
       apiKey({
         // Allow getSession() to work with x-api-key header
         enableSessionForAPIKeys: true,
@@ -59,12 +75,65 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
       user: {
         create: {
           after: async (user) => {
+            const displayBase = user.name?.trim() || user.email.split("@")[0] || "Personal";
+            const orgId = crypto.randomUUID();
+            const memberId = crypto.randomUUID();
+            const orgName = `${displayBase}'s Organization`;
+            const slug = toOrgSlug(displayBase);
+
+            try {
+              await db.insert(organizationTable).values({
+                id: orgId,
+                name: orgName,
+                slug,
+                createdAt: new Date(),
+              });
+              await db.insert(memberTable).values({
+                id: memberId,
+                organizationId: orgId,
+                userId: user.id,
+                role: "owner",
+                createdAt: new Date(),
+              });
+            } catch (error) {
+              console.error("Failed to create default organization for user:", user.id, error);
+            }
+
             await enqueueAuthJob({
               type: "welcome-email",
               userId: user.id,
               email: user.email,
               name: user.name,
             });
+          },
+        },
+      },
+      session: {
+        create: {
+          before: async (session) => {
+            if (session.activeOrganizationId) {
+              return { data: session };
+            }
+            try {
+              const memberships = await db
+                .select({ organizationId: memberTable.organizationId })
+                .from(memberTable)
+                .where(eq(memberTable.userId, session.userId))
+                .limit(1);
+
+              const firstOrgId = memberships[0]?.organizationId;
+              if (firstOrgId) {
+                return {
+                  data: {
+                    ...session,
+                    activeOrganizationId: firstOrgId,
+                  },
+                };
+              }
+            } catch (error) {
+              console.error("Failed to attach default activeOrganizationId:", error);
+            }
+            return { data: session };
           },
         },
       },

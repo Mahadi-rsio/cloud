@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   QueryClient,
   QueryClientProvider,
   useMutation,
 } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -19,12 +19,15 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { LogOut, Trash2 } from "lucide-react";
 import { z } from "zod";
 import { api } from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
+import { OrganizationSettings } from "@/components/settings/organization-settings";
 
 const updateNameSchema = z.object({
   name: z
@@ -36,10 +39,21 @@ const updateNameSchema = z.object({
 
 function SettingsForm({ user }: { user: { name: string; email: string } }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialTab =
+    searchParams.get("tab") === "organization" ? "organization" : "account";
+  const [tab, setTab] = useState<"account" | "organization">(initialTab);
   const [name, setName] = useState(user.name);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "organization" || t === "account") {
+      setTab(t);
+    }
+  }, [searchParams]);
 
   const updateName = useMutation({
     mutationFn: async () => {
@@ -70,6 +84,28 @@ function SettingsForm({ user }: { user: { name: string; email: string } }) {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <Tabs
+        value={tab}
+        onChange={(_, next: "account" | "organization") => {
+          setTab(next);
+          router.replace(`/settings?tab=${next}`);
+        }}
+        sx={{
+          borderBottom: "1px solid var(--border)",
+          "& .MuiTab-root": {
+            textTransform: "none",
+            fontWeight: 600,
+          },
+        }}
+      >
+        <Tab value="account" label="Account" />
+        <Tab value="organization" label="Organization" />
+      </Tabs>
+
+      {tab === "organization" ? (
+        <OrganizationSettings currentUserEmail={user.email} />
+      ) : (
+        <>
       <Card>
         <CardHeader
           title="Profile"
@@ -188,6 +224,8 @@ function SettingsForm({ user }: { user: { name: string; email: string } }) {
           router.refresh();
         }}
       />
+        </>
+      )}
     </Box>
   );
 }
@@ -291,7 +329,9 @@ export function SettingsFormProvider({
 }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <SettingsForm user={user} />
+      <React.Suspense fallback={null}>
+        <SettingsForm user={user} />
+      </React.Suspense>
     </QueryClientProvider>
   );
 }

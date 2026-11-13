@@ -32,6 +32,7 @@ import { api } from "@/lib/api";
 import { useShellStore } from "@/stores/shell-store";
 import { Wordmark } from "@/components/shell/wordmark";
 import { UserAvatar } from "@/components/shell/user-avatar";
+import { OrgSwitcher } from "@/components/shell/org-switcher";
 
 const PRIMARY_NAV = [
   { href: "/apps", label: "Apps", icon: AppWindow },
@@ -160,6 +161,8 @@ export function Sidebar({
       >
         <Wordmark collapsed={collapsed} />
       </Box>
+
+      <OrgSwitcher collapsed={collapsed} />
 
       <List
         component="nav"
