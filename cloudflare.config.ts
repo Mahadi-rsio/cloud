@@ -24,15 +24,17 @@ export default defineConfig({
     },
     env: {
       ...cache.env,
-      APP_KV: bindings.kv(),
-      HYPERDRIVE: bindings.hyperdrive({
-        id:
-          process.env.CLOUDFLARE_HYPERDRIVE_ID ??
-          "00000000000000000000000000000000",
-        dev: {
-          connectionString: process.env.DATABASE_URL,
-        },
-      }),
+      APP_KV: bindings.kv({ id: "e47009bf45b743bcb99d2f5d7996827f" }),
+      ...(process.env.CLOUDFLARE_HYPERDRIVE_ID
+        ? {
+            HYPERDRIVE: bindings.hyperdrive({
+              id: process.env.CLOUDFLARE_HYPERDRIVE_ID,
+              dev: {
+                connectionString: process.env.DATABASE_URL,
+              },
+            }),
+          }
+        : {}),
       RL_API_FREE: bindings.rateLimit({
         namespace: "1001",
         simple: { limit: 120, period: 60 },
