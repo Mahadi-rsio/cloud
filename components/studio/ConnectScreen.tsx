@@ -1,13 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Database, Loader2, PlugZap } from "lucide-react";
+import { Database, PlugZap } from "lucide-react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import { useStudioConnectionStore } from "@/stores/studio-connection";
 import { useStudioIntentStore } from "@/stores/studio-intent";
 import { studioApi } from "@/lib/studio-api";
 import { listDatabases, type DatabaseItem } from "@/lib/databases/client";
 import { extractErrorMessage } from "@/lib/errors";
-import { Button } from "@/components/ui/button";
 
 export function ConnectScreen() {
   const persistedName = useStudioConnectionStore((s) => s.name);
@@ -35,8 +39,6 @@ export function ConnectScreen() {
     void loadDatabases();
   }, [loadDatabases]);
 
-  // If we navigated here from the databases page with a chosen database,
-  // auto-connect to it.
   const autoConnected = React.useRef(false);
   React.useEffect(() => {
     if (autoConnected.current) return;
@@ -76,86 +78,167 @@ export function ConnectScreen() {
   };
 
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto p-6">
-      <div className="w-full max-w-md">
-        <div className="flex flex-col items-center gap-2 text-center">
-          <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Database className="size-5" />
-          </div>
-          <h1 className="text-lg font-semibold">Open a database</h1>
-          <p className="text-sm text-muted-foreground">
+    <Box
+      sx={{
+        display: "flex",
+        height: "100%",
+        alignItems: "center",
+        justifyContent: "center",
+        overflowY: "auto",
+        p: 3,
+      }}
+    >
+      <Box sx={{ width: "100%", maxWidth: 420 }}>
+        <Stack spacing={1} sx={{ alignItems: "center", textAlign: "center" }}>
+          <Box
+            sx={{
+              display: "flex",
+              width: 44,
+              height: 44,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 2,
+              bgcolor: "rgba(59,130,246,0.12)",
+              color: "var(--primary)",
+            }}
+          >
+            <Database style={{ width: 20, height: 20 }} />
+          </Box>
+          <Typography variant="h1" sx={{ fontSize: 18, fontWeight: 600 }}>
+            Open a database
+          </Typography>
+          <Typography sx={{ fontSize: 13.5, color: "var(--muted-foreground)" }}>
             Pick one of your databases to explore its tables, data, and schema.
-          </p>
-        </div>
+          </Typography>
+        </Stack>
 
-        <form onSubmit={handleConnect} className="mt-6 space-y-4">
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Database</label>
+        <Stack component="form" onSubmit={handleConnect} spacing={2} sx={{ mt: 3 }}>
+          <Stack spacing={1}>
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: "var(--muted-foreground)" }}>
+              Database
+            </Typography>
             {loading ? (
-              <div className="flex h-24 items-center justify-center rounded-md border">
-                <Loader2 className="size-5 animate-spin text-muted-foreground" />
-              </div>
+              <Box
+                sx={{
+                  display: "flex",
+                  height: 96,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 1.5,
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <CircularProgress size={20} sx={{ color: "var(--muted-foreground)" }} />
+              </Box>
             ) : error ? (
-              <div className="flex flex-col items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-4 text-center text-xs text-destructive">
+              <Stack
+                spacing={1}
+                sx={{
+                  alignItems: "center",
+                  borderRadius: 1.5,
+                  border: "1px solid rgba(239,68,68,0.3)",
+                  bgcolor: "rgba(239,68,68,0.06)",
+                  p: 2,
+                  textAlign: "center",
+                  fontSize: 12,
+                  color: "var(--destructive)",
+                }}
+              >
                 <span>{error}</span>
-                <Button type="button" variant="outline" size="sm" onClick={() => void loadDatabases()}>
+                <Button type="button" variant="outlined" size="small" onClick={() => void loadDatabases()}>
                   Retry
                 </Button>
-              </div>
+              </Stack>
             ) : databases.length === 0 ? (
-              <p className="rounded-md border bg-muted/20 p-4 text-center text-xs text-muted-foreground">
-                You don't have any databases yet. Create one from the Dashboard.
-              </p>
+              <Box
+                sx={{
+                  borderRadius: 1.5,
+                  border: "1px solid var(--border)",
+                  bgcolor: "rgba(255,255,255,0.02)",
+                  p: 2,
+                  textAlign: "center",
+                  fontSize: 12,
+                  color: "var(--muted-foreground)",
+                }}
+              >
+                You don&apos;t have any databases yet. Create one from the Dashboard.
+              </Box>
             ) : (
-              <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto pr-1">
+              <Stack spacing={0.75} sx={{ maxHeight: 256, overflowY: "auto", pr: 0.5 }}>
                 {databases.map((db) => {
                   const selected = selectedId === db.id;
                   return (
-                    <button
+                    <Box
                       key={db.id}
+                      component="button"
                       type="button"
                       onClick={() => setSelectedId(db.id)}
-                      className={
-                        "flex items-center gap-2.5 rounded-md border px-3 py-2 text-left text-sm transition-colors " +
-                        (selected
-                          ? "border-primary bg-primary/10"
-                          : "border-muted hover:border-foreground/20 hover:bg-muted/40")
-                      }
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1.25,
+                        borderRadius: 1.5,
+                        border: selected ? "1px solid var(--primary)" : "1px solid var(--border)",
+                        bgcolor: selected ? "rgba(59,130,246,0.1)" : "transparent",
+                        px: 1.5,
+                        py: 1,
+                        textAlign: "left",
+                        cursor: "pointer",
+                        color: "inherit",
+                        "&:hover": {
+                          bgcolor: selected ? "rgba(59,130,246,0.12)" : "var(--muted)",
+                        },
+                      }}
                     >
-                      <Database className="size-4 shrink-0 text-primary" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{db.name}</span>
-                        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                      <Database style={{ width: 16, height: 16, flexShrink: 0, color: "var(--primary)" }} />
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography noWrap sx={{ fontSize: 13.5, fontWeight: 500 }}>
+                          {db.name}
+                        </Typography>
+                        <Typography noWrap sx={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>
                           {db.namespace}
-                        </span>
-                      </span>
-                    </button>
+                        </Typography>
+                      </Box>
+                    </Box>
                   );
                 })}
-              </div>
+              </Stack>
             )}
-          </div>
+          </Stack>
 
           {error && testing && (
-            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <Box
+              sx={{
+                borderRadius: 1.5,
+                border: "1px solid rgba(239,68,68,0.3)",
+                bgcolor: "rgba(239,68,68,0.06)",
+                px: 1.5,
+                py: 1,
+                fontSize: 12,
+                color: "var(--destructive)",
+              }}
+            >
               {error}
-            </p>
+            </Box>
           )}
 
           <Button
             type="submit"
-            className="w-full gap-1.5"
+            variant="contained"
+            fullWidth
             disabled={!selectedId || loading || testing}
+            startIcon={
+              testing ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <PlugZap style={{ width: 16, height: 16 }} />
+              )
+            }
           >
-            {testing ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <PlugZap className="size-4" />
-            )}
             {testing ? "Connecting…" : "Open"}
           </Button>
-        </form>
-      </div>
-    </div>
+        </Stack>
+      </Box>
+    </Box>
   );
 }

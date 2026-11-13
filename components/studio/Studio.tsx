@@ -8,6 +8,13 @@ import {
 } from "@tanstack/react-query";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { ArrowLeft, Menu, Plug, RefreshCw, Terminal } from "lucide-react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Drawer from "@mui/material/Drawer";
+import IconButton from "@mui/material/IconButton";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { useStudioStore } from "@/stores/studio-store";
 import { useStudioConnectionStore } from "@/stores/studio-connection";
 import { Sidebar } from "@/components/studio/Sidebar";
@@ -15,7 +22,6 @@ import { TabBar } from "@/components/studio/TabBar";
 import { TableView } from "@/components/studio/TableView";
 import { QueryView } from "@/components/studio/QueryView";
 import { ConnectScreen } from "@/components/studio/ConnectScreen";
-import { Button } from "@/components/ui/button";
 
 export function Studio() {
   const [queryClient] = React.useState(
@@ -36,7 +42,7 @@ export function Studio() {
 
 function StudioShell() {
   const queryClient = useQueryClient();
-  const tabs = useStudioStore((s) => s.tabs);
+  const isDesktop = useMediaQuery("(min-width:600px)");
   const activeTabId = useStudioStore((s) => s.activeTabId);
   const sidebarOpen = useStudioStore((s) => s.sidebarOpen);
   const toggleSidebar = useStudioStore((s) => s.toggleSidebar);
@@ -45,112 +51,151 @@ function StudioShell() {
   const connectionName = useStudioConnectionStore((s) => s.name);
   const disconnect = useStudioConnectionStore((s) => s.disconnect);
 
-  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
-
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
+    <Box
+      sx={{
+        display: "flex",
+        height: "100dvh",
+        flexDirection: "column",
+        bgcolor: "var(--background)",
+        color: "var(--foreground)",
+      }}
+    >
       {/* Header */}
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="size-8 sm:hidden"
-          onClick={toggleSidebar}
-          title="Toggle sidebar"
-        >
-          <Menu className="size-4" />
-        </Button>
-        <div className="flex items-center gap-2">
-          <Terminal className="size-4 text-primary" />
-          <span className="text-sm font-semibold">Lite Studio</span>
-        </div>
+      <Box
+        component="header"
+        sx={{
+          display: "flex",
+          height: 48,
+          flexShrink: 0,
+          alignItems: "center",
+          gap: 1,
+          borderBottom: "1px solid var(--border)",
+          px: 1.5,
+        }}
+      >
+        {!isDesktop && (
+          <IconButton
+            size="small"
+            onClick={toggleSidebar}
+            title="Toggle sidebar"
+            sx={{ width: 32, height: 32 }}
+          >
+            <Menu style={{ width: 16, height: 16 }} />
+          </IconButton>
+        )}
+
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <Terminal style={{ width: 16, height: 16, color: "var(--primary)" }} />
+          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Lite Studio</Typography>
+        </Stack>
 
         {connected && (
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            className="ml-1 h-7 max-w-[220px] gap-1.5 px-2 text-xs"
+            variant="outlined"
+            size="small"
             onClick={disconnect}
             title="Change connection"
+            startIcon={<Plug style={{ width: 14, height: 14, color: "#10b981", flexShrink: 0 }} />}
+            sx={{
+              ml: 0.5,
+              height: 28,
+              maxWidth: 220,
+              px: 1,
+              fontSize: 12,
+              "& .MuiButton-startIcon": { mr: 0.75 },
+            }}
           >
-            <Plug className="size-3.5 shrink-0 text-emerald-500" />
-            <span className="truncate">{connectionName || "Connected"}</span>
+            <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {connectionName || "Connected"}
+            </Box>
           </Button>
         )}
 
-        <div className="flex-1" />
+        <Box sx={{ flex: 1 }} />
+
         {connected && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="size-8"
+          <IconButton
+            size="small"
             title="Refresh database metadata"
             onClick={() => {
               void queryClient.invalidateQueries({ queryKey: ["studio"] });
             }}
+            sx={{ width: 32, height: 32 }}
           >
-            <RefreshCw className="size-4" />
-          </Button>
+            <RefreshCw style={{ width: 16, height: 16 }} />
+          </IconButton>
         )}
-        <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 px-2">
-          <a href="/databases">
-            <ArrowLeft className="size-3.5" />
-            Dashboard
-          </a>
+
+        <Button
+          component="a"
+          href="/databases"
+          variant="text"
+          size="small"
+          startIcon={<ArrowLeft style={{ width: 14, height: 14 }} />}
+          sx={{ height: 32, px: 1, fontSize: 12.5, color: "var(--foreground)" }}
+        >
+          Dashboard
         </Button>
-      </header>
+      </Box>
 
       {connected ? (
-        <div className="flex min-h-0 flex-1">
-          {/* Mobile drawer */}
-          {sidebarOpen && (
-            <div className="fixed inset-0 z-50 sm:hidden">
-              <div className="absolute inset-0 bg-black/40" onClick={toggleSidebar} />
-              <div className="absolute top-0 left-0 h-full w-72 border-r bg-background">
+        <Box sx={{ display: "flex", minHeight: 0, flex: 1 }}>
+          <Drawer
+            open={!isDesktop && sidebarOpen}
+            onClose={toggleSidebar}
+            slotProps={{
+              paper: {
+                sx: { width: 288, bgcolor: "var(--background)", borderRight: "1px solid var(--border)" },
+              },
+            }}
+          >
+            <Sidebar />
+          </Drawer>
+
+          {isDesktop ? (
+            <PanelGroup direction="horizontal" style={{ flex: 1, minHeight: 0, display: "flex" }}>
+              <Panel defaultSize={18} minSize={12} maxSize={35} style={{ minWidth: 0 }}>
                 <Sidebar />
-              </div>
-            </div>
+              </Panel>
+              <PanelResizeHandle
+                style={{
+                  width: 1,
+                  backgroundColor: "var(--border)",
+                  cursor: "col-resize",
+                }}
+              />
+              <Panel style={{ minWidth: 0 }}>
+                <Workspace activeTabId={activeTabId} />
+              </Panel>
+            </PanelGroup>
+          ) : (
+            <Box sx={{ display: "flex", minHeight: 0, flex: 1, flexDirection: "column" }}>
+              <TabBar />
+              <Box sx={{ minHeight: 0, flex: 1 }}>
+                <WorkspaceContent activeTabId={activeTabId} />
+              </Box>
+            </Box>
           )}
-
-          {/* Desktop resizable layout */}
-          <PanelGroup direction="horizontal" className="hidden min-h-0 flex-1 sm:flex">
-            <Panel defaultSize={18} minSize={12} maxSize={35} className="min-w-0">
-              <Sidebar />
-            </Panel>
-            <PanelResizeHandle className="w-px bg-border transition-colors data-[resize-handle-active]:bg-primary" />
-            <Panel className="min-w-0">
-              <Workspace activeTabId={activeTabId} />
-            </Panel>
-          </PanelGroup>
-
-          {/* Mobile stacked layout */}
-          <div className="flex min-h-0 flex-1 flex-col sm:hidden">
-            <TabBar />
-            <div className="min-h-0 flex-1">
-              <WorkspaceContent activeTabId={activeTabId} />
-            </div>
-          </div>
-        </div>
+        </Box>
       ) : (
-        <div className="min-h-0 flex-1">
+        <Box sx={{ minHeight: 0, flex: 1 }}>
           <ConnectScreen />
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }
 
 function Workspace({ activeTabId }: { activeTabId: string | null }) {
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <Box sx={{ display: "flex", height: "100%", minHeight: 0, flexDirection: "column" }}>
       <TabBar />
-      <div className="min-h-0 flex-1">
+      <Box sx={{ minHeight: 0, flex: 1 }}>
         <WorkspaceContent activeTabId={activeTabId} />
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
@@ -167,20 +212,29 @@ function WorkspaceContent({ activeTabId }: { activeTabId: string | null }) {
 function EmptyState() {
   const newQuery = useStudioStore((s) => s.newQuery);
   return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="flex max-w-md flex-col items-center gap-3 text-center">
-        <Terminal className="size-8 text-muted-foreground/50" />
-        <div>
-          <h2 className="text-base font-semibold">Welcome to the database studio</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Pick a table from the sidebar to browse its data and structure, or open a
-            query tab to run SQL.
-          </p>
-        </div>
-        <Button type="button" size="sm" onClick={newQuery}>
+    <Box
+      sx={{
+        display: "flex",
+        height: "100%",
+        alignItems: "center",
+        justifyContent: "center",
+        p: 3,
+      }}
+    >
+      <Stack spacing={1.5} sx={{ alignItems: "center", maxWidth: 420, textAlign: "center" }}>
+        <Terminal style={{ width: 32, height: 32, color: "var(--muted-foreground)", opacity: 0.5 }} />
+        <Box>
+          <Typography sx={{ fontSize: 16, fontWeight: 600 }}>
+            Welcome to the database studio
+          </Typography>
+          <Typography sx={{ mt: 0.5, fontSize: 13.5, color: "var(--muted-foreground)" }}>
+            Pick a table from the sidebar to browse its data and structure, or open a query tab to run SQL.
+          </Typography>
+        </Box>
+        <Button type="button" variant="contained" size="small" onClick={newQuery}>
           New query
         </Button>
-      </div>
-    </div>
+      </Stack>
+    </Box>
   );
 }

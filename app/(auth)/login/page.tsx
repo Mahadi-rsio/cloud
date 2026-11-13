@@ -1,3 +1,4 @@
+import Box from "@mui/material/Box";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { LoginFormProvider } from "@/components/auth/login-form";
@@ -15,10 +16,20 @@ export default async function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-svh flex-1 items-center justify-center px-6">
-      <div className="mx-auto w-full max-w-sm">
+    <Box
+      component="main"
+      sx={{
+        display: "flex",
+        minHeight: "100svh",
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        px: 3,
+      }}
+    >
+      <Box sx={{ mx: "auto", width: "100%", maxWidth: 400 }}>
         <LoginFormProvider />
-      </div>
-    </main>
+      </Box>
+    </Box>
   );
 }

@@ -4,15 +4,11 @@ import * as React from "react";
 import { useEffect } from "react";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
+import type { SxProps, Theme } from "@mui/material/styles";
 import { Moon, Sun } from "lucide-react";
 import { useThemeStore } from "@/stores/theme-store";
-import { cn } from "cn";
 
-export function ThemeToggleButton({
-  className,
-}: {
-  className?: string;
-}) {
+export function ThemeToggleButton({ sx }: { sx?: SxProps<Theme> }) {
   const store = useThemeStore();
 
   useEffect(() => {
@@ -28,20 +24,23 @@ export function ThemeToggleButton({
         size="small"
         aria-label={label}
         onClick={() => store.setTheme(dark ? "light" : "dark")}
-        sx={{
-          color: "var(--muted-foreground)",
-          borderRadius: "8px",
-          width: 36,
-          height: 36,
-          transition: "all 0.15s ease",
-          "&:hover": {
-            backgroundColor: "var(--accent)",
-            color: "var(--foreground)",
+        sx={[
+          {
+            flexShrink: 0,
+            color: "var(--muted-foreground)",
+            borderRadius: "8px",
+            width: 36,
+            height: 36,
+            transition: "all 0.15s ease",
+            "&:hover": {
+              backgroundColor: "var(--accent)",
+              color: "var(--foreground)",
+            },
           },
-        }}
-        className={cn("shrink-0", className)}
+          ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+        ]}
       >
-        {dark ? <Sun className="size-4.5" /> : <Moon className="size-4.5" />}
+        {dark ? <Sun size={18} /> : <Moon size={18} />}
       </IconButton>
     </Tooltip>
   );

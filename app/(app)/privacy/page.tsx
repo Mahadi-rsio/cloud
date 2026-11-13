@@ -1,4 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import CardHeader from "@mui/material/CardHeader";
+import Typography from "@mui/material/Typography";
 
 export const metadata = {
   title: "Privacy policy",
@@ -7,13 +10,11 @@ export const metadata = {
 export default function PrivacyPage() {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Privacy policy</CardTitle>
-      </CardHeader>
+      <CardHeader title="Privacy policy" />
       <CardContent>
-        <p className="text-sm text-muted-foreground">
+        <Typography variant="body2" color="text.secondary">
           Our privacy policy will live here.
-        </p>
+        </Typography>
       </CardContent>
     </Card>
   );

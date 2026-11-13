@@ -1,7 +1,8 @@
 "use client";
 
 import { Plus, Table2, Terminal, X } from "lucide-react";
-import { cn } from "cn";
+import Box from "@mui/material/Box";
+import IconButton from "@mui/material/IconButton";
 import { useStudioStore } from "@/stores/studio-store";
 
 export function TabBar() {
@@ -12,50 +13,96 @@ export function TabBar() {
   const newQuery = useStudioStore((s) => s.newQuery);
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-px overflow-x-auto border-b bg-muted/30">
+    <Box
+      sx={{
+        display: "flex",
+        height: 36,
+        flexShrink: 0,
+        alignItems: "center",
+        overflowX: "auto",
+        borderBottom: "1px solid var(--border)",
+        bgcolor: "rgba(255,255,255,0.02)",
+      }}
+    >
       {tabs.map((tab) => {
         const active = tab.id === activeTabId;
         return (
-          <div
+          <Box
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              "group flex max-w-[180px] shrink-0 cursor-pointer select-none items-center gap-1.5 border-r border-border/60 px-3 text-xs font-medium transition-colors",
-              active
-                ? "bg-background text-foreground"
-                : "text-muted-foreground hover:bg-background/60",
-            )}
             title={tab.title}
+            sx={{
+              display: "flex",
+              height: "100%",
+              maxWidth: 180,
+              flexShrink: 0,
+              cursor: "pointer",
+              userSelect: "none",
+              alignItems: "center",
+              gap: 0.75,
+              borderRight: "1px solid var(--border)",
+              px: 1.5,
+              fontSize: 12,
+              fontWeight: 500,
+              bgcolor: active ? "var(--background)" : "transparent",
+              color: active ? "var(--foreground)" : "var(--muted-foreground)",
+              "&:hover": {
+                bgcolor: active ? "var(--background)" : "rgba(255,255,255,0.04)",
+              },
+              "&:hover .tab-close-btn": {
+                opacity: 1,
+              },
+            }}
           >
             {tab.kind === "table" ? (
-              <Table2 className="size-3.5 shrink-0 text-primary" />
+              <Table2 style={{ width: 14, height: 14, flexShrink: 0, color: "var(--primary)" }} />
             ) : (
-              <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
+              <Terminal style={{ width: 14, height: 14, flexShrink: 0, color: "var(--muted-foreground)" }} />
             )}
-            <span className="truncate">{tab.title}</span>
-            <button
-              type="button"
+            <Box
+              component="span"
+              sx={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {tab.title}
+            </Box>
+            <IconButton
+              className="tab-close-btn"
+              size="small"
               onClick={(event) => {
                 event.stopPropagation();
                 closeTab(tab.id);
               }}
-              className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 data-[always]:opacity-100"
-              data-always={active ? "true" : undefined}
               title="Close tab"
+              sx={{
+                p: 0.25,
+                opacity: active ? 1 : 0,
+                transition: "opacity 150ms",
+                color: "inherit",
+              }}
             >
-              <X className="size-3" />
-            </button>
-          </div>
+              <X style={{ width: 12, height: 12 }} />
+            </IconButton>
+          </Box>
         );
       })}
-      <button
-        type="button"
+      <IconButton
+        size="small"
         onClick={newQuery}
-        className="flex shrink-0 items-center gap-1 px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
         title="New query"
+        sx={{
+          flexShrink: 0,
+          px: 1.5,
+          borderRadius: 0,
+          color: "var(--muted-foreground)",
+          "&:hover": { color: "var(--foreground)" },
+        }}
       >
-        <Plus className="size-3.5" />
-      </button>
-    </div>
+        <Plus style={{ width: 14, height: 14 }} />
+      </IconButton>
+    </Box>
   );
 }

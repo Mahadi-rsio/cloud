@@ -10,7 +10,7 @@ export default function DomainsPage() {
     <PlaceholderPage
       title="Domains"
       description="Connect custom domains to your apps."
-      icon={<Globe className="size-5" />}
+      icon={<Globe size={20} />}
       comingSoon="Domains are coming soon"
     />
   );

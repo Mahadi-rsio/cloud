@@ -2,6 +2,19 @@
 
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import InputAdornment from "@mui/material/InputAdornment";
+import Paper from "@mui/material/Paper";
+import Skeleton from "@mui/material/Skeleton";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Typography from "@mui/material/Typography";
 import { Check, Copy, Pause, Play, Search, Terminal, Trash2 } from "lucide-react";
 import {
   getDeploymentLogs,
@@ -10,9 +23,6 @@ import {
   type DeploymentStatus,
 } from "@/lib/deployments";
 import { extractErrorMessage } from "@/lib/errors";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 
 type StreamFilter = "all" | "stdout" | "stderr" | "system";
 
@@ -130,7 +140,6 @@ export function DeploymentLogsViewer({
         setError(null);
       };
       es.onerror = () => {
-        // EventSource auto-reconnects; surface a brief disconnected state.
         setConnected(false);
       };
     };
@@ -173,184 +182,255 @@ export function DeploymentLogsViewer({
   const terminal = isTerminalDeploymentStatus(status);
 
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Build logs</h2>
-          <span
-            className={`size-2 rounded-full ${
-              connected ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"
-            }`}
+    <Box component="section" sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 1,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            Build logs
+          </Typography>
+          <Box
+            component="span"
             title={connected ? "Live" : "Disconnected"}
+            sx={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              backgroundColor: connected ? "#3dd68c" : "var(--muted-foreground)",
+              ...(connected ? { animation: "pulse 2s infinite" } : {}),
+            }}
           />
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+        </Box>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
+            variant="outlined"
+            size="small"
             onClick={() => setAutoScroll(!autoScroll)}
-            className="gap-1.5 text-xs"
+            startIcon={autoScroll ? <Pause size={14} /> : <Play size={14} />}
           >
-            {autoScroll ? (
-              <>
-                <Pause className="size-3.5" />
-                Pause
-              </>
-            ) : (
-              <>
-                <Play className="size-3.5" />
-                Resume
-              </>
-            )}
+            {autoScroll ? "Pause" : "Resume"}
           </Button>
           <Button
             type="button"
-            variant="outline"
-            size="sm"
+            variant="outlined"
+            size="small"
             disabled={filteredLogs.length === 0}
             onClick={handleCopy}
-            className="gap-1.5 text-xs"
+            startIcon={copied ? <Check size={14} color="#3dd68c" /> : <Copy size={14} />}
           >
-            {copied ? (
-              <>
-                <Check className="size-3.5 text-emerald-500" />
-                Copied
-              </>
-            ) : (
-              <>
-                <Copy className="size-3.5" />
-                Copy
-              </>
-            )}
+            {copied ? "Copied" : "Copy"}
           </Button>
           <Button
             type="button"
-            variant="ghost"
-            size="sm"
+            variant="text"
+            size="small"
             onClick={handleClear}
-            className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            startIcon={<Trash2 size={14} />}
+            sx={{ color: "var(--muted-foreground)" }}
           >
-            <Trash2 className="size-3.5" />
             Clear
           </Button>
-        </div>
-      </div>
+        </Stack>
+      </Box>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search logs…"
-            className="pl-8 text-xs h-8"
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { sm: "center" },
+          justifyContent: "space-between",
+          gap: 1.5,
+        }}
+      >
+        <TextField
+          size="small"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search logs…"
+          sx={{ maxWidth: { sm: 320 }, flex: 1 }}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search size={14} />
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={streamFilter}
+            onChange={(_, v) => v && setStreamFilter(v)}
+          >
+            {STREAM_OPTIONS.map((option) => (
+              <ToggleButton
+                key={option.id}
+                value={option.id}
+                sx={{ px: 1.25, py: 0.25, fontSize: "0.75rem", textTransform: "capitalize" }}
+              >
+                {option.label}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={autoScroll}
+                onChange={(e) => setAutoScroll(e.target.checked)}
+              />
+            }
+            label={<Typography variant="caption">Auto-scroll</Typography>}
+            sx={{ m: 0 }}
           />
-        </div>
-        <div className="flex items-center gap-1.5 text-xs">
-          {STREAM_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => setStreamFilter(option.id)}
-              className={`rounded-md px-2.5 py-0.5 text-xs font-medium capitalize transition-colors ${
-                streamFilter === option.id
-                  ? "bg-background text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-          <span className="ml-2 flex items-center gap-1.5 text-muted-foreground cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={autoScroll}
-              onChange={(e) => setAutoScroll(e.target.checked)}
-              className="rounded border-input text-primary focus:ring-primary size-3.5"
-            />
-            Auto-scroll
-          </span>
-        </div>
-      </div>
+        </Box>
+      </Box>
 
-      {error && (
-        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
-          {error}
-        </div>
-      )}
+      {error && <Alert severity="error">{error}</Alert>}
 
-      <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 font-mono shadow-md">
-        <div className="flex items-center justify-between border-b border-zinc-800/80 bg-zinc-900/90 px-4 py-2.5 text-xs text-zinc-400">
-          <div className="flex items-center gap-2">
-            <span className="size-3 rounded-full bg-red-500/80" />
-            <span className="size-3 rounded-full bg-amber-500/80" />
-            <span className="size-3 rounded-full bg-emerald-500/80" />
-            <span className="ml-2 font-mono text-[11px] text-zinc-400 flex items-center gap-1.5">
-              <Terminal className="size-3 text-zinc-500" />
-              build &middot; {buildNumber}
+      <Paper
+        variant="outlined"
+        sx={{
+          overflow: "hidden",
+          borderRadius: "12px",
+          borderColor: "#27272a",
+          backgroundColor: "#09090b",
+          fontFamily: "var(--font-mono)",
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            borderBottom: "1px solid #27272a",
+            backgroundColor: "#18181b",
+            px: 2,
+            py: 1.25,
+            fontSize: "0.75rem",
+            color: "#a1a1aa",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#ef4444" }} />
+            <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#f59e0b" }} />
+            <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#10b981" }} />
+            <Box sx={{ ml: 1, display: "flex", alignItems: "center", gap: 0.75, fontSize: "11px" }}>
+              <Terminal size={12} />
+              build · {buildNumber}
+            </Box>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, fontSize: "11px", color: "#71717a" }}>
+            <span>
+              {filteredLogs.length} line{filteredLogs.length === 1 ? "" : "s"}
             </span>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] text-zinc-500">
-            <span>{filteredLogs.length} line{filteredLogs.length === 1 ? "" : "s"}</span>
             {connected && !terminal && (
-              <span className="flex items-center gap-1 text-emerald-400">
-                <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: "#34d399" }}>
+                <Box
+                  component="span"
+                  sx={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    backgroundColor: "#34d399",
+                    animation: "pulse 2s infinite",
+                  }}
+                />
                 streaming
-              </span>
+              </Box>
             )}
-            {terminal && (
-              <span className="text-zinc-400">closed</span>
-            )}
-          </div>
-        </div>
+            {terminal && <span style={{ color: "#a1a1aa" }}>closed</span>}
+          </Box>
+        </Box>
 
-        <div
-          className="max-h-[520px] min-h-[300px] overflow-y-auto p-4 text-xs leading-relaxed text-zinc-200 selection:bg-zinc-700"
+        <Box
           onScroll={handleScroll}
+          sx={{
+            maxHeight: 520,
+            minHeight: 300,
+            overflowY: "auto",
+            p: 2,
+            fontSize: "0.75rem",
+            lineHeight: 1.6,
+            color: "#e4e4e7",
+          }}
         >
           {isLoading && logs.length === 0 ? (
-            <div className="flex flex-col gap-2 py-6">
-              <Skeleton className="h-4 w-3/4 bg-zinc-800/60" />
-              <Skeleton className="h-4 w-1/2 bg-zinc-800/60" />
-              <Skeleton className="h-4 w-2/3 bg-zinc-800/60" />
-            </div>
+            <Stack spacing={1} sx={{ py: 3 }}>
+              <Skeleton variant="text" width="75%" sx={{ bgcolor: "#27272a" }} />
+              <Skeleton variant="text" width="50%" sx={{ bgcolor: "#27272a" }} />
+              <Skeleton variant="text" width="66%" sx={{ bgcolor: "#27272a" }} />
+            </Stack>
           ) : filteredLogs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center text-zinc-500">
-              <Terminal className="size-8 stroke-1 text-zinc-600 mb-2" />
-              <p className="font-sans text-sm font-medium text-zinc-400">
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                py: 8,
+                textAlign: "center",
+                color: "#71717a",
+              }}
+            >
+              <Terminal size={32} strokeWidth={1.2} />
+              <Typography variant="body2" sx={{ mt: 1, fontWeight: 500, color: "#a1a1aa" }}>
                 {logs.length === 0
                   ? "Waiting for build output…"
                   : "No log lines match your active filter."}
-              </p>
-              <p className="font-sans text-xs text-zinc-600 mt-1">
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#52525b", mt: 0.5 }}>
                 {logs.length === 0
                   ? "Clone, prepare and build output will stream here live."
                   : "Try clearing the search query or switching the stream filter."}
-              </p>
-            </div>
+              </Typography>
+            </Box>
           ) : (
-            <div className="flex flex-col gap-1">
+            <Stack spacing={0.5}>
               {filteredLogs.map((log, idx) => (
-                <div
+                <Box
                   key={log.id || `${log.timestamp}-${idx}`}
-                  className="group flex items-start gap-3 rounded-xs py-0.5 hover:bg-zinc-900/60 transition-colors"
+                  sx={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 1.5,
+                    py: 0.25,
+                    borderRadius: "4px",
+                    "&:hover": { backgroundColor: "#18181b" },
+                  }}
                 >
-                  <span className="shrink-0 select-none font-mono text-[11px] text-zinc-500">
+                  <Box
+                    component="span"
+                    sx={{ flexShrink: 0, userSelect: "none", fontSize: "11px", color: "#71717a" }}
+                  >
                     {formatTimestamp(log.timestamp)}
-                  </span>
+                  </Box>
                   <StreamBadge stream={log.stream} />
-                  <span className="break-all whitespace-pre-wrap text-zinc-300 group-hover:text-zinc-100">
+                  <Box
+                    component="span"
+                    sx={{ wordBreak: "break-all", whiteSpace: "pre-wrap", color: "#d4d4d8" }}
+                  >
                     {log.message}
-                  </span>
-                </div>
+                  </Box>
+                </Box>
               ))}
               <div ref={terminalEndRef} />
-            </div>
+            </Stack>
           )}
-        </div>
-      </div>
-    </section>
+        </Box>
+      </Paper>
+    </Box>
   );
 }
 
@@ -372,26 +452,33 @@ function useMemoFilter(
 }
 
 function StreamBadge({ stream }: { stream: DeploymentLogEntry["stream"] }) {
-  switch (stream) {
-    case "stderr":
-      return (
-        <span className="shrink-0 select-none rounded bg-red-950/80 px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-800/40">
-          ERR
-        </span>
-      );
-    case "system":
-      return (
-        <span className="shrink-0 select-none rounded bg-purple-950/80 px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider text-purple-300 border border-purple-800/40">
-          SYS
-        </span>
-      );
-    default:
-      return (
-        <span className="shrink-0 select-none rounded bg-cyan-950/80 px-1.5 py-0.2 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-800/40">
-          OUT
-        </span>
-      );
-  }
+  const palette =
+    stream === "stderr"
+      ? { bg: "rgba(127, 29, 29, 0.6)", color: "#f87171", border: "rgba(153, 27, 27, 0.5)", label: "ERR" }
+      : stream === "system"
+        ? { bg: "rgba(88, 28, 135, 0.6)", color: "#d8b4fe", border: "rgba(107, 33, 168, 0.5)", label: "SYS" }
+        : { bg: "rgba(22, 78, 99, 0.6)", color: "#67e8f9", border: "rgba(21, 94, 117, 0.5)", label: "OUT" };
+
+  return (
+    <Box
+      component="span"
+      sx={{
+        flexShrink: 0,
+        userSelect: "none",
+        borderRadius: "4px",
+        px: 0.75,
+        py: 0.1,
+        fontSize: "10px",
+        fontWeight: 700,
+        letterSpacing: "0.05em",
+        backgroundColor: palette.bg,
+        color: palette.color,
+        border: `1px solid ${palette.border}`,
+      }}
+    >
+      {palette.label}
+    </Box>
+  );
 }
 
 function formatTimestamp(isoString: string): string {

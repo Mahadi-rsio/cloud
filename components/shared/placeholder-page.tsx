@@ -1,3 +1,4 @@
+import Box from "@mui/material/Box";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 
@@ -13,13 +14,22 @@ export function PlaceholderPage({
   comingSoon: string;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <Box
+      sx={{
+        mx: "auto",
+        display: "flex",
+        width: "100%",
+        maxWidth: "64rem",
+        flexDirection: "column",
+        gap: 3,
+      }}
+    >
       <PageHeader title={title} description={description} />
       <EmptyState
         icon={icon}
         title={comingSoon}
         description="This section is coming soon. Your existing apps and data are unaffected."
       />
-    </div>
+    </Box>
   );
 }

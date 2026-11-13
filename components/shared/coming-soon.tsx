@@ -1,14 +1,11 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
 
 /** Placeholder dialog for actions that are not wired up yet. */
 export function ComingSoonDialog({
@@ -23,18 +20,21 @@ export function ComingSoonDialog({
   description: string;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Got it
-          </Button>
-        </DialogFooter>
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      fullWidth
+      maxWidth="xs"
+    >
+      <DialogTitle>{title}</DialogTitle>
+      <DialogContent>
+        <DialogContentText>{description}</DialogContentText>
       </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button type="button" variant="outlined" onClick={() => onOpenChange(false)}>
+          Got it
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }

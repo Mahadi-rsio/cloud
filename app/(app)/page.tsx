@@ -1,8 +1,9 @@
 import Link from "next/link";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import { AppWindow } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Button } from "@/components/ui/button";
 
 export const metadata = {
   title: "Dashboard",
@@ -10,21 +11,30 @@ export const metadata = {
 
 export default function HomePage() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <Box
+      sx={{
+        mx: "auto",
+        display: "flex",
+        width: "100%",
+        maxWidth: "64rem",
+        flexDirection: "column",
+        gap: 3,
+      }}
+    >
       <PageHeader
         title="Dashboard"
         description="Deploy backend apps from a Docker image and get a public URL."
       />
       <EmptyState
-        icon={<AppWindow className="size-5" />}
+        icon={<AppWindow size={20} />}
         title="Welcome to Cloudisy"
         description="Create your first app to get a public URL, or explore the sidebar to manage databases, domains and billing."
         action={
-          <Button asChild>
-            <Link href="/apps">Go to Apps</Link>
+          <Button component={Link} href="/apps" variant="contained">
+            Go to Apps
           </Button>
         }
       />
-    </div>
+    </Box>
   );
 }

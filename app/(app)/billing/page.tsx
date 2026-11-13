@@ -1,4 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import CardHeader from "@mui/material/CardHeader";
+import Typography from "@mui/material/Typography";
 
 export const metadata = {
   title: "Billing",
@@ -7,13 +10,11 @@ export const metadata = {
 export default function BillingPage() {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Billing</CardTitle>
-      </CardHeader>
+      <CardHeader title="Billing" />
       <CardContent>
-        <p className="text-sm text-muted-foreground">
+        <Typography variant="body2" color="text.secondary">
           Your plan, invoices, and payment methods will appear here.
-        </p>
+        </Typography>
       </CardContent>
     </Card>
   );

@@ -3,6 +3,16 @@
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import MenuItem from "@mui/material/MenuItem";
+import TextField from "@mui/material/TextField";
 import { updateApplicationSchema } from "@/lib/validators/application";
 import {
   FLY_REGIONS,
@@ -10,18 +20,6 @@ import {
   type Application,
 } from "@/lib/applications";
 import { extractErrorMessage } from "@/lib/errors";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   buildRuntimeInput,
   runtimeFieldsFromApplication,
@@ -81,67 +79,64 @@ export function EditApplicationDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Edit app</DialogTitle>
-          <DialogDescription>
+    <Dialog
+      open={open}
+      onClose={() => !edit.isPending && onOpenChange(false)}
+      fullWidth
+      maxWidth="xs"
+    >
+      <Box component="form" onSubmit={submit}>
+        <DialogTitle>Edit app</DialogTitle>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <DialogContentText>
             Update {application.name}. Changing the runtime or region applies a
             new machine configuration.
-          </DialogDescription>
-        </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={submit}>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-name">Name</Label>
-            <Input
-              id="edit-name"
-              name="name"
-              type="text"
-              autoComplete="off"
-              placeholder="my-app"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-region">Region</Label>
-            <Select
-              id="edit-region"
-              name="region"
-              value={region}
-              onChange={(event) => setRegion(event.target.value)}
-            >
-              {FLY_REGIONS.map(({ code, name: regionName }) => (
-                <option key={code} value={code}>
-                  {regionName} ({code})
-                </option>
-              ))}
-            </Select>
-          </div>
+          </DialogContentText>
+          <TextField
+            id="edit-name"
+            name="name"
+            label="Name"
+            type="text"
+            size="small"
+            fullWidth
+            autoComplete="off"
+            placeholder="my-app"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <TextField
+            id="edit-region"
+            name="region"
+            label="Region"
+            select
+            size="small"
+            fullWidth
+            value={region}
+            onChange={(event) => setRegion(event.target.value)}
+          >
+            {FLY_REGIONS.map(({ code, name: regionName }) => (
+              <MenuItem key={code} value={code}>
+                {regionName} ({code})
+              </MenuItem>
+            ))}
+          </TextField>
           <RuntimeFields value={fields} onChange={setFields} />
-          {error && (
-            <p
-              role="alert"
-              className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={edit.isPending}
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={edit.isPending}>
-              {edit.isPending ? "Saving…" : "Save changes"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+          {error && <Alert severity="error">{error}</Alert>}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            type="button"
+            variant="outlined"
+            disabled={edit.isPending}
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" variant="contained" disabled={edit.isPending}>
+            {edit.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </DialogActions>
+      </Box>
     </Dialog>
   );
 }

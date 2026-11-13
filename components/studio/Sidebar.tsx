@@ -2,12 +2,16 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, Search, Table2 } from "lucide-react";
-import { cn } from "cn";
+import { Plus, Search, Table2 } from "lucide-react";
+import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
+import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import { studioApi } from "@/lib/studio-api";
 import { useStudioStore } from "@/stores/studio-store";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 export function Sidebar() {
   const openTable = useStudioStore((s) => s.openTable);
@@ -32,69 +36,113 @@ export function Sidebar() {
   }, [tables, filter]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-1.5 p-2">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            placeholder="Search tables"
-            className="h-8 pl-7 text-xs"
-          />
-        </div>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          className="size-8 shrink-0"
+    <Box sx={{ display: "flex", height: "100%", minHeight: 0, flexDirection: "column" }}>
+      <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", p: 1 }}>
+        <TextField
+          size="small"
+          fullWidth
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Search tables"
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search style={{ width: 14, height: 14, color: "var(--muted-foreground)" }} />
+                </InputAdornment>
+              ),
+              sx: { height: 32, fontSize: 12 },
+            },
+          }}
+        />
+        <IconButton
+          size="small"
           onClick={newQuery}
           title="New query"
+          sx={{
+            width: 32,
+            height: 32,
+            flexShrink: 0,
+            border: "1px solid var(--border)",
+            borderRadius: 1.5,
+          }}
         >
-          <Plus className="size-4" />
-        </Button>
-      </div>
+          <Plus style={{ width: 16, height: 16 }} />
+        </IconButton>
+      </Stack>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <Box sx={{ minHeight: 0, flex: 1, overflowY: "auto", px: 0.75, pb: 1 }}>
         {isPending ? (
-          <div className="flex justify-center py-6">
-            <Loader2 className="size-4 animate-spin text-muted-foreground" />
-          </div>
+          <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+            <CircularProgress size={16} sx={{ color: "var(--muted-foreground)" }} />
+          </Box>
         ) : filtered.length === 0 ? (
-          <p className="px-2 py-3 text-xs text-muted-foreground">
+          <Typography sx={{ px: 1, py: 1.5, fontSize: 12, color: "var(--muted-foreground)" }}>
             {tables && tables.length === 0
               ? "No tables in this database."
               : "No tables match your search."}
-          </p>
+          </Typography>
         ) : (
-          <ul className="flex flex-col gap-0.5">
+          <Stack component="ul" spacing={0.25} sx={{ m: 0, p: 0, listStyle: "none" }}>
             {filtered.map((table) => {
               const active = activeTable === table.name;
               return (
                 <li key={table.name}>
-                  <button
+                  <Box
+                    component="button"
                     type="button"
                     onClick={() => openTable(table.name)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
-                      active
-                        ? "bg-accent text-accent-foreground"
-                        : "text-foreground hover:bg-accent/60",
-                    )}
                     title={`${table.name} · ${table.columnCount} columns`}
+                    sx={{
+                      display: "flex",
+                      width: "100%",
+                      alignItems: "center",
+                      gap: 1,
+                      borderRadius: 1.5,
+                      border: 0,
+                      px: 1,
+                      py: 0.75,
+                      textAlign: "left",
+                      fontSize: 13.5,
+                      cursor: "pointer",
+                      bgcolor: active ? "var(--accent)" : "transparent",
+                      color: active ? "var(--accent-foreground)" : "var(--foreground)",
+                      "&:hover": {
+                        bgcolor: active ? "var(--accent)" : "rgba(255,255,255,0.05)",
+                      },
+                    }}
                   >
-                    <Table2 className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">{table.name}</span>
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                    <Table2 style={{ width: 14, height: 14, flexShrink: 0, color: "var(--muted-foreground)" }} />
+                    <Box
+                      component="span"
+                      sx={{
+                        minWidth: 0,
+                        flex: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {table.name}
+                    </Box>
+                    <Box
+                      component="span"
+                      sx={{
+                        flexShrink: 0,
+                        fontSize: 11,
+                        fontVariantNumeric: "tabular-nums",
+                        color: "var(--muted-foreground)",
+                      }}
+                    >
                       {table.columnCount}
-                    </span>
-                  </button>
+                    </Box>
+                  </Box>
                 </li>
               );
             })}
-          </ul>
+          </Stack>
         )}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }

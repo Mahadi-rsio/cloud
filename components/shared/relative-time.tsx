@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Box from "@mui/material/Box";
+import type { SxProps, Theme } from "@mui/material/styles";
 import { formatRelativeTime } from "@/components/apps/format";
 
 /** Renders a relative time that re-renders every 30 seconds so it stays fresh. */
 export function RelativeTime({
   value,
   date,
-  className,
+  sx,
 }: {
   value?: string | null | undefined;
   date?: string | null | undefined;
-  className?: string;
+  sx?: SxProps<Theme>;
 }) {
   const [now, setNow] = useState(() => new Date());
   const actualValue = value ?? date;
@@ -22,8 +24,12 @@ export function RelativeTime({
   }, []);
 
   return (
-    <span className={className} title={actualValue ? new Date(actualValue).toLocaleString() : undefined}>
+    <Box
+      component="span"
+      sx={sx}
+      title={actualValue ? new Date(actualValue).toLocaleString() : undefined}
+    >
       {formatRelativeTime(actualValue, now)}
-    </span>
+    </Box>
   );
 }

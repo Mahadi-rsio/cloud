@@ -1,43 +1,66 @@
 "use client";
 
 import * as React from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
-import Box from "@mui/material/Box";
-import { cn } from "cn";
-import { Button } from "@/components/ui/button";
+import type { SxProps, Theme } from "@mui/material/styles";
 
 export function EmptyState({
   icon,
   title,
   description,
   action,
-  className,
+  sx,
 }: {
   icon?: React.ReactNode;
   title: string;
   description?: React.ReactNode;
   action?: React.ReactNode;
-  className?: string;
+  sx?: SxProps<Theme>;
 }) {
   return (
     <Paper
       variant="outlined"
-      className={cn(
-        "flex flex-col items-center justify-center gap-3.5 rounded-2xl border-dashed border-border/80 px-6 py-12 sm:py-16 text-center bg-card/40 transition-colors",
-        className
-      )}
-      sx={{
-        backgroundImage:
-          "radial-gradient(ellipse at center, rgba(56, 189, 248, 0.03), transparent 70%)",
-      }}
+      sx={[
+        {
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1.75,
+          borderRadius: "16px",
+          borderStyle: "dashed",
+          borderColor: "var(--border)",
+          px: 3,
+          py: { xs: 6, sm: 8 },
+          textAlign: "center",
+          backgroundColor: "var(--card)",
+          backgroundImage:
+            "radial-gradient(ellipse at center, rgba(56, 189, 248, 0.03), transparent 70%)",
+        },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
     >
       {icon && (
-        <Box className="inline-flex size-12 items-center justify-center rounded-xl bg-muted/70 text-primary border border-border/60 shadow-xs">
+        <Box
+          sx={{
+            display: "inline-flex",
+            width: 48,
+            height: 48,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "12px",
+            backgroundColor: "var(--muted)",
+            color: "var(--primary)",
+            border: "1px solid var(--border)",
+          }}
+        >
           {icon}
         </Box>
       )}
-      <Box className="flex flex-col gap-1 max-w-md">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, maxWidth: "28rem" }}>
         <Typography
           variant="h6"
           component="h3"
@@ -54,7 +77,7 @@ export function EmptyState({
           </Typography>
         )}
       </Box>
-      {action && <Box className="mt-2">{action}</Box>}
+      {action && <Box sx={{ mt: 1 }}>{action}</Box>}
     </Paper>
   );
 }
@@ -63,22 +86,34 @@ export function ErrorState({
   title = "Something went wrong",
   description,
   onRetry,
-  className,
+  sx,
 }: {
   title?: string;
   description?: React.ReactNode;
   onRetry?: () => void;
-  className?: string;
+  sx?: SxProps<Theme>;
 }) {
   return (
     <Paper
       variant="outlined"
-      className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-2xl border-destructive/30 bg-destructive/5 px-6 py-12 sm:py-14 text-center",
-        className
-      )}
+      sx={[
+        {
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1.5,
+          borderRadius: "16px",
+          borderColor: "rgba(229, 72, 77, 0.35)",
+          backgroundColor: "rgba(229, 72, 77, 0.06)",
+          px: 3,
+          py: { xs: 6, sm: 7 },
+          textAlign: "center",
+        },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
     >
-      <Box className="flex flex-col gap-1 max-w-md">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, maxWidth: "28rem" }}>
         <Typography
           variant="h6"
           component="h3"
@@ -96,12 +131,7 @@ export function ErrorState({
         )}
       </Box>
       {onRetry && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onRetry}
-          className="mt-1"
-        >
+        <Button type="button" variant="outlined" size="small" onClick={onRetry} sx={{ mt: 0.5 }}>
           Try again
         </Button>
       )}

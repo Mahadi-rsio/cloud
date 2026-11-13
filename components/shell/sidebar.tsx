@@ -11,6 +11,7 @@ import ListItemText from "@mui/material/ListItemText";
 import Tooltip from "@mui/material/Tooltip";
 import Divider from "@mui/material/Divider";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import IconButton from "@mui/material/IconButton";
 import {
@@ -29,7 +30,6 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useShellStore } from "@/stores/shell-store";
-import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/shell/wordmark";
 import { UserAvatar } from "@/components/shell/user-avatar";
 
@@ -100,15 +100,19 @@ function NavItem({
             color: active ? "var(--primary)" : "inherit",
           }}
         >
-          <Icon className="size-4.5 shrink-0" />
+          <Icon size={18} style={{ flexShrink: 0 }} />
         </ListItemIcon>
         {!collapsed && (
           <ListItemText
             primary={label}
-            primaryTypographyProps={{
-              fontSize: "0.875rem",
-              fontWeight: active ? 600 : 500,
-              noWrap: true,
+            slotProps={{
+              primary: {
+                noWrap: true,
+                sx: {
+                  fontSize: "0.875rem",
+                  fontWeight: active ? 600 : 500,
+                },
+              },
             }}
           />
         )}
@@ -230,23 +234,37 @@ export function Sidebar({
           )}
         </Box>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size={collapsed ? "icon" : "sm"}
-          className={collapsed ? "" : "w-full justify-start px-2.5 text-muted-foreground"}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={() => shell.setRailCollapsed(!collapsed)}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="size-4" />
-          ) : (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-              <PanelLeftClose className="size-4" />
-              <span>Collapse sidebar</span>
-            </Box>
-          )}
-        </Button>
+        {collapsed ? (
+          <IconButton
+            size="small"
+            aria-label="Expand sidebar"
+            onClick={() => shell.setRailCollapsed(false)}
+            sx={{ color: "var(--muted-foreground)", borderRadius: "8px" }}
+          >
+            <PanelLeftOpen size={16} />
+          </IconButton>
+        ) : (
+          <Button
+            type="button"
+            variant="text"
+            size="small"
+            fullWidth
+            aria-label="Collapse sidebar"
+            onClick={() => shell.setRailCollapsed(true)}
+            startIcon={<PanelLeftClose size={16} />}
+            sx={{
+              justifyContent: "flex-start",
+              px: 1.25,
+              color: "var(--muted-foreground)",
+              "&:hover": {
+                backgroundColor: "var(--accent)",
+                color: "var(--foreground)",
+              },
+            }}
+          >
+            Collapse sidebar
+          </Button>
+        )}
       </Box>
     </Box>
   );
@@ -272,18 +290,18 @@ export function MobileSidebar({
             backdropFilter: "blur(4px)",
           },
         },
-      }}
-      PaperProps={{
-        sx: {
-          width: { xs: 280, sm: 300 },
-          maxWidth: "85vw",
-          backgroundColor: "var(--background)",
-          color: "var(--foreground)",
-          borderRight: "1px solid var(--border)",
-          backgroundImage: "none",
-          display: "flex",
-          flexDirection: "column",
-          boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.4)",
+        paper: {
+          sx: {
+            width: { xs: 280, sm: 300 },
+            maxWidth: "85vw",
+            backgroundColor: "var(--background)",
+            color: "var(--foreground)",
+            borderRight: "1px solid var(--border)",
+            backgroundImage: "none",
+            display: "flex",
+            flexDirection: "column",
+            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.4)",
+          },
         },
       }}
     >
@@ -311,7 +329,7 @@ export function MobileSidebar({
             },
           }}
         >
-          <X className="size-4.5" />
+          <X size={18} />
         </IconButton>
       </Box>
 
@@ -386,7 +404,7 @@ export function MobileSidebar({
             },
           }}
         >
-          <LogOut className="size-4.5" />
+          <LogOut size={18} />
         </IconButton>
       </Box>
     </Drawer>

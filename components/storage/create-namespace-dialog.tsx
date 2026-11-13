@@ -1,18 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { FolderPlus, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import { FolderPlus } from "lucide-react";
 import { createStorageNamespace, type StorageNamespace } from "@/lib/storage-client";
 import { extractErrorMessage } from "@/lib/errors";
 
@@ -74,67 +74,77 @@ export function CreateNamespaceDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <div className="mb-2 inline-flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <FolderPlus className="size-5" />
-            </div>
-            <DialogTitle>Create Storage</DialogTitle>
-            <DialogDescription>
-              Create an isolated storage bucket namespace for your files, assets, or backups.
-            </DialogDescription>
-          </DialogHeader>
+    <Dialog
+      open={open}
+      onClose={() => !isSubmitting && onOpenChange(false)}
+      fullWidth
+      maxWidth="xs"
+    >
+      <Box component="form" onSubmit={handleSubmit}>
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box
+            sx={{
+              mb: 1.5,
+              display: "inline-flex",
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              color: "var(--primary)",
+            }}
+          >
+            <FolderPlus size={20} />
+          </Box>
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+            Create Storage
+          </Typography>
+        </DialogTitle>
 
-          <div className="flex flex-col gap-4 py-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="namespace-name">Storage Name</Label>
-              <Input
-                id="namespace-name"
-                placeholder="e.g. assets, user-uploads, backups"
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value.toLowerCase());
-                  if (error) setError(null);
-                }}
-                disabled={isSubmitting}
-                autoFocus
-              />
-              <p className="text-xs text-muted-foreground">
-                Lowercase letters, numbers, hyphens, and dots (3-63 characters).
-              </p>
-            </div>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <DialogContentText>
+            Create an isolated storage bucket namespace for your files, assets, or backups.
+          </DialogContentText>
 
-            {error && (
-              <div className="rounded-lg bg-destructive/10 p-3 text-sm font-medium text-destructive">
-                {error}
-              </div>
-            )}
-          </div>
+          <TextField
+            id="namespace-name"
+            label="Storage Name"
+            size="small"
+            fullWidth
+            placeholder="e.g. assets, user-uploads, backups"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value.toLowerCase());
+              if (error) setError(null);
+            }}
+            disabled={isSubmitting}
+            autoFocus
+            helperText="Lowercase letters, numbers, hyphens, and dots (3-63 characters)."
+          />
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting || !name.trim()}>
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                "Create Storage"
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+          {error && <Alert severity="error">{error}</Alert>}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            type="button"
+            variant="outlined"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={isSubmitting || !name.trim()}
+            startIcon={isSubmitting ? <CircularProgress size={14} color="inherit" /> : undefined}
+          >
+            {isSubmitting ? "Creating..." : "Create Storage"}
+          </Button>
+        </DialogActions>
+      </Box>
     </Dialog>
   );
 }

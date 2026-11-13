@@ -1,22 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Box from "@mui/material/Box";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
+import type { SxProps, Theme } from "@mui/material/styles";
 import { Check, Copy } from "lucide-react";
-import { cn } from "cn";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** Monospace, truncated value with a copy button. Used for machine strings
  * (URLs, IPs, IDs, image names). */
 export function CopyField({
   value,
-  className,
+  sx,
   display,
   label,
 }: {
   value: string;
   display?: string;
-  className?: string;
+  sx?: SxProps<Theme>;
   label?: string;
 }) {
   const [copied, setCopied] = useState(false);
@@ -47,28 +49,51 @@ export function CopyField({
   };
 
   return (
-    <span className={cn("group inline-flex min-w-0 items-center gap-1.5", className)}>
-      <span
+    <Box
+      component="span"
+      sx={[
+        {
+          display: "inline-flex",
+          minWidth: 0,
+          alignItems: "center",
+          gap: 0.75,
+        },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
+    >
+      <Typography
+        component="span"
         title={value}
-        className="min-w-0 flex-1 truncate font-mono text-sm text-foreground"
+        noWrap
+        sx={{
+          minWidth: 0,
+          flex: 1,
+          fontFamily: "var(--font-mono)",
+          fontSize: "0.875rem",
+          color: "var(--foreground)",
+        }}
       >
         {display ?? value}
-      </span>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label={label ?? `Copy ${value}`}
-            onClick={() => void copy()}
-          >
-            {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{copied ? "Copied" : "Copy"}</TooltipContent>
+      </Typography>
+      <Tooltip title={copied ? "Copied" : "Copy"} arrow>
+        <IconButton
+          type="button"
+          size="small"
+          aria-label={label ?? `Copy ${value}`}
+          onClick={() => void copy()}
+          sx={{
+            width: 24,
+            height: 24,
+            flexShrink: 0,
+            color: copied ? "var(--success)" : "var(--muted-foreground)",
+            "&:hover": {
+              color: copied ? "var(--success)" : "var(--foreground)",
+            },
+          }}
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </IconButton>
       </Tooltip>
-    </span>
+    </Box>
   );
 }

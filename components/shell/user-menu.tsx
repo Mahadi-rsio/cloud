@@ -55,7 +55,16 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
         }}
       >
         <UserAvatar name={user.name} />
-        <ChevronDown className="hidden size-3.5 shrink-0 text-muted-foreground sm:block" />
+        <Box
+          component="span"
+          sx={{
+            display: { xs: "none", sm: "inline-flex" },
+            color: "var(--muted-foreground)",
+            flexShrink: 0,
+          }}
+        >
+          <ChevronDown size={14} />
+        </Box>
       </ButtonBase>
 
       <Menu
@@ -138,7 +147,7 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
           }}
         >
           <ListItemIcon sx={{ minWidth: 32, color: "var(--muted-foreground)" }}>
-            <CreditCard className="size-4" />
+            <CreditCard size={16} />
           </ListItemIcon>
           Billing
         </MenuItem>
@@ -150,7 +159,7 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
           }}
         >
           <ListItemIcon sx={{ minWidth: 32, color: "var(--muted-foreground)" }}>
-            <Settings className="size-4" />
+            <Settings size={16} />
           </ListItemIcon>
           Settings
         </MenuItem>
@@ -172,7 +181,7 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
           }}
         >
           <ListItemIcon sx={{ minWidth: 32, color: "inherit" }}>
-            <LogOut className="size-4" />
+            <LogOut size={16} />
           </ListItemIcon>
           Log out
         </MenuItem>

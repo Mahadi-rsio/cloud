@@ -85,12 +85,12 @@ graph TD
 | Layer | Technologies |
 | --- | --- |
 | **Control Plane** | Next.js 16 (React 19), [Vinext](https://github.com/cloudflare/vinext) on Cloudflare Workers, TypeScript |
-| **Styling & UI** | Tailwind CSS v4, Radix UI primitives, shadcn/ui, Lucide icons |
+| **Styling & UI** | Material UI (MUI v9) with Emotion, Lucide icons |
 | **Client State & Cache** | TanStack Query v5, Zustand v5 |
 | **Authentication** | [Better Auth](https://www.better-auth.com/) with email/password, session management, and `@better-auth/api-key` plugin for programmatic API access |
 | **Object Storage** | Cloudflare R2 (`cloud-storage` bucket) for multi-tenant file storage; control-plane metadata in Neon (`storage_*` tables) |
 | **Control Plane Database** | Neon Serverless PostgreSQL with Drizzle ORM (`drizzle-orm/neon-http`, `drizzle-kit`) |
-| **Tenant Database Service** | libSQL Server (`sqld` in namespace mode) on Fly.io with encrypted persistent volume |
+| **Tenant Database Service** | Multi-tenant SQLite/libSQL Server (`sqld` in namespace mode) on Fly.io with `/databases` dashboard & `/admin/db` Studio UI |
 | **Queues & Rate Limiting** | Cloudflare Queues (`build-jobs`, `auth-jobs`), Upstash Redis |
 | **Project Discovery** | `@vercel/frameworks`, `@vercel/fs-detectors`, custom deterministic polyglot scanners |
 | **Image Builder** | Node 22, BuildKit v0.17+, Railpack v0.43+, FUSE overlayfs, Fly.io Machine |
@@ -102,35 +102,46 @@ graph TD
 
 ```text
 ├── app/                          # Next.js App Router (pages and API routes)
-│   ├── (app)/                    # Authenticated dashboard views (apps, deployments, settings)
-│   ├── (auth)/                   # Authentication pages (login, register)
-│   └── api/                      # Public & internal API routes (/api/v1/deployments, /api/auth)
+│   ├── (app)/                    # Authenticated dashboard views (apps, databases, deployments, storage, settings)
+│   ├── (auth)/                   # Authentication page (login / sign-up)
+│   ├── admin/db/                 # Embedded SQLite/libSQL Studio UI
+│   └── api/                      # Public & internal API routes (/api/v1/*, /api/auth, /api/databases, /api/studio)
 ├── builder/                      # Dedicated build worker service
 │   ├── Dockerfile                # Builder container with BuildKit & Railpack
 │   ├── entrypoint.sh             # BuildKit daemon launcher & overlay setup
 │   └── server.mjs                # Builder HTTP server (/discover, /build, /health, /ready)
 ├── components/                   # React components
 │   ├── apps/                     # Application creation and management UI
+│   ├── databases/                # SQLite/libSQL database provisioning and connection UI
 │   ├── deployments/              # Deployment detail, log terminal viewer
+│   ├── settings/                 # User account settings UI
+│   ├── shared/                   # Shared MUI display and feedback components
 │   ├── shell/                    # Dashboard layout, sidebar, app bar
-│   └── ui/                       # shadcn/ui design primitives
+│   ├── storage/                  # Object storage explorer, uploads, API key management
+│   ├── studio/                   # SQLite/libSQL Studio data grid & SQL editor
+│   └── theme/                    # Light/dark theme toggle & MUI theme provider
 ├── databases/                    # Multi-tenant libSQL (sqld) database service
 │   ├── fly.toml                  # Dual-port Fly.io manifest (Data 443, Admin 8443)
 │   ├── manage.js                 # Zero-dependency tenant lifecycle & token CLI
 │   ├── docker-compose.yml        # Local multi-tenant development environment
 │   └── examples/                 # Polyglot ORM examples (Node, Drizzle, Kysely, Python, Go)
-├── drizzle/                      # Database migration SQL files
+├── drizzle/                      # Database migration SQL files (0000–0009)
 │   ├── 0000_luxuriant_toad.sql
 │   ├── 0001_add_applications_and_machines.sql
 │   ├── 0002_add_deployments_and_deployment_logs.sql
 │   ├── 0003_acoustic_kate_bishop.sql
 │   ├── 0004_open_prism.sql        # Better Auth apikey table
-│   └── 0005_brief_trish_tilby.sql # Storage control-plane tables (storage_*)
+│   ├── 0005_brief_trish_tilby.sql # Storage control-plane tables (storage_*)
+│   ├── 0006_dazzling_jubilee.sql
+│   ├── 0007_add_databases_table.sql
+│   ├── 0008_right_silver_fox.sql
+│   └── 0009_freezing_moondragon.sql
 ├── entrypoints/                  # Cloudflare Worker entrypoint and queue consumer
 │   └── worker.ts
 ├── lib/                          # Core backend libraries
 │   ├── auth/                     # Better Auth configuration (+ apiKey plugin)
 │   ├── build/                    # Build strategy, builder client, Railpack plan rewriting
+│   ├── databases/                # Multi-tenant libSQL control-plane & tenant clients
 │   ├── db/                       # Drizzle schema definitions (auth, product, storage schemas)
 │   ├── fly/                      # Fly.io Machines API client
 │   ├── project-discovery/        # Deterministic project discovery engine
@@ -143,7 +154,7 @@ graph TD
 │   │   ├── rate-limit-headers.ts #   Standard rate-limit response headers helper
 │   │   └── validators.ts         #   Zod schemas for storage API requests
 │   └── validators/               # Zod validation schemas
-├── tests/                        # Comprehensive test suite (17 suites, 97+ unit & integration tests)
+├── tests/                        # Vitest unit & integration test suites (14 files)
 ├── cloudflare.config.ts          # Cloudflare Worker bindings and queue configurations
 ├── drizzle.config.ts             # Drizzle Kit configuration
 └── fly.toml                      # Fly.io builder machine deployment manifest
@@ -233,7 +244,7 @@ GITHUB_API_TOKEN=ghp_optional_token
 
 ### 4. Database Provisioning & Migrations
 
-All tables are defined in [`lib/db/schema.ts`](file:///workspaces/cloud/lib/db/schema.ts) (Better Auth — `user`, `account`, `apikey`), [`lib/db/product-schema.ts`](file:///workspaces/cloud/lib/db/product-schema.ts) (applications, machines, deployments, logs), and [`lib/storage/schema.ts`](file:///workspaces/cloud/lib/storage/schema.ts) (storage control-plane: `storage_tenants`, `storage_projects`, `storage_api_keys`, `storage_usage_daily`, `storage_usage_events`, `storage_audit_log`).
+All tables are defined in [`lib/db/schema.ts`](file:///workspaces/cloud/lib/db/schema.ts) (Better Auth — `user`, `account`, `apikey`), [`lib/db/product-schema.ts`](file:///workspaces/cloud/lib/db/product-schema.ts) (applications, machines, deployments, deployment logs, databases), and [`lib/storage/schema.ts`](file:///workspaces/cloud/lib/storage/schema.ts) (storage control-plane: `storage_tenants`, `storage_projects`, `storage_api_keys`, `storage_usage_daily`, `storage_usage_events`, `storage_audit_log`).
 
 Run migrations to sync your Neon PostgreSQL database:
 
@@ -352,17 +363,17 @@ The control plane deploys as a Cloudflare Worker using [`@vinext/cloudflare`](ht
 5. **Build & Deploy**:
    ```bash
    pnpm build
-   pnpm deploy
+   pnpm run deploy
    ```
 
 ---
 
 ### 8. Testing & Verification
 
-Run the comprehensive unit and integration test suite (17 suites, 97 tests):
+Run the Vitest unit and integration test suite:
 
 ```bash
-node --experimental-transform-types --import ./tests/register.js --test tests/*.test.ts
+pnpm test
 ```
 
 Test coverage includes:

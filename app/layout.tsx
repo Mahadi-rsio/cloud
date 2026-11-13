@@ -36,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`dark ${hanken.variable} ${bengali.variable} ${jetbrains.variable} h-full antialiased`}
+      className={`dark ${hanken.variable} ${bengali.variable} ${jetbrains.variable}`}
     >
       <head>
         <script
@@ -46,7 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body>
         <Providers>{children}</Providers>
       </body>
     </html>

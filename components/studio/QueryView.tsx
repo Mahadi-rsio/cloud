@@ -11,6 +11,12 @@ import {
   Terminal,
   Wand2,
 } from "lucide-react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
+import Typography from "@mui/material/Typography";
 import type { StudioQueryResult } from "@/lib/studio/types";
 import type { StudioTab } from "@/stores/studio-store";
 import { useStudioStore } from "@/stores/studio-store";
@@ -18,8 +24,6 @@ import { studioApi } from "@/lib/studio-api";
 import { SqlEditor } from "@/components/studio/SqlEditor";
 import { DataGrid } from "@/components/studio/DataGrid";
 import { toCsv } from "@/components/studio/format";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 
 export function QueryView({ tab }: { tab: StudioTab }) {
   const queryClient = useQueryClient();
@@ -82,64 +86,78 @@ export function QueryView({ tab }: { tab: StudioTab }) {
   const totalRows = result?.rows.length ?? 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <Box sx={{ display: "flex", height: "100%", minHeight: 0, flexDirection: "column" }}>
       {/* Toolbar */}
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
+      <Box
+        sx={{
+          display: "flex",
+          height: 40,
+          flexShrink: 0,
+          alignItems: "center",
+          gap: 1,
+          borderBottom: "1px solid var(--border)",
+          px: 1.5,
+        }}
+      >
         <Button
           type="button"
-          size="sm"
-          className="h-7 gap-1.5 px-3"
+          variant="contained"
+          size="small"
           onClick={() => handleRun(sql)}
           disabled={mutation.isPending}
+          startIcon={<Play style={{ width: 14, height: 14 }} />}
+          sx={{ height: 28, px: 1.5, fontSize: 12 }}
         >
-          <Play className="size-3.5" />
           {mutation.isPending ? "Running…" : "Run"}
         </Button>
         <Button
           type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1.5 px-3"
+          variant="outlined"
+          size="small"
           onClick={handleFormat}
           title="Format SQL"
+          startIcon={<Wand2 style={{ width: 14, height: 14 }} />}
+          sx={{ height: 28, px: 1.5, fontSize: 12 }}
         >
-          <Wand2 className="size-3.5" />
           Format
         </Button>
 
-        <label className="ml-2 flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
-          <Switch
-            checked={allowWrite}
-            onCheckedChange={setAllowWrite}
-            className="scale-90"
-          />
-          <span className="flex items-center gap-1">
-            Allow writes
-            {allowWrite && (
-              <ShieldAlert className="size-3.5 text-amber-500" />
-            )}
-          </span>
-        </label>
+        <FormControlLabel
+          sx={{ ml: 1, "& .MuiFormControlLabel-label": { fontSize: 12, fontWeight: 500, color: "var(--muted-foreground)" } }}
+          control={
+            <Switch
+              size="small"
+              checked={allowWrite}
+              onChange={(e) => setAllowWrite(e.target.checked)}
+            />
+          }
+          label={
+            <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+              <span>Allow writes</span>
+              {allowWrite && <ShieldAlert style={{ width: 14, height: 14, color: "#f59e0b" }} />}
+            </Stack>
+          }
+        />
 
-        <div className="flex-1" />
+        <Box sx={{ flex: 1 }} />
 
         <Button
           type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 px-2"
+          variant="text"
+          size="small"
           onClick={() => setHistoryOpen((open) => !open)}
           title="Query history"
+          startIcon={<History style={{ width: 14, height: 14 }} />}
+          sx={{ height: 28, px: 1, fontSize: 12, color: "var(--foreground)" }}
         >
-          <History className="size-3.5" />
           History
         </Button>
-      </div>
+      </Box>
 
       {/* Editor */}
-      <div className="h-[40%] min-h-[160px] shrink-0 border-b">
+      <Box sx={{ height: "40%", minHeight: 160, flexShrink: 0, borderBottom: "1px solid var(--border)" }}>
         <SqlEditor value={sql} onChange={(next) => setSql(tab.id, next)} onRun={handleRun} />
-      </div>
+      </Box>
 
       {/* History panel */}
       {historyOpen && (
@@ -158,59 +176,105 @@ export function QueryView({ tab }: { tab: StudioTab }) {
       )}
 
       {/* Results */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <Box sx={{ display: "flex", minHeight: 0, flex: 1, flexDirection: "column" }}>
         {result && (
-          <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-2">
-              {totalRows} {totalRows === 1 ? "row" : "rows"}
-              <span className="tabular-nums">· {result.durationMs} ms</span>
+          <Box
+            sx={{
+              display: "flex",
+              height: 36,
+              flexShrink: 0,
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderBottom: "1px solid var(--border)",
+              px: 1.5,
+              fontSize: 12,
+              color: "var(--muted-foreground)",
+            }}
+          >
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              <span>
+                {totalRows} {totalRows === 1 ? "row" : "rows"}
+              </span>
+              <Box component="span" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                · {result.durationMs} ms
+              </Box>
               {result.rowsAffected != null && (
-                <span className="tabular-nums">· {result.rowsAffected} affected</span>
+                <Box component="span" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                  · {result.rowsAffected} affected
+                </Box>
               )}
               {result.truncated && (
-                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-600">
+                <Box
+                  component="span"
+                  sx={{
+                    borderRadius: 1,
+                    bgcolor: "rgba(245,158,11,0.15)",
+                    px: 0.75,
+                    py: 0.25,
+                    fontWeight: 500,
+                    color: "#d97706",
+                  }}
+                >
                   Truncated to 1000 rows
-                </span>
+                </Box>
               )}
-            </span>
+            </Stack>
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="h-6 gap-1.5 px-2"
+              variant="text"
+              size="small"
               onClick={handleExport}
               disabled={totalRows === 0}
+              startIcon={<Download style={{ width: 14, height: 14 }} />}
+              sx={{ height: 24, px: 1, fontSize: 12, color: "var(--foreground)" }}
             >
-              <Download className="size-3.5" />
               Export CSV
             </Button>
-          </div>
+          </Box>
         )}
 
         {error ? (
-          <div className="m-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <Box
+            sx={{
+              m: 1.5,
+              borderRadius: 1.5,
+              border: "1px solid rgba(239,68,68,0.3)",
+              bgcolor: "rgba(239,68,68,0.06)",
+              p: 1.5,
+              fontSize: 13.5,
+              color: "var(--destructive)",
+            }}
+          >
             {error}
-          </div>
+          </Box>
         ) : result ? (
-          <div className="min-h-0 flex-1">
+          <Box sx={{ minHeight: 0, flex: 1 }}>
             <DataGrid
               columns={result.columns}
               rows={result.rows}
               emptyText="Query returned no rows."
             />
-          </div>
+          </Box>
         ) : (
-          <div className="flex flex-1 items-center justify-center p-6">
-            <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-              <Terminal className="size-6 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">
+          <Box
+            sx={{
+              display: "flex",
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              p: 3,
+            }}
+          >
+            <Stack spacing={1} sx={{ alignItems: "center", maxWidth: 360, textAlign: "center" }}>
+              <Terminal style={{ width: 24, height: 24, color: "var(--muted-foreground)", opacity: 0.5 }} />
+              <Typography sx={{ fontSize: 13.5, color: "var(--muted-foreground)" }}>
                 Write a query and press Run (or Ctrl/Cmd + Enter) to see results.
-              </p>
-            </div>
-          </div>
+              </Typography>
+            </Stack>
+          </Box>
         )}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
@@ -226,48 +290,87 @@ function HistoryPanel({
   onClose: () => void;
 }) {
   return (
-    <div className="shrink-0 border-b bg-muted/20">
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <span className="text-xs font-semibold text-muted-foreground">
+    <Box
+      sx={{
+        flexShrink: 0,
+        borderBottom: "1px solid var(--border)",
+        bgcolor: "rgba(255,255,255,0.02)",
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          px: 1.5,
+          py: 0.75,
+        }}
+      >
+        <Typography sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>
           Query history ({items.length})
-        </span>
-        <div className="flex items-center gap-2">
+        </Typography>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
           {items.length > 0 && (
-            <button
+            <Button
               type="button"
+              variant="text"
+              size="small"
               onClick={onClear}
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              sx={{ minWidth: 0, p: 0.25, fontSize: 12, color: "var(--muted-foreground)" }}
             >
               Clear
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             type="button"
+            variant="text"
+            size="small"
             onClick={onClose}
-            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+            sx={{ minWidth: 0, p: 0.25, fontSize: 12, color: "var(--muted-foreground)" }}
           >
             Close
-          </button>
-        </div>
-      </div>
+          </Button>
+        </Stack>
+      </Box>
       {items.length === 0 ? (
-        <p className="px-3 pb-2 text-xs text-muted-foreground">No queries yet.</p>
+        <Typography sx={{ px: 1.5, pb: 1, fontSize: 12, color: "var(--muted-foreground)" }}>
+          No queries yet.
+        </Typography>
       ) : (
-        <ul className="max-h-40 overflow-y-auto pb-1">
+        <Stack component="ul" sx={{ m: 0, p: 0, pb: 0.5, listStyle: "none", maxHeight: 160, overflowY: "auto" }}>
           {items.map((item, index) => (
             <li key={`${index}-${item}`}>
-              <button
+              <Box
+                component="button"
                 type="button"
                 onClick={() => onSelect(item)}
-                className="block w-full truncate px-3 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
                 title={item}
+                sx={{
+                  display: "block",
+                  width: "100%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  border: 0,
+                  bgcolor: "transparent",
+                  px: 1.5,
+                  py: 0.5,
+                  textAlign: "left",
+                  fontSize: 12,
+                  color: "var(--muted-foreground)",
+                  cursor: "pointer",
+                  "&:hover": {
+                    bgcolor: "rgba(255,255,255,0.05)",
+                    color: "var(--foreground)",
+                  },
+                }}
               >
                 {item}
-              </button>
+              </Box>
             </li>
           ))}
-        </ul>
+        </Stack>
       )}
-    </div>
+    </Box>
   );
 }

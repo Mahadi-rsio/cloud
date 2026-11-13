@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Select } from "@/components/ui/select";
+import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import ListSubheader from "@mui/material/ListSubheader";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import type { Application } from "@/lib/applications";
 import {
   DEFAULT_PRESET_ID,
@@ -136,144 +139,170 @@ export function RuntimeFields({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="runtime-image">Docker Image</Label>
-        <Input
-          id="runtime-image"
-          name="image"
-          type="text"
-          placeholder="docker.io/library/nginx:alpine"
-          value={value.image}
-          onChange={(event) => onChange({ ...value, image: event.target.value })}
-        />
-        <p className="text-xs text-muted-foreground">
-          Public Docker Hub or OCI registry container image URL.
-        </p>
-      </div>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <TextField
+        id="runtime-image"
+        name="image"
+        label="Docker Image"
+        type="text"
+        size="small"
+        fullWidth
+        placeholder="docker.io/library/nginx:alpine"
+        value={value.image}
+        onChange={(event) => onChange({ ...value, image: event.target.value })}
+        helperText="Public Docker Hub or OCI registry container image URL."
+      />
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="runtime-preset">Fly Machine Preset</Label>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Typography variant="caption" sx={{ fontWeight: 600 }}>
+            Fly Machine Preset
+          </Typography>
           {activePreset?.tierBadge && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              <Sparkles className="size-3" />
-              {activePreset.tierBadge}
-            </span>
+            <Chip
+              size="small"
+              icon={<Sparkles size={12} />}
+              label={activePreset.tierBadge}
+              sx={{
+                height: 20,
+                fontSize: "0.7rem",
+                backgroundColor: "rgba(56, 189, 248, 0.12)",
+                color: "var(--primary)",
+              }}
+            />
           )}
-        </div>
+        </Box>
 
-        <Select
+        <TextField
           id="runtime-preset"
           name="preset"
+          select
+          size="small"
+          fullWidth
           value={value.presetId}
           onChange={(event) => handlePresetChange(event.target.value)}
         >
-          <optgroup label="Shared CPU (General Purpose / Cost Efficient)">
-            {FLY_MACHINE_PRESETS.filter((p) => p.cpuKind === "shared").map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="Performance CPU (Dedicated Cores)">
-            {FLY_MACHINE_PRESETS.filter((p) => p.cpuKind === "performance").map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </optgroup>
-          <option value="custom">Custom configuration…</option>
-        </Select>
+          <ListSubheader>Shared CPU (General Purpose / Cost Efficient)</ListSubheader>
+          {FLY_MACHINE_PRESETS.filter((p) => p.cpuKind === "shared").map((p) => (
+            <MenuItem key={p.id} value={p.id}>
+              {p.label}
+            </MenuItem>
+          ))}
+          <ListSubheader>Performance CPU (Dedicated Cores)</ListSubheader>
+          {FLY_MACHINE_PRESETS.filter((p) => p.cpuKind === "performance").map((p) => (
+            <MenuItem key={p.id} value={p.id}>
+              {p.label}
+            </MenuItem>
+          ))}
+          <MenuItem value="custom">Custom configuration…</MenuItem>
+        </TextField>
 
-        {activePreset ? (
-          <div className="rounded-lg border bg-muted/40 p-2.5 text-xs text-muted-foreground flex flex-col gap-1.5">
-            <div className="flex items-center gap-4 text-foreground font-medium">
-              <span className="inline-flex items-center gap-1">
-                <Cpu className="size-3.5 text-primary" />
+        {activePreset && (
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 1.25,
+              borderRadius: "8px",
+              backgroundColor: "var(--muted)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 0.75,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: "0.75rem", fontWeight: 500 }}>
+                <Cpu size={14} color="var(--primary)" />
                 {activePreset.cpus} {activePreset.cpuKind === "shared" ? "Shared vCPU" : "Dedicated CPU"}
                 {activePreset.cpus > 1 ? "s" : ""}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <HardDrive className="size-3.5 text-primary" />
+              </Box>
+              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: "0.75rem", fontWeight: 500 }}>
+                <HardDrive size={14} color="var(--primary)" />
                 {activePreset.memoryMb >= 1024
                   ? `${activePreset.memoryMb / 1024} GB RAM`
                   : `${activePreset.memoryMb} MB RAM`}
-              </span>
+              </Box>
               {activePreset.monthlyEstimate && (
-                <span className="ml-auto text-xs text-muted-foreground">
+                <Typography variant="caption" color="text.secondary" sx={{ ml: "auto" }}>
                   {activePreset.monthlyEstimate}
-                </span>
+                </Typography>
               )}
-            </div>
-            <p className="text-muted-foreground/80">{activePreset.description}</p>
-          </div>
-        ) : null}
-      </div>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              {activePreset.description}
+            </Typography>
+          </Paper>
+        )}
+      </Box>
 
       {value.presetId === "custom" && (
-        <div className="grid grid-cols-2 gap-4 rounded-lg border border-dashed p-3">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="runtime-cpus">CPUs</Label>
-            <Input
-              id="runtime-cpus"
-              name="cpus"
-              type="number"
-              min={1}
-              max={16}
-              placeholder="1"
-              value={value.cpus}
-              onChange={(event) => onChange({ ...value, cpus: event.target.value })}
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="runtime-memory">Memory (MB)</Label>
-            <Input
-              id="runtime-memory"
-              name="memory_mb"
-              type="number"
-              min={256}
-              max={32768}
-              step={256}
-              placeholder="256"
-              value={value.memoryMb}
-              onChange={(event) => onChange({ ...value, memoryMb: event.target.value })}
-            />
-          </div>
-        </div>
+        <Paper
+          variant="outlined"
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 2,
+            borderStyle: "dashed",
+            p: 1.5,
+          }}
+        >
+          <TextField
+            id="runtime-cpus"
+            name="cpus"
+            label="CPUs"
+            type="number"
+            size="small"
+            placeholder="1"
+            value={value.cpus}
+            onChange={(event) => onChange({ ...value, cpus: event.target.value })}
+            slotProps={{ htmlInput: { min: 1, max: 16 } }}
+          />
+          <TextField
+            id="runtime-memory"
+            name="memory_mb"
+            label="Memory (MB)"
+            type="number"
+            size="small"
+            placeholder="256"
+            value={value.memoryMb}
+            onChange={(event) => onChange({ ...value, memoryMb: event.target.value })}
+            slotProps={{ htmlInput: { min: 256, max: 32768, step: 256 } }}
+          />
+        </Paper>
       )}
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="runtime-port">Internal Container Port</Label>
-        <Input
-          id="runtime-port"
-          name="internal_port"
-          type="number"
-          min={1}
-          max={65535}
-          placeholder="8080"
-          value={value.internalPort}
-          onChange={(event) =>
-            onChange({ ...value, internalPort: event.target.value })
-          }
-        />
-        <p className="text-xs text-muted-foreground">
-          The internal port your container listens on (e.g. 80 for Nginx, 3000 for Node, 8080 for web).
-        </p>
-      </div>
+      <TextField
+        id="runtime-port"
+        name="internal_port"
+        label="Internal Container Port"
+        type="number"
+        size="small"
+        fullWidth
+        placeholder="8080"
+        value={value.internalPort}
+        onChange={(event) =>
+          onChange({ ...value, internalPort: event.target.value })
+        }
+        slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+        helperText="The internal port your container listens on (e.g. 80 for Nginx, 3000 for Node, 8080 for web)."
+      />
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="runtime-env">Environment variables (JSON format)</Label>
-        <Textarea
-          id="runtime-env"
-          name="env"
-          rows={3}
-          placeholder={'{"NODE_ENV": "production"}'}
-          value={value.envText}
-          onChange={(event) => onChange({ ...value, envText: event.target.value })}
-          className="font-mono text-xs"
-        />
-      </div>
-    </div>
+      <TextField
+        id="runtime-env"
+        name="env"
+        label="Environment variables (JSON format)"
+        multiline
+        rows={3}
+        size="small"
+        fullWidth
+        placeholder={'{"NODE_ENV": "production"}'}
+        value={value.envText}
+        onChange={(event) => onChange({ ...value, envText: event.target.value })}
+        slotProps={{
+          input: {
+            sx: { fontFamily: "var(--font-mono)", fontSize: "0.75rem" },
+          },
+        }}
+      />
+    </Box>
   );
 }

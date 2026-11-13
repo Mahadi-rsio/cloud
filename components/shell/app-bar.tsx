@@ -1,24 +1,21 @@
 "use client";
 
 import * as React from "react";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import MuiAppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import Breadcrumbs from "@mui/material/Breadcrumbs";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import TextField from "@mui/material/TextField";
+import InputAdornment from "@mui/material/InputAdornment";
 import { Menu, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { useShellStore } from "@/stores/shell-store";
 import { ThemeToggleButton } from "@/components/theme/theme-toggle-button";
 import { UserMenu } from "@/components/shell/user-menu";
@@ -41,7 +38,11 @@ function Breadcrumb() {
 
   return (
     <Breadcrumbs
-      separator={<span className="text-muted-foreground text-xs">/</span>}
+      separator={
+        <Typography component="span" sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}>
+          /
+        </Typography>
+      }
       aria-label="breadcrumb"
       sx={{
         display: { xs: "none", md: "flex" },
@@ -76,62 +77,108 @@ function Breadcrumb() {
 }
 
 function CommandSearch() {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="hidden h-9 w-48 lg:w-56 justify-start gap-2 px-3 text-muted-foreground sm:flex border-border/80 bg-background/50 hover:bg-accent/60"
+    <>
+      <Button
+        type="button"
+        variant="outlined"
+        size="small"
+        onClick={() => setOpen(true)}
+        sx={{
+          display: { xs: "none", sm: "flex" },
+          height: 36,
+          width: { sm: 192, lg: 224 },
+          justifyContent: "flex-start",
+          gap: 1,
+          px: 1.5,
+          color: "var(--muted-foreground)",
+          borderColor: "var(--border)",
+          backgroundColor: "transparent",
+          fontWeight: 400,
+          "&:hover": {
+            backgroundColor: "var(--accent)",
+            borderColor: "var(--border)",
+          },
+        }}
+      >
+        <Search size={16} style={{ flexShrink: 0 }} />
+        <Typography
+          component="span"
+          noWrap
+          sx={{ flex: 1, textAlign: "left", fontSize: "0.75rem", fontWeight: 400 }}
         >
-          <Search className="size-4 shrink-0 text-muted-foreground" />
-          <span className="flex-1 truncate text-left text-xs font-normal">
-            Search…
-          </span>
-          <kbd className="pointer-events-none rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            ⌘K
-          </kbd>
-        </Button>
-      </DialogTrigger>
-      <DialogTrigger asChild>
-        <IconButton
-          size="small"
-          className="sm:hidden"
-          aria-label="Search"
+          Search…
+        </Typography>
+        <Box
+          component="kbd"
           sx={{
+            pointerEvents: "none",
+            borderRadius: "4px",
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--muted)",
+            px: 0.75,
+            py: 0.25,
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            lineHeight: 1.2,
             color: "var(--muted-foreground)",
-            borderRadius: "8px",
-            "&:hover": {
-              backgroundColor: "var(--accent)",
-              color: "var(--foreground)",
-            },
           }}
         >
-          <Search className="size-4.5" />
-        </IconButton>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Search</DialogTitle>
-          <DialogDescription>
+          ⌘K
+        </Box>
+      </Button>
+
+      <IconButton
+        size="small"
+        aria-label="Search"
+        onClick={() => setOpen(true)}
+        sx={{
+          display: { xs: "inline-flex", sm: "none" },
+          color: "var(--muted-foreground)",
+          borderRadius: "8px",
+          "&:hover": {
+            backgroundColor: "var(--accent)",
+            color: "var(--foreground)",
+          },
+        }}
+      >
+        <Search size={18} />
+      </IconButton>
+
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ pb: 0.5 }}>Search</DialogTitle>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+          <Typography variant="body2" color="text.secondary">
             Quickly jump to any resource or page across your projects.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex items-center gap-2 rounded-xl border border-input bg-card/60 px-3 py-1.5 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
-          <Input
-            className="border-0 bg-transparent shadow-none dark:bg-transparent h-9 px-1 focus:ring-0"
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
             placeholder="Search apps, databases, storage..."
-            aria-label="Search"
             autoFocus
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search size={16} />
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Tip: You can use the sidebar to quickly navigate between services.
-        </p>
-      </DialogContent>
-    </Dialog>
+          <Typography variant="caption" color="text.secondary">
+            Tip: You can use the sidebar to quickly navigate between services.
+          </Typography>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -171,7 +218,7 @@ export function AppBar({ user }: { user: { name: string; email: string } }) {
             mr: 0.5,
           }}
         >
-          <Menu className="size-5" />
+          <Menu size={20} />
         </IconButton>
 
         <Box sx={{ display: { xs: "flex", md: "none" }, alignItems: "center" }}>

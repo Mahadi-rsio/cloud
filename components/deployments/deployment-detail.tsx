@@ -1,16 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Paper from "@mui/material/Paper";
+import Skeleton from "@mui/material/Skeleton";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import {
   ArrowLeft,
   ExternalLink,
   GitBranch,
-  Loader2,
-  RefreshCw,
   RotateCw,
-  Terminal,
 } from "lucide-react";
 import {
   getDeployment,
@@ -23,8 +28,6 @@ import { CopyField } from "@/components/shared/copy-field";
 import { DataList } from "@/components/shared/data-list";
 import { ErrorState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { DeploymentLogsViewer } from "./deployment-logs-viewer";
 
 const ACTIVE_STATUSES: Deployment["status"][] = [
@@ -40,7 +43,6 @@ export function DeploymentDetailPage({
 }: {
   deploymentId: string;
 }) {
-  const router = useRouter();
   const [deployment, setDeployment] = useState<Deployment | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -78,11 +80,11 @@ export function DeploymentDetailPage({
 
   if (!deployment) {
     return (
-      <div className="flex flex-col gap-4">
-        <Skeleton className="h-9 w-72" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
+      <Stack spacing={2}>
+        <Skeleton variant="rounded" height={36} width={288} />
+        <Skeleton variant="rounded" height={96} />
+        <Skeleton variant="rounded" height={256} />
+      </Stack>
     );
   }
 
@@ -100,81 +102,97 @@ export function DeploymentDetailPage({
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <a
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { sm: "flex-start" },
+          justifyContent: { sm: "space-between" },
+          gap: 2,
+        }}
+      >
+        <Box sx={{ display: "flex", minWidth: 0, flexDirection: "column", gap: 0.5 }}>
+          <Button
+            component={Link}
             href="/apps"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            variant="text"
+            size="small"
+            startIcon={<ArrowLeft size={14} />}
+            sx={{ alignSelf: "flex-start", px: 0, color: "var(--muted-foreground)" }}
           >
-            <ArrowLeft className="size-3.5" />
             Back to Apps
-          </a>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
-            <GitBranch className="size-6 text-muted-foreground" />
-            <span className="font-mono">
+          </Button>
+          <Typography
+            variant="h5"
+            component="h1"
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              fontWeight: 600,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            <GitBranch size={22} color="var(--muted-foreground)" />
+            <Box component="span" sx={{ fontFamily: "var(--font-mono)" }}>
               {deployment.repoOwner}/{deployment.repoName}
-            </span>
-          </h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            <span className="font-mono">{deployment.branch}</span>
+            </Box>
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: "42rem" }}>
+            <Box component="span" sx={{ fontFamily: "var(--font-mono)" }}>
+              {deployment.branch}
+            </Box>
             {deployment.commitSha && (
-              <span className="font-mono"> &middot; #{deployment.commitSha.slice(0, 7)}</span>
+              <Box component="span" sx={{ fontFamily: "var(--font-mono)" }}>
+                {" "}
+                · #{deployment.commitSha.slice(0, 7)}
+              </Box>
             )}
-            <span> &middot; build {deployment.buildNumber}</span>
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <StatusBadge status={deployment.status} className="text-base" />
+            <span> · build {deployment.buildNumber}</span>
+          </Typography>
+        </Box>
+
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", flexShrink: 0 }}>
+          <StatusBadge status={deployment.status} size="medium" />
           {deployment.publicUrl && (
             <Button
               type="button"
-              variant="outline"
-              size="sm"
+              variant="outlined"
+              size="small"
+              startIcon={<ExternalLink size={14} />}
               onClick={() => window.open(deployment.publicUrl ?? "", "_blank", "noopener")}
-              className="gap-1.5 text-xs"
             >
-              <ExternalLink className="size-3.5" />
               Open site
             </Button>
           )}
           {isTerminalDeploymentStatus(deployment.status) && (
             <Button
               type="button"
-              variant="default"
-              size="sm"
+              variant="contained"
+              size="small"
               disabled={isRetrying}
               onClick={() => void handleRetry()}
-              className="gap-1.5 text-xs"
+              startIcon={
+                isRetrying ? (
+                  <CircularProgress size={14} color="inherit" />
+                ) : (
+                  <RotateCw size={14} />
+                )
+              }
             >
-              {isRetrying ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  Retrying…
-                </>
-              ) : (
-                <>
-                  <RotateCw className="size-3.5" />
-                  Retry
-                </>
-              )}
+              {isRetrying ? "Retrying…" : "Retry"}
             </Button>
           )}
-        </div>
-      </div>
+        </Stack>
+      </Box>
 
       {deployment.status === "failed" && deployment.errorMessage && (
-        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
-          {deployment.errorMessage}
-        </div>
+        <Alert severity="error">{deployment.errorMessage}</Alert>
       )}
-      {retryError && (
-        <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
-          {retryError}
-        </div>
-      )}
+      {retryError && <Alert severity="error">{retryError}</Alert>}
 
-      <section className="rounded-xl border bg-card">
+      <Paper variant="outlined" sx={{ borderRadius: "12px", px: 2.5, py: 0.5 }}>
         <DataList
           items={[
             {
@@ -216,14 +234,14 @@ export function DeploymentDetailPage({
             },
           ]}
         />
-      </section>
+      </Paper>
 
       <DeploymentLogsViewer
         deploymentId={deployment.id}
         initialStatus={deployment.status}
         buildNumber={deployment.buildNumber}
       />
-    </div>
+    </Box>
   );
 }
 

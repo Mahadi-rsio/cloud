@@ -1,33 +1,42 @@
 "use client";
 
 import * as React from "react";
+import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
-import { cn } from "cn";
+import type { SxProps, Theme } from "@mui/material/styles";
 
 export type Tone = "success" | "warning" | "danger" | "muted" | "info";
 
-const TONE_CLASSES: Record<Tone, { chip: string; dot: string; pulse?: boolean }> = {
+const TONE_STYLES: Record<
+  Tone,
+  { color: string; bg: string; border: string; pulse?: boolean }
+> = {
   success: {
-    chip: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30",
-    dot: "bg-emerald-500 dark:bg-emerald-400",
+    color: "#3dd68c",
+    bg: "rgba(61, 214, 140, 0.12)",
+    border: "rgba(61, 214, 140, 0.3)",
   },
   warning: {
-    chip: "bg-amber-500/10 text-amber-600 border border-amber-500/25 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30",
-    dot: "bg-amber-500 dark:bg-amber-400",
+    color: "#f5a524",
+    bg: "rgba(245, 165, 36, 0.12)",
+    border: "rgba(245, 165, 36, 0.3)",
     pulse: true,
   },
   danger: {
-    chip: "bg-rose-500/10 text-rose-600 border border-rose-500/25 dark:bg-rose-500/15 dark:text-rose-400 dark:border-rose-500/30",
-    dot: "bg-rose-500 dark:bg-rose-400",
+    color: "#e5484d",
+    bg: "rgba(229, 72, 77, 0.12)",
+    border: "rgba(229, 72, 77, 0.3)",
   },
   info: {
-    chip: "bg-sky-500/10 text-sky-600 border border-sky-500/25 dark:bg-sky-500/15 dark:text-sky-400 dark:border-sky-500/30",
-    dot: "bg-sky-500 dark:bg-sky-400",
+    color: "#38bdf8",
+    bg: "rgba(56, 189, 248, 0.12)",
+    border: "rgba(56, 189, 248, 0.3)",
     pulse: true,
   },
   muted: {
-    chip: "bg-muted text-muted-foreground border border-border",
-    dot: "bg-muted-foreground",
+    color: "var(--muted-foreground)",
+    bg: "var(--muted)",
+    border: "var(--border)",
   },
 };
 
@@ -66,49 +75,64 @@ export function statusLabel(status: string): string {
   return status.replace(/_/g, " ");
 }
 
-/** Status is communicated with a dot AND text, enhanced with an MUI-styled pill chip. */
+/** Status is communicated with a dot AND text, using an MUI pill chip. */
 export function StatusBadge({
   status,
-  className,
+  sx,
   size = "small",
 }: {
   status: string;
-  className?: string;
+  sx?: SxProps<Theme>;
   size?: "small" | "medium";
 }) {
   const tone = statusTone(status);
-  const styles = TONE_CLASSES[tone];
+  const style = TONE_STYLES[tone];
 
   return (
     <Chip
       size={size}
       variant="outlined"
       icon={
-        <span
-          className={cn(
-            "size-1.5 rounded-full ml-1.5 shrink-0",
-            styles.dot,
-            styles.pulse && "animate-pulse"
-          )}
+        <Box
+          component="span"
+          sx={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            ml: 0.75,
+            flexShrink: 0,
+            backgroundColor: style.color,
+            ...(style.pulse ? { animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite" } : {}),
+          }}
         />
       }
       label={
-        <span className="capitalize font-semibold tracking-wide">
+        <Box
+          component="span"
+          sx={{
+            textTransform: "capitalize",
+            fontWeight: 600,
+            letterSpacing: "0.02em",
+          }}
+        >
           {statusLabel(status)}
-        </span>
+        </Box>
       }
-      className={cn(
-        "h-6 px-1 text-xs font-medium rounded-full transition-colors",
-        styles.chip,
-        className
-      )}
-      sx={{
-        borderColor: "inherit",
-        "& .MuiChip-label": {
-          paddingLeft: "6px",
-          paddingRight: "8px",
+      sx={[
+        {
+          height: size === "small" ? 22 : 26,
+          fontSize: "0.7rem",
+          borderRadius: "9999px",
+          color: style.color,
+          backgroundColor: style.bg,
+          borderColor: style.border,
+          "& .MuiChip-icon": {
+            marginLeft: "6px",
+            marginRight: "-4px",
+          },
         },
-      }}
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
     />
   );
 }

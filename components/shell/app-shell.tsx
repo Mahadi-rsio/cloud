@@ -5,7 +5,6 @@ import Box from "@mui/material/Box";
 import { Sidebar, MobileSidebar } from "@/components/shell/sidebar";
 import { AppBar } from "@/components/shell/app-bar";
 import { useShellStore } from "@/stores/shell-store";
-import { TooltipProvider } from "@/components/ui/tooltip";
 
 export interface ShellUser {
   name: string;
@@ -20,45 +19,43 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   return (
-    <TooltipProvider delayDuration={300}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        backgroundColor: "var(--background)",
+        color: "var(--foreground)",
+      }}
+    >
+      <DesktopRail user={user} />
+      <MobileSidebar user={user} />
       <Box
+        component="div"
         sx={{
           display: "flex",
-          minHeight: "100vh",
-          backgroundColor: "var(--background)",
-          color: "var(--foreground)",
+          minHeight: 0,
+          minWidth: 0,
+          flex: "1 1 0%",
+          flexDirection: "column",
         }}
       >
-        <DesktopRail user={user} />
-        <MobileSidebar user={user} />
+        <AppBar user={user} />
         <Box
-          component="div"
+          component="main"
           sx={{
             display: "flex",
             minHeight: 0,
-            minWidth: 0,
             flex: "1 1 0%",
             flexDirection: "column",
+            overflowY: "auto",
+            px: { xs: 2, sm: 3.5, md: 5 },
+            py: { xs: 3, sm: 4, md: 5 },
           }}
         >
-          <AppBar user={user} />
-          <Box
-            component="main"
-            sx={{
-              display: "flex",
-              minHeight: 0,
-              flex: "1 1 0%",
-              flexDirection: "column",
-              overflowY: "auto",
-              px: { xs: 2, sm: 3.5, md: 5 },
-              py: { xs: 3, sm: 4, md: 5 },
-            }}
-          >
-            {children}
-          </Box>
+          {children}
         </Box>
       </Box>
-    </TooltipProvider>
+    </Box>
   );
 }
 

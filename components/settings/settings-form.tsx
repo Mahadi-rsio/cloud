@@ -8,21 +8,23 @@ import {
   useMutation,
 } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import CardHeader from "@mui/material/CardHeader";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import { LogOut, Trash2 } from "lucide-react";
-import { Dialog } from "radix-ui";
 import { z } from "zod";
 import { api } from "@/lib/api";
 import { extractErrorMessage } from "@/lib/errors";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 const updateNameSchema = z.object({
   name: z
@@ -67,106 +69,113 @@ function SettingsForm({ user }: { user: { name: string; email: string } }) {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <Card>
-        <CardHeader>
-          <CardTitle>Profile</CardTitle>
-          <CardDescription>
-            Update your display name. This is shown across the app.
-          </CardDescription>
-        </CardHeader>
+        <CardHeader
+          title="Profile"
+          subheader="Update your display name. This is shown across the app."
+        />
         <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={submit}>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                name="name"
-                type="text"
-                autoComplete="name"
-                placeholder="Ada Lovelace"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                value={user.email}
-                disabled
-              />
-            </div>
+          <Box
+            component="form"
+            onSubmit={submit}
+            sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+          >
+            <TextField
+              id="name"
+              name="name"
+              label="Name"
+              type="text"
+              size="small"
+              fullWidth
+              autoComplete="name"
+              placeholder="Ada Lovelace"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <TextField
+              id="email"
+              name="email"
+              label="Email"
+              type="email"
+              size="small"
+              fullWidth
+              autoComplete="email"
+              value={user.email}
+              disabled
+            />
             {profileError && (
-              <p
-                role="alert"
-                className="text-sm text-destructive-foreground bg-destructive/10 rounded-md px-3 py-2"
-              >
-                {profileError}
-              </p>
+              <Alert severity="error">{profileError}</Alert>
             )}
-            <Button type="submit" disabled={updateName.isPending}>
-              {updateName.isPending ? "Saving…" : "Save changes"}
-            </Button>
-          </form>
+            <Box>
+              <Button type="submit" variant="contained" disabled={updateName.isPending}>
+                {updateName.isPending ? "Saving…" : "Save changes"}
+              </Button>
+            </Box>
+          </Box>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Session</CardTitle>
-          <CardDescription>
-            End this session or permanently remove your account.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">Log out</p>
-                <p className="text-xs text-muted-foreground">
-                  Sign out of your account on this device.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => signOut.mutate()}
-              >
-                <LogOut />
+        <CardHeader
+          title="Session"
+          subheader="End this session or permanently remove your account."
+        />
+        <CardContent sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
                 Log out
-              </Button>
-            </div>
-            {sessionError && (
-              <p
-                role="alert"
-                className="text-sm text-destructive-foreground bg-destructive/10 rounded-md px-3 py-2"
-              >
-                {sessionError}
-              </p>
-            )}
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-destructive-foreground">
-                  Delete account
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Permanently delete your account and all of your data.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => setDeleteOpen(true)}
-              >
-                <Trash2 />
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Sign out of your account on this device.
+              </Typography>
+            </Box>
+            <Button
+              type="button"
+              variant="outlined"
+              startIcon={<LogOut size={16} />}
+              onClick={() => signOut.mutate()}
+            >
+              Log out
+            </Button>
+          </Box>
+
+          {sessionError && <Alert severity="error">{sessionError}</Alert>}
+
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" color="error" sx={{ fontWeight: 600 }}>
                 Delete account
-              </Button>
-            </div>
-          </div>
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Permanently delete your account and all of your data.
+              </Typography>
+            </Box>
+            <Button
+              type="button"
+              variant="contained"
+              color="error"
+              startIcon={<Trash2 size={16} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete account
+            </Button>
+          </Box>
         </CardContent>
       </Card>
 
@@ -179,7 +188,7 @@ function SettingsForm({ user }: { user: { name: string; email: string } }) {
           router.refresh();
         }}
       />
-    </div>
+    </Box>
   );
 }
 
@@ -208,82 +217,68 @@ function DeleteAccountDialog({
     onError: (deleteError) => setError(extractErrorMessage(deleteError)),
   });
 
-  const reset = () => {
+  const handleClose = () => {
     setPassword("");
     setError(null);
     deleteAccount.reset();
+    onOpenChange(false);
   };
 
   return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) reset();
-        onOpenChange(next);
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-popover p-5 text-popover-foreground shadow-lg">
-          <Dialog.Title className="text-base font-semibold text-foreground">
-            Delete account
-          </Dialog.Title>
-          <Dialog.Description className="mt-1.5 text-sm text-muted-foreground">
-            This will permanently delete{" "}
-            <span className="font-medium text-foreground">{email}</span> and all
-            associated data. This action cannot be undone. Enter your password
-            to confirm.
-          </Dialog.Description>
-          <div className="mt-4 flex flex-col gap-2">
-            <Label htmlFor="delete-password">Password</Label>
-            <Input
-              id="delete-password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && password && !deleteAccount.isPending) {
-                  setError(null);
-                  deleteAccount.mutate();
-                }
-              }}
-            />
-          </div>
-          {error && (
-            <p
-              role="alert"
-              className="mt-3 text-sm text-destructive-foreground bg-destructive/10 rounded-md px-3 py-2"
-            >
-              {error}
-            </p>
-          )}
-          <div className="mt-5 flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={deleteAccount.isPending}
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={!password || deleteAccount.isPending}
-              onClick={() => {
-                setError(null);
-                deleteAccount.mutate();
-              }}
-            >
-              {deleteAccount.isPending ? "Deleting…" : "Delete account"}
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xs">
+      <DialogTitle>Delete account</DialogTitle>
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <DialogContentText>
+          This will permanently delete{" "}
+          <Box component="span" sx={{ fontWeight: 600, color: "var(--foreground)" }}>
+            {email}
+          </Box>{" "}
+          and all associated data. This action cannot be undone. Enter your
+          password to confirm.
+        </DialogContentText>
+        <TextField
+          id="delete-password"
+          name="password"
+          label="Password"
+          type="password"
+          size="small"
+          fullWidth
+          autoComplete="current-password"
+          placeholder="••••••••"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && password && !deleteAccount.isPending) {
+              setError(null);
+              deleteAccount.mutate();
+            }
+          }}
+        />
+        {error && <Alert severity="error">{error}</Alert>}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button
+          type="button"
+          variant="outlined"
+          disabled={deleteAccount.isPending}
+          onClick={handleClose}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          variant="contained"
+          color="error"
+          disabled={!password || deleteAccount.isPending}
+          onClick={() => {
+            setError(null);
+            deleteAccount.mutate();
+          }}
+        >
+          {deleteAccount.isPending ? "Deleting…" : "Delete account"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

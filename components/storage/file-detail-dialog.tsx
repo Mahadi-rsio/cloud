@@ -1,30 +1,27 @@
 "use client";
 
 import * as React from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import Divider from "@mui/material/Divider";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import {
   Download,
-  File,
   FileText,
   FileArchive,
   FileCode,
   Image as ImageIcon,
   Trash2,
-  Calendar,
-  HardDrive,
-  Hash,
   Terminal,
-  Loader2,
-  ExternalLink,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { CopyField } from "@/components/shared/copy-field";
 import { RelativeTime } from "@/components/shared/relative-time";
 import { formatBytes, downloadStorageFile, type StorageObject } from "@/lib/storage-client";
@@ -35,17 +32,17 @@ function getFileIcon(filename: string, contentType?: string) {
     contentType?.startsWith("image/") ||
     ["jpg", "jpeg", "png", "gif", "webp", "svg", "avif"].includes(ext)
   ) {
-    return <ImageIcon className="size-5 text-emerald-500" />;
+    return <ImageIcon size={20} color="#3dd68c" />;
   }
   if (["zip", "tar", "gz", "tgz", "rar", "7z"].includes(ext)) {
-    return <FileArchive className="size-5 text-amber-500" />;
+    return <FileArchive size={20} color="#f5a524" />;
   }
   if (
     ["js", "ts", "jsx", "tsx", "json", "html", "css", "yaml", "yml", "sql", "sh"].includes(ext)
   ) {
-    return <FileCode className="size-5 text-blue-500" />;
+    return <FileCode size={20} color="#3b82f6" />;
   }
-  return <FileText className="size-5 text-primary" />;
+  return <FileText size={20} color="var(--primary)" />;
 }
 
 export function FileDetailDialog({
@@ -96,134 +93,198 @@ export function FileDetailDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className="inline-flex size-10 items-center justify-center rounded-lg bg-muted">
-              {getFileIcon(filename, contentType)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <DialogTitle className="truncate text-base font-semibold">
-                {filename}
-              </DialogTitle>
-              <DialogDescription className="truncate text-xs text-muted-foreground">
-                in storage bucket <code className="font-semibold text-foreground">{namespace}</code>
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-4 py-2">
-          {/* Image Preview if applicable */}
-          {isImage && (
-            <div className="flex max-h-56 items-center justify-center overflow-hidden rounded-xl border bg-muted/20 p-2">
-              <img
-                src={directApiUrl}
-                alt={filename}
-                className="max-h-52 w-auto max-w-full rounded-lg object-contain"
-                loading="lazy"
-              />
-            </div>
-          )}
-
-          {/* Metadata Grid */}
-          <div className="grid grid-cols-2 gap-3 rounded-xl border bg-muted/20 p-3.5 text-xs">
-            <div className="flex flex-col gap-1">
-              <span className="font-medium text-muted-foreground">Path</span>
-              <span className="font-mono text-foreground break-all">{cleanPath}</span>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="font-medium text-muted-foreground">File Size</span>
-              <span className="font-semibold text-foreground">
-                {formatBytes(file.size)} <span className="font-normal text-muted-foreground">({file.size.toLocaleString()} bytes)</span>
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="font-medium text-muted-foreground">Content-Type</span>
-              <span className="font-mono text-foreground break-all">{contentType}</span>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="font-medium text-muted-foreground">Uploaded</span>
-              <span className="text-foreground">
-                <RelativeTime date={file.uploaded} />
-              </span>
-            </div>
-
-            <div className="col-span-2 flex flex-col gap-1 border-t pt-2">
-              <span className="font-medium text-muted-foreground">ETag (MD5)</span>
-              <span className="font-mono text-xs text-foreground truncate">{file.etag}</span>
-            </div>
-          </div>
-
-          {/* cURL programmatic access snippet */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Terminal className="size-3.5 text-muted-foreground" />
-                cURL CLI Access
-              </span>
-              <CopyField value={curlCommand} label="Copy cURL command" />
-            </div>
-            <pre className="overflow-x-auto rounded-lg border bg-muted/60 p-2.5 font-mono text-[11px] text-muted-foreground">
-              {curlCommand}
-            </pre>
-          </div>
-
-          {downloadError && (
-            <div className="rounded-lg bg-destructive/10 p-2.5 text-xs font-medium text-destructive">
-              {downloadError}
-            </div>
-          )}
-        </div>
-
-        <DialogFooter className="flex-row items-center justify-between sm:justify-between gap-2 border-t pt-3">
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={() => {
-              onOpenChange(false);
-              onDelete(file);
+    <Dialog open={open} onClose={() => onOpenChange(false)} fullWidth maxWidth="sm">
+      <DialogTitle sx={{ pb: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+          <Box
+            sx={{
+              display: "inline-flex",
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "var(--muted)",
             }}
           >
-            <Trash2 className="mr-1.5 size-4" />
-            Delete File
-          </Button>
+            {getFileIcon(filename, contentType)}
+          </Box>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
+              {filename}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+              in storage bucket{" "}
+              <Box component="code" sx={{ fontWeight: 600, color: "var(--foreground)" }}>
+                {namespace}
+              </Box>
+            </Typography>
+          </Box>
+        </Box>
+      </DialogTitle>
 
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenChange(false)}
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {isImage && (
+          <Paper
+            variant="outlined"
+            sx={{
+              display: "flex",
+              maxHeight: 224,
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              borderRadius: "12px",
+              backgroundColor: "var(--muted)",
+              p: 1,
+            }}
+          >
+            <Box
+              component="img"
+              src={directApiUrl}
+              alt={filename}
+              loading="lazy"
+              sx={{
+                maxHeight: 208,
+                width: "auto",
+                maxWidth: "100%",
+                borderRadius: "8px",
+                objectFit: "contain",
+              }}
+            />
+          </Paper>
+        )}
+
+        <Paper
+          variant="outlined"
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 1.5,
+            borderRadius: "12px",
+            backgroundColor: "var(--muted)",
+            p: 1.75,
+          }}
+        >
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+              Path
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ fontFamily: "var(--font-mono)", wordBreak: "break-all" }}
             >
-              Close
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleDownload}
-              disabled={isDownloading}
+              {cleanPath}
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+              File Size
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              {formatBytes(file.size)}{" "}
+              <Box component="span" sx={{ fontWeight: 400, color: "var(--muted-foreground)" }}>
+                ({file.size.toLocaleString()} bytes)
+              </Box>
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+              Content-Type
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ fontFamily: "var(--font-mono)", wordBreak: "break-all" }}
             >
-              {isDownloading ? (
-                <>
-                  <Loader2 className="mr-1.5 size-4 animate-spin" />
-                  Downloading...
-                </>
-              ) : (
-                <>
-                  <Download className="mr-1.5 size-4" />
-                  Download
-                </>
-              )}
-            </Button>
-          </div>
-        </DialogFooter>
+              {contentType}
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+              Uploaded
+            </Typography>
+            <Typography variant="caption">
+              <RelativeTime date={file.uploaded} />
+            </Typography>
+          </Box>
+
+          <Box sx={{ gridColumn: "1 / -1", pt: 1, borderTop: "1px solid var(--border)" }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, display: "block" }}>
+              ETag (MD5)
+            </Typography>
+            <Typography variant="caption" noWrap sx={{ fontFamily: "var(--font-mono)", display: "block" }}>
+              {file.etag}
+            </Typography>
+          </Box>
+        </Paper>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Typography
+              variant="caption"
+              sx={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 0.75 }}
+            >
+              <Terminal size={14} color="var(--muted-foreground)" />
+              cURL CLI Access
+            </Typography>
+            <CopyField value={curlCommand} label="Copy cURL command" />
+          </Box>
+          <Paper
+            variant="outlined"
+            component="pre"
+            sx={{
+              m: 0,
+              overflowX: "auto",
+              backgroundColor: "var(--muted)",
+              p: 1.25,
+              fontFamily: "var(--font-mono)",
+              fontSize: "11px",
+              color: "var(--muted-foreground)",
+            }}
+          >
+            {curlCommand}
+          </Paper>
+        </Box>
+
+        {downloadError && <Alert severity="error">{downloadError}</Alert>}
       </DialogContent>
+
+      <Divider />
+      <DialogActions sx={{ px: 3, py: 2, justifyContent: "space-between" }}>
+        <Button
+          type="button"
+          variant="contained"
+          color="error"
+          size="small"
+          startIcon={<Trash2 size={14} />}
+          onClick={() => {
+            onOpenChange(false);
+            onDelete(file);
+          }}
+        >
+          Delete File
+        </Button>
+
+        <Stack direction="row" spacing={1}>
+          <Button type="button" variant="outlined" size="small" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          <Button
+            type="button"
+            variant="contained"
+            size="small"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            startIcon={
+              isDownloading ? <CircularProgress size={14} color="inherit" /> : <Download size={14} />
+            }
+          >
+            {isDownloading ? "Downloading..." : "Download"}
+          </Button>
+        </Stack>
+      </DialogActions>
     </Dialog>
   );
 }

@@ -4,27 +4,36 @@ import * as React from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
-import { cn } from "cn";
+import type { SxProps, Theme } from "@mui/material/styles";
 
 export function PageHeader({
   title,
   description,
   actions,
-  className,
+  sx,
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
-  className?: string;
+  sx?: SxProps<Theme>;
 }) {
   return (
     <Box
-      className={cn(
-        "flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between pb-2 border-b border-border/40",
-        className
-      )}
+      sx={[
+        {
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { sm: "flex-start" },
+          justifyContent: { sm: "space-between" },
+          gap: 2,
+          pb: 1.5,
+          borderBottom: "1px solid",
+          borderColor: "divider",
+        },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
     >
-      <Box className="flex min-w-0 flex-col gap-1.5">
+      <Box sx={{ display: "flex", minWidth: 0, flexDirection: "column", gap: 0.75 }}>
         <Typography
           variant="h5"
           component="h1"
@@ -55,10 +64,13 @@ export function PageHeader({
         <Stack
           direction="row"
           spacing={1.5}
-          alignItems="center"
           useFlexGap
-          flexWrap="wrap"
-          className="shrink-0 pt-1 sm:pt-0"
+          sx={{
+            alignItems: "center",
+            flexWrap: "wrap",
+            flexShrink: 0,
+            pt: { xs: 0.5, sm: 0 },
+          }}
         >
           {actions}
         </Stack>

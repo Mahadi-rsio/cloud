@@ -1,16 +1,16 @@
 "use client";
 
 import * as React from "react";
+import Box from "@mui/material/Box";
+import Dialog from "@mui/material/Dialog";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
+import Paper from "@mui/material/Paper";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
+import Typography from "@mui/material/Typography";
 import { Copy, Check, Terminal, Code2, Layers, KeyRound, Globe } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { CopyField } from "@/components/shared/copy-field";
 import type { DatabaseItem } from "@/lib/databases/client";
 
@@ -33,24 +33,52 @@ function CodeSnippet({ code }: { code: string }) {
   };
 
   return (
-    <div className="relative rounded-lg border bg-zinc-950 p-4 font-mono text-xs text-zinc-100 dark:bg-zinc-950/80">
-      <Button
+    <Box
+      sx={{
+        position: "relative",
+        borderRadius: "10px",
+        border: "1px solid var(--border)",
+        backgroundColor: "#09090b",
+        p: 2,
+        fontFamily: "var(--font-mono)",
+        fontSize: "0.75rem",
+        color: "#f4f4f5",
+      }}
+    >
+      <IconButton
         type="button"
-        variant="ghost"
-        size="icon-sm"
+        size="small"
         onClick={handleCopy}
-        className="absolute top-2.5 right-2.5 size-7 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+        aria-label="Copy code snippet"
+        sx={{
+          position: "absolute",
+          top: 10,
+          right: 10,
+          width: 28,
+          height: 28,
+          color: "#a1a1aa",
+          "&:hover": {
+            color: "#f4f4f5",
+            backgroundColor: "#27272a",
+          },
+        }}
       >
-        {copied ? (
-          <Check className="size-3.5 text-emerald-400" />
-        ) : (
-          <Copy className="size-3.5" />
-        )}
-      </Button>
-      <pre className="overflow-x-auto pr-8 leading-relaxed whitespace-pre font-mono">
+        {copied ? <Check size={14} color="#34d399" /> : <Copy size={14} />}
+      </IconButton>
+      <Box
+        component="pre"
+        sx={{
+          m: 0,
+          overflowX: "auto",
+          pr: 4,
+          lineHeight: 1.6,
+          whiteSpace: "pre",
+          fontFamily: "var(--font-mono)",
+        }}
+      >
         {code}
-      </pre>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
@@ -63,6 +91,8 @@ export function ConnectDatabaseDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const [tab, setTab] = React.useState<"ts" | "drizzle" | "python" | "curl" | "env">("ts");
+
   if (!database) return null;
 
   const url = database.libsqlUrl;
@@ -141,85 +171,142 @@ curl -X POST "${httpUrl}/v2/pipeline" \\
   const envCode = `DATABASE_URL="${url}"
 DATABASE_AUTH_TOKEN="${token}"`;
 
+  const activeCode =
+    tab === "ts"
+      ? tsCode
+      : tab === "drizzle"
+        ? drizzleCode
+        : tab === "python"
+          ? pythonCode
+          : tab === "curl"
+            ? curlCode
+            : envCode;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="inline-flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Code2 className="size-5" />
-            </div>
-            <div>
-              <DialogTitle>Connect to {database.name}</DialogTitle>
-              <DialogDescription className="text-xs">
-                Namespace: <span className="font-mono text-foreground">{database.namespace}</span>
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
+    <Dialog open={open} onClose={() => onOpenChange(false)} fullWidth maxWidth="md">
+      <DialogTitle sx={{ pb: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+          <Box
+            sx={{
+              display: "inline-flex",
+              width: 36,
+              height: 36,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              color: "var(--primary)",
+            }}
+          >
+            <Code2 size={20} />
+          </Box>
+          <Box>
+            <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+              Connect to {database.name}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Namespace:{" "}
+              <Box component="span" sx={{ fontFamily: "var(--font-mono)", color: "var(--foreground)" }}>
+                {database.namespace}
+              </Box>
+            </Typography>
+          </Box>
+        </Box>
+      </DialogTitle>
 
-        <div className="flex flex-col gap-4 py-2">
-          {/* Quick connection parameters */}
-          <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5 text-xs">
-            <div className="flex flex-col gap-1">
-              <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-                <Globe className="size-3.5" /> LibSQL Connection URL
-              </span>
-              <CopyField
-                value={url}
-                className="rounded bg-background px-2.5 py-1.5 border"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-                <KeyRound className="size-3.5" /> Primary Auth Token
-              </span>
-              <CopyField
-                value={token}
-                className="rounded bg-background px-2.5 py-1.5 border"
-              />
-            </div>
-          </div>
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 1.5,
+            borderRadius: "10px",
+            backgroundColor: "var(--muted)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 1.5,
+          }}
+        >
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 0.75 }}
+            >
+              <Globe size={14} /> LibSQL Connection URL
+            </Typography>
+            <CopyField
+              value={url}
+              sx={{
+                borderRadius: "6px",
+                backgroundColor: "var(--background)",
+                px: 1.25,
+                py: 0.75,
+                border: "1px solid var(--border)",
+              }}
+            />
+          </Box>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 0.75 }}
+            >
+              <KeyRound size={14} /> Primary Auth Token
+            </Typography>
+            <CopyField
+              value={token}
+              sx={{
+                borderRadius: "6px",
+                backgroundColor: "var(--background)",
+                px: 1.25,
+                py: 0.75,
+                border: "1px solid var(--border)",
+              }}
+            />
+          </Box>
+        </Paper>
 
-          {/* Connection tabs */}
-          <Tabs defaultValue="ts" className="w-full">
-            <TabsList className="w-full justify-start overflow-x-auto">
-              <TabsTrigger value="ts" className="gap-1.5 text-xs">
-                <Terminal className="size-3.5" />
-                TypeScript / Node
-              </TabsTrigger>
-              <TabsTrigger value="drizzle" className="gap-1.5 text-xs">
-                <Layers className="size-3.5" />
-                Drizzle ORM
-              </TabsTrigger>
-              <TabsTrigger value="python" className="gap-1.5 text-xs">
-                Python
-              </TabsTrigger>
-              <TabsTrigger value="curl" className="gap-1.5 text-xs">
-                cURL
-              </TabsTrigger>
-              <TabsTrigger value="env" className="gap-1.5 text-xs">
-                .env
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="ts" className="mt-3">
-              <CodeSnippet code={tsCode} />
-            </TabsContent>
-            <TabsContent value="drizzle" className="mt-3">
-              <CodeSnippet code={drizzleCode} />
-            </TabsContent>
-            <TabsContent value="python" className="mt-3">
-              <CodeSnippet code={pythonCode} />
-            </TabsContent>
-            <TabsContent value="curl" className="mt-3">
-              <CodeSnippet code={curlCode} />
-            </TabsContent>
-            <TabsContent value="env" className="mt-3">
-              <CodeSnippet code={envCode} />
-            </TabsContent>
+        <Box>
+          <Tabs
+            value={tab}
+            onChange={(_, v) => setTab(v)}
+            variant="scrollable"
+            scrollButtons="auto"
+            sx={{ borderBottom: "1px solid var(--border)", mb: 2 }}
+          >
+            <Tab
+              value="ts"
+              icon={<Terminal size={14} />}
+              iconPosition="start"
+              label="TypeScript / Node"
+              sx={{ minHeight: 40, fontSize: "0.75rem" }}
+            />
+            <Tab
+              value="drizzle"
+              icon={<Layers size={14} />}
+              iconPosition="start"
+              label="Drizzle ORM"
+              sx={{ minHeight: 40, fontSize: "0.75rem" }}
+            />
+            <Tab
+              value="python"
+              label="Python"
+              sx={{ minHeight: 40, fontSize: "0.75rem" }}
+            />
+            <Tab
+              value="curl"
+              label="cURL"
+              sx={{ minHeight: 40, fontSize: "0.75rem" }}
+            />
+            <Tab
+              value="env"
+              label=".env"
+              sx={{ minHeight: 40, fontSize: "0.75rem" }}
+            />
           </Tabs>
-        </div>
+
+          <CodeSnippet code={activeCode} />
+        </Box>
       </DialogContent>
     </Dialog>
   );

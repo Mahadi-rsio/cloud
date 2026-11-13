@@ -1,18 +1,16 @@
 "use client";
 
 import * as React from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import { AlertTriangle } from "lucide-react";
-import { cn } from "cn";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 
 /** Destructive confirmation dialog. When `confirmText` is provided the user
  * must type it exactly before the destructive action is enabled. */
@@ -40,50 +38,75 @@ export function ConfirmDeleteDialog({
   const canConfirm = !requiresText || typed === confirmText;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <div className="mb-1 inline-flex size-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
-            <AlertTriangle className="size-5" />
-          </div>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
+    <Dialog
+      open={open}
+      onClose={() => !isPending && onOpenChange(false)}
+      fullWidth
+      maxWidth="xs"
+    >
+      <DialogTitle sx={{ pb: 1 }}>
+        <Box
+          sx={{
+            mb: 1.5,
+            display: "inline-flex",
+            width: 36,
+            height: 36,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "8px",
+            backgroundColor: "rgba(229, 72, 77, 0.12)",
+            color: "var(--destructive)",
+          }}
+        >
+          <AlertTriangle size={20} />
+        </Box>
+        <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+          {title}
+        </Typography>
+      </DialogTitle>
+      <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <DialogContentText component="div">{description}</DialogContentText>
         {requiresText && (
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="confirm-input" className="text-sm font-semibold">
-              Type <span className="font-mono">{confirmText}</span> to confirm
-            </label>
-            <Input
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Typography component="label" htmlFor="confirm-input" variant="body2" sx={{ fontWeight: 600 }}>
+              Type{" "}
+              <Box component="span" sx={{ fontFamily: "var(--font-mono)" }}>
+                {confirmText}
+              </Box>{" "}
+              to confirm
+            </Typography>
+            <TextField
               id="confirm-input"
+              size="small"
+              fullWidth
               value={typed}
               onChange={(event) => setTyped(event.target.value)}
               placeholder={confirmText}
               autoComplete="off"
-              spellCheck={false}
+              slotProps={{ htmlInput: { spellCheck: false } }}
             />
-          </div>
+          </Box>
         )}
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={onConfirm}
-            disabled={!canConfirm || isPending}
-            className={cn(!canConfirm && "opacity-50")}
-          >
-            {confirmLabel}
-          </Button>
-        </DialogFooter>
       </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button
+          type="button"
+          variant="outlined"
+          onClick={() => onOpenChange(false)}
+          disabled={isPending}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          variant="contained"
+          color="error"
+          onClick={onConfirm}
+          disabled={!canConfirm || isPending}
+        >
+          {confirmLabel}
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }

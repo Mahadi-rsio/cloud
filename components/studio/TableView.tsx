@@ -2,12 +2,21 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Database, ListTree, RefreshCw } from "lucide-react";
-import { cn } from "cn";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import IconButton from "@mui/material/IconButton";
+import Skeleton from "@mui/material/Skeleton";
+import Stack from "@mui/material/Stack";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
+import Typography from "@mui/material/Typography";
 import type { StudioTab } from "@/stores/studio-store";
 import { useStudioStore } from "@/stores/studio-store";
 import { studioApi } from "@/lib/studio-api";
 import { DataGrid } from "@/components/studio/DataGrid";
-import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 50;
 
@@ -47,53 +56,70 @@ export function TableView({ tab }: { tab: StudioTab }) {
   const isStructure = tableState.view === "structure";
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
-        <Database className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{table}</span>
+    <Box sx={{ display: "flex", height: "100%", minHeight: 0, flexDirection: "column" }}>
+      <Box
+        sx={{
+          display: "flex",
+          height: 40,
+          flexShrink: 0,
+          alignItems: "center",
+          gap: 1,
+          borderBottom: "1px solid var(--border)",
+          px: 1.5,
+        }}
+      >
+        <Database style={{ width: 16, height: 16, flexShrink: 0, color: "var(--muted-foreground)" }} />
+        <Typography noWrap sx={{ minWidth: 0, flex: 1, fontSize: 13.5, fontWeight: 600 }}>
+          {table}
+        </Typography>
 
-        <div className="flex items-center rounded-md border bg-muted/40 p-0.5">
-          <button
+        <Stack
+          direction="row"
+          spacing={0.5}
+          sx={{
+            borderRadius: 1.5,
+            border: "1px solid var(--border)",
+            bgcolor: "var(--muted)",
+            p: 0.25,
+          }}
+        >
+          <Button
             type="button"
+            size="small"
+            variant={!isStructure ? "contained" : "text"}
             onClick={() => setView(table, "data")}
-            className={cn(
-              "rounded px-2 py-1 text-xs font-medium transition-colors",
-              !isStructure ? "bg-background text-foreground shadow-sm" : "text-muted-foreground",
-            )}
+            sx={{ minHeight: 24, py: 0.25, px: 1, fontSize: 12 }}
           >
             Data
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            size="small"
+            variant={isStructure ? "contained" : "text"}
             onClick={() => setView(table, "structure")}
-            className={cn(
-              "rounded px-2 py-1 text-xs font-medium transition-colors",
-              isStructure ? "bg-background text-foreground shadow-sm" : "text-muted-foreground",
-            )}
+            sx={{ minHeight: 24, py: 0.25, px: 1, fontSize: 12 }}
           >
             Structure
-          </button>
-        </div>
+          </Button>
+        </Stack>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="size-8"
+        <IconButton
+          size="small"
           title="Refresh"
           onClick={() => {
             void queryClient.invalidateQueries({ queryKey: ["studio", "rows"] });
             void queryClient.invalidateQueries({ queryKey: ["studio", "schema"] });
           }}
+          sx={{ width: 32, height: 32 }}
         >
-          <RefreshCw className="size-4" />
-        </Button>
-      </div>
+          <RefreshCw style={{ width: 16, height: 16 }} />
+        </IconButton>
+      </Box>
 
       {isStructure ? (
         <StructureView columns={columns} />
       ) : (
-        <div className="min-h-0 flex-1">
+        <Box sx={{ minHeight: 0, flex: 1 }}>
           {rowsQuery.isPending && !rowsQuery.data ? (
             <LoadingSkeleton />
           ) : rowsQuery.isError ? (
@@ -116,64 +142,88 @@ export function TableView({ tab }: { tab: StudioTab }) {
               emptyText={`Table "${table}" is empty.`}
             />
           )}
-        </div>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }
 
-function StructureView({ columns }: { columns: Array<{ name: string; type: string; notNull: boolean; pk: boolean }> }) {
+function StructureView({
+  columns,
+}: {
+  columns: Array<{ name: string; type: string; notNull: boolean; pk: boolean }>;
+}) {
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 z-10 bg-background">
-          <tr className="border-b text-left text-xs text-muted-foreground">
-            <th className="px-3 py-2 font-semibold">Column</th>
-            <th className="px-3 py-2 font-semibold">Type</th>
-            <th className="px-3 py-2 font-semibold">Not null</th>
-            <th className="px-3 py-2 font-semibold">Primary key</th>
-          </tr>
-        </thead>
-        <tbody>
+    <Box sx={{ minHeight: 0, flex: 1, overflow: "auto" }}>
+      <Table size="small" stickyHeader>
+        <TableHead>
+          <TableRow>
+            <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)", bgcolor: "var(--background)" }}>
+              Column
+            </TableCell>
+            <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)", bgcolor: "var(--background)" }}>
+              Type
+            </TableCell>
+            <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)", bgcolor: "var(--background)" }}>
+              Not null
+            </TableCell>
+            <TableCell sx={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)", bgcolor: "var(--background)" }}>
+              Primary key
+            </TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
           {columns.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+            <TableRow>
+              <TableCell colSpan={4} align="center" sx={{ py: 3, color: "var(--muted-foreground)" }}>
                 No schema information available.
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ) : (
             columns.map((column) => (
-              <tr key={column.name} className="border-b border-border/50">
-                <td className="flex items-center gap-2 px-3 py-1.5 font-medium">
-                  <ListTree className="size-3.5 text-muted-foreground" />
-                  {column.name}
-                </td>
-                <td className="px-3 py-1.5 text-muted-foreground">{column.type || "—"}</td>
-                <td className="px-3 py-1.5">{column.notNull ? "Yes" : "No"}</td>
-                <td className="px-3 py-1.5">{column.pk ? "Yes" : "No"}</td>
-              </tr>
+              <TableRow key={column.name}>
+                <TableCell sx={{ fontWeight: 500 }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                    <ListTree style={{ width: 14, height: 14, color: "var(--muted-foreground)" }} />
+                    <span>{column.name}</span>
+                  </Stack>
+                </TableCell>
+                <TableCell sx={{ color: "var(--muted-foreground)" }}>{column.type || "—"}</TableCell>
+                <TableCell>{column.notNull ? "Yes" : "No"}</TableCell>
+                <TableCell>{column.pk ? "Yes" : "No"}</TableCell>
+              </TableRow>
             ))
           )}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </Box>
   );
 }
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-1 p-2">
+    <Stack spacing={0.5} sx={{ p: 1 }}>
       {Array.from({ length: 8 }).map((_, index) => (
-        <div key={index} className="h-[33px] animate-pulse rounded bg-muted/40" />
+        <Skeleton key={index} variant="rounded" height={33} />
       ))}
-    </div>
+    </Stack>
   );
 }
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="flex h-full items-center justify-center p-4">
-      <p className="max-w-md text-center text-sm text-destructive">{message}</p>
-    </div>
+    <Box
+      sx={{
+        display: "flex",
+        height: "100%",
+        alignItems: "center",
+        justifyContent: "center",
+        p: 2,
+      }}
+    >
+      <Typography sx={{ maxWidth: 420, textAlign: "center", fontSize: 13.5, color: "var(--destructive)" }}>
+        {message}
+      </Typography>
+    </Box>
   );
 }

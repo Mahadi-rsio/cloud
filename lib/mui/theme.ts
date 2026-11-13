@@ -108,11 +108,13 @@ export const darkTheme = responsiveFontSizes(
               boxShadow: "none",
             },
           },
-          containedPrimary: {
-            backgroundColor: "#38bdf8",
-            color: "#082032",
-            "&:hover": {
-              backgroundColor: "#7dd3fc",
+          contained: {
+            "&.MuiButton-containedPrimary": {
+              backgroundColor: "#38bdf8",
+              color: "#082032",
+              "&:hover": {
+                backgroundColor: "#7dd3fc",
+              },
             },
           },
           outlined: {
@@ -279,11 +281,13 @@ export const lightTheme = responsiveFontSizes(
               boxShadow: "none",
             },
           },
-          containedPrimary: {
-            backgroundColor: "#0284c7",
-            color: "#ffffff",
-            "&:hover": {
-              backgroundColor: "#0369a1",
+          contained: {
+            "&.MuiButton-containedPrimary": {
+              backgroundColor: "#0284c7",
+              color: "#ffffff",
+              "&:hover": {
+                backgroundColor: "#0369a1",
+              },
             },
           },
           outlined: {

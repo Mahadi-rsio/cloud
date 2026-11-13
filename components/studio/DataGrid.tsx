@@ -9,11 +9,12 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { cn } from "cn";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
 import type { StudioCellValue } from "@/lib/studio/types";
 import type { StudioSortSpec } from "@/stores/studio-store";
 import { formatCell, isNullCell } from "@/components/studio/format";
-import { Button } from "@/components/ui/button";
 
 const ROW_HEIGHT = 33;
 const HEADER_HEIGHT = 37;
@@ -112,129 +113,205 @@ export function DataGrid({
     : rows.length;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div
+    <Box sx={{ display: "flex", height: "100%", minHeight: 0, flexDirection: "column" }}>
+      <Box
         ref={scrollRef}
-        className="flex-1 overflow-auto overscroll-contain min-h-0"
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "auto",
+          overscrollBehavior: "contain",
+        }}
       >
-        <div className="relative" style={{ width: totalSize, minWidth: "100%" }}>
+        <Box sx={{ position: "relative", width: totalSize, minWidth: "100%" }}>
           {/* Header */}
-          <div
-            className="sticky top-0 z-20 flex border-b bg-background/95 backdrop-blur"
-            style={{ height: headerHeight }}
+          <Box
+            sx={{
+              position: "sticky",
+              top: 0,
+              zIndex: 20,
+              display: "flex",
+              height: headerHeight,
+              borderBottom: "1px solid var(--border)",
+              bgcolor: "var(--background)",
+            }}
           >
             {table.getHeaderGroups()[0]?.headers.map((header) => {
               const columnName = columns[Number(header.id)];
               const isSorted =
-                onSort && sort?.column === columnName
-                  ? sort.dir
-                  : null;
+                onSort && sort?.column === columnName ? sort.dir : null;
               return (
-                <div
+                <Box
                   key={header.id}
-                  className="relative flex select-none items-center gap-1 border-r border-border/60 px-2 text-xs font-semibold text-muted-foreground"
-                  style={{ width: header.getSize() }}
                   onClick={() => handleHeaderClick(columnName)}
+                  sx={{
+                    position: "relative",
+                    display: "flex",
+                    userSelect: "none",
+                    alignItems: "center",
+                    gap: 0.5,
+                    borderRight: "1px solid var(--border)",
+                    px: 1,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "var(--muted-foreground)",
+                    width: header.getSize(),
+                    cursor: onSort ? "pointer" : "default",
+                  }}
                 >
-                  <span className="truncate">{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                  <Box
+                    component="span"
+                    sx={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                  </Box>
                   {isSorted ? (
                     isSorted === "asc" ? (
-                      <ArrowUp className="size-3 shrink-0 text-primary" />
+                      <ArrowUp style={{ width: 12, height: 12, flexShrink: 0, color: "var(--primary)" }} />
                     ) : (
-                      <ArrowDown className="size-3 shrink-0 text-primary" />
+                      <ArrowDown style={{ width: 12, height: 12, flexShrink: 0, color: "var(--primary)" }} />
                     )
                   ) : onSort ? (
-                    <ArrowUpDown className="size-3 shrink-0 text-muted-foreground/50" />
+                    <ArrowUpDown style={{ width: 12, height: 12, flexShrink: 0, color: "var(--muted-foreground)", opacity: 0.5 }} />
                   ) : null}
                   {header.column.getCanResize() && (
-                    <div
+                    <Box
                       data-resize-handle
-                      onPointerDown={(event) => {
+                      onPointerDown={(event: React.PointerEvent) => {
                         event.stopPropagation();
                         header.getResizeHandler()(event);
                       }}
                       onDoubleClick={() => header.column.resetSize()}
-                      className="absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize touch-none bg-transparent hover:bg-primary/60"
                       title="Resize column"
+                      sx={{
+                        position: "absolute",
+                        right: 0,
+                        top: 0,
+                        zIndex: 10,
+                        height: "100%",
+                        width: 4,
+                        cursor: "col-resize",
+                        touchAction: "none",
+                        bgcolor: "transparent",
+                        "&:hover": { bgcolor: "var(--primary)" },
+                      }}
                     />
                   )}
-                </div>
+                </Box>
               );
             })}
-          </div>
+          </Box>
 
           {/* Body */}
           {rows.length > 0 ? (
-            <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
+            <Box sx={{ position: "relative", height: virtualizer.getTotalSize() }}>
               {virtualRows.map((virtualRow) => {
                 const row = table.getRowModel().rows[virtualRow.index];
                 return (
-                  <div
+                  <Box
                     key={virtualRow.key}
-                    className="absolute top-0 left-0 flex border-b border-border/50"
-                    style={{
+                    sx={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      display: "flex",
+                      borderBottom: "1px solid var(--border)",
                       height: ROW_HEIGHT,
                       width: totalSize,
                       transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
                     }}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <div
+                      <Box
                         key={cell.id}
-                        className="flex items-center overflow-hidden border-r border-border/40 px-2 text-[13px]"
-                        style={{ width: cell.column.getSize() }}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          overflow: "hidden",
+                          borderRight: "1px solid var(--border)",
+                          px: 1,
+                          fontSize: 13,
+                          width: cell.column.getSize(),
+                        }}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </div>
+                      </Box>
                     ))}
-                  </div>
+                  </Box>
                 );
               })}
-            </div>
+            </Box>
           ) : (
-            <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+            <Box
+              sx={{
+                display: "flex",
+                height: 96,
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 13.5,
+                color: "var(--muted-foreground)",
+              }}
+            >
               {emptyText}
-            </div>
+            </Box>
           )}
-        </div>
-      </div>
+        </Box>
+      </Box>
 
       {/* Footer */}
-      <div className="flex h-9 shrink-0 items-center justify-between border-t px-3 text-xs text-muted-foreground">
+      <Box
+        sx={{
+          display: "flex",
+          height: 36,
+          flexShrink: 0,
+          alignItems: "center",
+          justifyContent: "space-between",
+          borderTop: "1px solid var(--border)",
+          px: 1.5,
+          fontSize: 12,
+          color: "var(--muted-foreground)",
+        }}
+      >
         {pagination ? (
           <>
             <span>
               Rows {startIndex}–{endIndex} of {pagination.total}
             </span>
-            <div className="flex items-center gap-1">
+            <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
               <Button
                 type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2"
+                variant="text"
+                size="small"
                 disabled={pagination.page === 0}
                 onClick={() => pagination.onPageChange(pagination.page - 1)}
+                sx={{ minWidth: 0, height: 24, px: 1, fontSize: 12 }}
               >
                 Prev
               </Button>
-              <span className="tabular-nums">Page {pagination.page + 1}</span>
+              <Box component="span" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                Page {pagination.page + 1}
+              </Box>
               <Button
                 type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2"
+                variant="text"
+                size="small"
                 disabled={endIndex >= pagination.total}
                 onClick={() => pagination.onPageChange(pagination.page + 1)}
+                sx={{ minWidth: 0, height: 24, px: 1, fontSize: 12 }}
               >
                 Next
               </Button>
-            </div>
+            </Stack>
           </>
         ) : (
           <span>Rows 1–{rows.length}</span>
         )}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
 
@@ -242,11 +319,17 @@ function CellValue({ value }: { value: StudioCellValue }) {
   const text = formatCell(value);
   const isNull = isNullCell(value);
   return (
-    <span
-      className={cn("truncate", isNull && "italic text-muted-foreground")}
+    <Box
+      component="span"
       title={text}
+      sx={{
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        ...(isNull && { fontStyle: "italic", color: "var(--muted-foreground)" }),
+      }}
     >
       {text}
-    </span>
+    </Box>
   );
 }

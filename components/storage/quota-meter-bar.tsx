@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { HardDrive, ArrowDownToLine, ArrowUpToLine, FileText } from "lucide-react";
-import LinearProgress from "@mui/material/LinearProgress";
-import Chip from "@mui/material/Chip";
 import Box from "@mui/material/Box";
+import Card from "@mui/material/Card";
+import Chip from "@mui/material/Chip";
+import LinearProgress from "@mui/material/LinearProgress";
 import Typography from "@mui/material/Typography";
-import { Card } from "@/components/ui/card";
+import { HardDrive, ArrowDownToLine, ArrowUpToLine, FileText } from "lucide-react";
 import { formatBytes, type StorageUsageResponse } from "@/lib/storage-client";
 
 export function QuotaMeterBar({
@@ -40,10 +40,23 @@ export function QuotaMeterBar({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <Box
+      sx={{
+        display: "grid",
+        gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" },
+        gap: 2,
+      }}
+    >
       {/* Storage Capacity */}
-      <Card hoverable className="p-4 sm:p-5 gap-3.5">
-        <div className="flex items-center justify-between">
+      <Card
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          display: "flex",
+          flexDirection: "column",
+          gap: 1.75,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Typography
             variant="caption"
             sx={{
@@ -55,47 +68,52 @@ export function QuotaMeterBar({
           >
             Storage Capacity
           </Typography>
-          <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <HardDrive className="size-4" />
-          </div>
-        </div>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between">
-            <Typography
-              variant="h5"
-              sx={{ fontWeight: 700, color: "var(--foreground)" }}
-            >
+          <Box
+            sx={{
+              display: "flex",
+              width: 28,
+              height: 28,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              color: "var(--primary)",
+            }}
+          >
+            <HardDrive size={16} />
+          </Box>
+        </Box>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: "var(--foreground)" }}>
               {isLoading ? "—" : formatBytes(usedBytes)}
             </Typography>
-            <Typography
-              variant="caption"
-              sx={{ color: "var(--muted-foreground)" }}
-            >
+            <Typography variant="caption" sx={{ color: "var(--muted-foreground)" }}>
               of {formatBytes(storageLimitBytes)}
             </Typography>
-          </div>
+          </Box>
           <LinearProgress
             variant="determinate"
             value={Math.max(2, storagePercent)}
             color={getLinearColor(storagePercent)}
-            sx={{
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: "var(--muted)",
-            }}
+            sx={{ height: 6, borderRadius: 3, backgroundColor: "var(--muted)" }}
           />
-          <Typography
-            variant="caption"
-            sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}
-          >
+          <Typography variant="caption" sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}>
             {isLoading ? "Loading..." : `${storagePercent.toFixed(1)}% free tier used`}
           </Typography>
-        </div>
+        </Box>
       </Card>
 
       {/* Monthly Reads */}
-      <Card hoverable className="p-4 sm:p-5 gap-3.5">
-        <div className="flex items-center justify-between">
+      <Card
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          display: "flex",
+          flexDirection: "column",
+          gap: 1.75,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Typography
             variant="caption"
             sx={{
@@ -107,47 +125,52 @@ export function QuotaMeterBar({
           >
             Monthly Reads
           </Typography>
-          <div className="flex size-7 items-center justify-center rounded-lg bg-sky-500/10 text-sky-500">
-            <ArrowDownToLine className="size-4" />
-          </div>
-        </div>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between">
-            <Typography
-              variant="h5"
-              sx={{ fontWeight: 700, color: "var(--foreground)" }}
-            >
+          <Box
+            sx={{
+              display: "flex",
+              width: 28,
+              height: 28,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(14, 165, 233, 0.12)",
+              color: "#0ea5e9",
+            }}
+          >
+            <ArrowDownToLine size={16} />
+          </Box>
+        </Box>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: "var(--foreground)" }}>
               {isLoading ? "—" : readOps.toLocaleString()}
             </Typography>
-            <Typography
-              variant="caption"
-              sx={{ color: "var(--muted-foreground)" }}
-            >
+            <Typography variant="caption" sx={{ color: "var(--muted-foreground)" }}>
               of {readLimit.toLocaleString()} ops
             </Typography>
-          </div>
+          </Box>
           <LinearProgress
             variant="determinate"
             value={Math.max(2, readPercent)}
             color={getLinearColor(readPercent)}
-            sx={{
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: "var(--muted)",
-            }}
+            sx={{ height: 6, borderRadius: 3, backgroundColor: "var(--muted)" }}
           />
-          <Typography
-            variant="caption"
-            sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}
-          >
+          <Typography variant="caption" sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}>
             {isLoading ? "Loading..." : `${(100 - readPercent).toFixed(1)}% remaining`}
           </Typography>
-        </div>
+        </Box>
       </Card>
 
       {/* Monthly Writes */}
-      <Card hoverable className="p-4 sm:p-5 gap-3.5">
-        <div className="flex items-center justify-between">
+      <Card
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          display: "flex",
+          flexDirection: "column",
+          gap: 1.75,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Typography
             variant="caption"
             sx={{
@@ -159,47 +182,52 @@ export function QuotaMeterBar({
           >
             Monthly Writes
           </Typography>
-          <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
-            <ArrowUpToLine className="size-4" />
-          </div>
-        </div>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between">
-            <Typography
-              variant="h5"
-              sx={{ fontWeight: 700, color: "var(--foreground)" }}
-            >
+          <Box
+            sx={{
+              display: "flex",
+              width: 28,
+              height: 28,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(245, 165, 36, 0.12)",
+              color: "#f5a524",
+            }}
+          >
+            <ArrowUpToLine size={16} />
+          </Box>
+        </Box>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: "var(--foreground)" }}>
               {isLoading ? "—" : writeOps.toLocaleString()}
             </Typography>
-            <Typography
-              variant="caption"
-              sx={{ color: "var(--muted-foreground)" }}
-            >
+            <Typography variant="caption" sx={{ color: "var(--muted-foreground)" }}>
               of {writeLimit.toLocaleString()} ops
             </Typography>
-          </div>
+          </Box>
           <LinearProgress
             variant="determinate"
             value={Math.max(2, writePercent)}
             color={getLinearColor(writePercent)}
-            sx={{
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: "var(--muted)",
-            }}
+            sx={{ height: 6, borderRadius: 3, backgroundColor: "var(--muted)" }}
           />
-          <Typography
-            variant="caption"
-            sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}
-          >
+          <Typography variant="caption" sx={{ color: "var(--muted-foreground)", fontSize: "0.75rem" }}>
             {isLoading ? "Loading..." : `${(100 - writePercent).toFixed(1)}% remaining`}
           </Typography>
-        </div>
+        </Box>
       </Card>
 
       {/* Total Objects */}
-      <Card hoverable className="p-4 sm:p-5 gap-3.5">
-        <div className="flex items-center justify-between">
+      <Card
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          display: "flex",
+          flexDirection: "column",
+          gap: 1.75,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <Typography
             variant="caption"
             sx={{
@@ -211,16 +239,24 @@ export function QuotaMeterBar({
           >
             Stored Objects
           </Typography>
-          <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
-            <FileText className="size-4" />
-          </div>
-        </div>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between">
-            <Typography
-              variant="h5"
-              sx={{ fontWeight: 700, color: "var(--foreground)" }}
-            >
+          <Box
+            sx={{
+              display: "flex",
+              width: 28,
+              height: 28,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(61, 214, 140, 0.12)",
+              color: "#3dd68c",
+            }}
+          >
+            <FileText size={16} />
+          </Box>
+        </Box>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: "var(--foreground)" }}>
               {isLoading ? "—" : fileCount.toLocaleString()}
             </Typography>
             <Chip
@@ -235,7 +271,7 @@ export function QuotaMeterBar({
                 border: "1px solid rgba(56, 189, 248, 0.3)",
               }}
             />
-          </div>
+          </Box>
           <Box sx={{ pt: 1 }}>
             <Typography
               variant="caption"
@@ -244,8 +280,8 @@ export function QuotaMeterBar({
               Real-time Durable Object storage & tracking
             </Typography>
           </Box>
-        </div>
+        </Box>
       </Card>
-    </div>
+    </Box>
   );
 }

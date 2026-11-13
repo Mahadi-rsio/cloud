@@ -12,20 +12,15 @@ import { useRouter } from "next/navigation";
 import { ZodError } from "zod";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Divider from "@mui/material/Divider";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useAuthStore } from "@/stores/auth-store";
 import { api } from "@/lib/api";
 import { signInSchema, signUpSchema } from "@/lib/validators/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Wordmark } from "@/components/shell/wordmark";
 
 function extractErrorMessage(error: unknown): string {
@@ -91,68 +86,75 @@ function LoginForm() {
 
       <Card
         elevation={2}
-        className="border-border/80 p-6 sm:p-7 shadow-xl rounded-2xl bg-card"
+        sx={{
+          p: { xs: 3, sm: 3.5 },
+          borderRadius: "16px",
+          border: "1px solid var(--border)",
+          backgroundColor: "var(--card)",
+        }}
       >
-        <CardHeader className="p-0 pb-5 border-none">
-          <CardTitle className="text-xl sm:text-2xl font-bold">
+        <Box sx={{ pb: 2.5 }}>
+          <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>
             {store.mode === "signin" ? "Welcome back" : "Create an account"}
-          </CardTitle>
-          <CardDescription className="text-sm">
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
             {store.mode === "signin"
               ? "Sign in to deploy apps, manage databases, and object storage."
               : "Get started with your free developer cloud account."}
-          </CardDescription>
-        </CardHeader>
+          </Typography>
+        </Box>
 
-        <CardContent className="p-0">
-          <form className="flex flex-col gap-4" onSubmit={submit}>
+        <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
+          <Box
+            component="form"
+            onSubmit={submit}
+            sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+          >
             {store.mode === "signup" && (
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  type="text"
-                  autoComplete="name"
-                  placeholder="Ada Lovelace"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  required
-                />
-              </div>
+              <TextField
+                id="name"
+                name="name"
+                label="Full Name"
+                type="text"
+                size="small"
+                fullWidth
+                autoComplete="name"
+                placeholder="Ada Lovelace"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+              />
             )}
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">Work Email</Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </div>
+            <TextField
+              id="email"
+              name="email"
+              label="Work Email"
+              type="email"
+              size="small"
+              fullWidth
+              autoComplete="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
 
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-              </div>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete={
-                  store.mode === "signin" ? "current-password" : "new-password"
-                }
-                placeholder="••••••••"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-            </div>
+            <TextField
+              id="password"
+              name="password"
+              label="Password"
+              type="password"
+              size="small"
+              fullWidth
+              autoComplete={
+                store.mode === "signin" ? "current-password" : "new-password"
+              }
+              placeholder="••••••••"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
 
             {store.error && (
               <Alert
@@ -169,8 +171,10 @@ function LoginForm() {
 
             <Button
               type="submit"
+              variant="contained"
+              fullWidth
               disabled={busy}
-              className="w-full mt-2 h-10.5 text-sm font-semibold"
+              sx={{ mt: 1, height: 42, fontWeight: 600 }}
             >
               {busy
                 ? "Please wait…"
@@ -178,30 +182,24 @@ function LoginForm() {
                   ? "Sign in"
                   : "Create account"}
             </Button>
-          </form>
+          </Box>
         </CardContent>
 
-        <Box
-          sx={{
-            mt: 4,
-            pt: 3,
-            borderTop: "1px solid var(--border)",
-            textAlign: "center",
-          }}
-        >
-          <Typography
-            variant="body2"
-            sx={{ color: "var(--muted-foreground)" }}
-          >
+        <Divider sx={{ my: 3 }} />
+
+        <Box sx={{ textAlign: "center" }}>
+          <Typography variant="body2" sx={{ color: "var(--muted-foreground)" }}>
             {store.mode === "signin"
               ? "Don't have an account yet?"
               : "Already have an account?"}{" "}
             <Button
-              variant="link"
+              type="button"
+              variant="text"
+              size="small"
               onClick={() =>
                 store.setMode(store.mode === "signin" ? "signup" : "signin")
               }
-              className="font-semibold text-primary"
+              sx={{ fontWeight: 600, minWidth: 0, p: 0.5 }}
             >
               {store.mode === "signin" ? "Sign up" : "Sign in"}
             </Button>

@@ -1,19 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { Database, Check, Copy, Loader2, Sparkles, AlertCircle, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import Divider from "@mui/material/Divider";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import { Database, Check, Copy, Sparkles, ArrowRight } from "lucide-react";
 import { CopyField } from "@/components/shared/copy-field";
 import { createDatabase, type DatabaseItem } from "@/lib/databases/client";
 import { extractErrorMessage } from "@/lib/errors";
@@ -38,7 +40,6 @@ export function CreateDatabaseDialog({
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Success reveal state
   const [createdDb, setCreatedDb] = React.useState<DatabaseItem | null>(null);
   const [copiedToken, setCopiedToken] = React.useState(false);
 
@@ -109,190 +110,254 @@ export function CreateDatabaseDialog({
     setTimeout(() => setCopiedToken(false), 2000);
   };
 
-  // If successfully created, show credentials confirmation view
   if (createdDb) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <div className="mb-2 inline-flex size-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <Sparkles className="size-5" />
-            </div>
-            <DialogTitle>Database Created Successfully</DialogTitle>
-            <DialogDescription>
-              Your new distributed libSQL database is provisioned and ready for connections.
-            </DialogDescription>
-          </DialogHeader>
+      <Dialog open={open} onClose={() => onOpenChange(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box
+            sx={{
+              mb: 1.5,
+              display: "inline-flex",
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(61, 214, 140, 0.12)",
+              color: "#3dd68c",
+            }}
+          >
+            <Sparkles size={20} />
+          </Box>
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+            Database Created Successfully
+          </Typography>
+        </DialogTitle>
 
-          <div className="flex flex-col gap-4 py-2 text-sm">
-            <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
-              <div className="flex justify-between items-center text-xs text-muted-foreground border-b pb-2">
-                <span>Database Name</span>
-                <span className="font-semibold text-foreground">{createdDb.name}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs text-muted-foreground border-b pb-2">
-                <span>Namespace</span>
-                <span className="font-mono text-foreground">{createdDb.namespace}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs text-muted-foreground border-b pb-2">
-                <span>Region</span>
-                <span className="text-foreground">{createdDb.region.toUpperCase()} (US East)</span>
-              </div>
-              <div className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">Connection URL</span>
-                <CopyField
-                  value={createdDb.libsqlUrl}
-                  className="rounded bg-background px-2 py-1 border"
-                />
-              </div>
-            </div>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <DialogContentText>
+            Your new distributed libSQL database is provisioned and ready for connections.
+          </DialogContentText>
 
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-xs font-semibold">Primary Auth Token</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  readOnly
-                  type="password"
-                  value={createdDb.defaultToken}
-                  className="font-mono text-xs selection:bg-primary/20"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyToken}
-                  className="shrink-0 gap-1.5"
-                >
-                  {copiedToken ? (
-                    <>
-                      <Check className="size-3.5 text-emerald-500" />
-                      Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="size-3.5" />
-                      Copy Token
-                    </>
-                  )}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Keep this token safe. It grants full read/write access to this database namespace.
-              </p>
-            </div>
-          </div>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 1.5,
+              borderRadius: "10px",
+              backgroundColor: "var(--muted)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 1.25,
+            }}
+          >
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="caption" color="text.secondary">
+                Database Name
+              </Typography>
+              <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                {createdDb.name}
+              </Typography>
+            </Box>
+            <Divider />
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="caption" color="text.secondary">
+                Namespace
+              </Typography>
+              <Typography variant="caption" sx={{ fontFamily: "var(--font-mono)" }}>
+                {createdDb.namespace}
+              </Typography>
+            </Box>
+            <Divider />
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Typography variant="caption" color="text.secondary">
+                Region
+              </Typography>
+              <Typography variant="caption">
+                {createdDb.region.toUpperCase()} (US East)
+              </Typography>
+            </Box>
+            <Divider />
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                Connection URL
+              </Typography>
+              <CopyField
+                value={createdDb.libsqlUrl}
+                sx={{
+                  borderRadius: "6px",
+                  backgroundColor: "var(--background)",
+                  px: 1,
+                  py: 0.5,
+                  border: "1px solid var(--border)",
+                }}
+              />
+            </Box>
+          </Paper>
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            {onOpenConnect && (
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              Primary Auth Token
+            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <TextField
+                size="small"
+                fullWidth
+                type="password"
+                value={createdDb.defaultToken}
+                slotProps={{
+                  input: {
+                    readOnly: true,
+                    sx: { fontFamily: "var(--font-mono)", fontSize: "0.75rem" },
+                  },
+                }}
+              />
               <Button
                 type="button"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => {
-                  onOpenChange(false);
-                  onOpenConnect(createdDb);
-                }}
+                variant="outlined"
+                size="small"
+                onClick={handleCopyToken}
+                startIcon={
+                  copiedToken ? (
+                    <Check size={14} color="#3dd68c" />
+                  ) : (
+                    <Copy size={14} />
+                  )
+                }
+                sx={{ flexShrink: 0 }}
               >
-                Connection Guide
-                <ArrowRight className="size-3.5" />
+                {copiedToken ? "Copied" : "Copy Token"}
               </Button>
-            )}
-            <Button type="button" onClick={() => onOpenChange(false)}>
-              Done
-            </Button>
-          </DialogFooter>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              Keep this token safe. It grants full read/write access to this database namespace.
+            </Typography>
+          </Box>
         </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          {onOpenConnect && (
+            <Button
+              type="button"
+              variant="outlined"
+              endIcon={<ArrowRight size={14} />}
+              onClick={() => {
+                onOpenChange(false);
+                onOpenConnect(createdDb);
+              }}
+            >
+              Connection Guide
+            </Button>
+          )}
+          <Button type="button" variant="contained" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </DialogActions>
       </Dialog>
     );
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <div className="mb-2 inline-flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Database className="size-5" />
-            </div>
-            <DialogTitle>Create Database</DialogTitle>
-            <DialogDescription>
-              Deploy a new ultra-fast libSQL database with instant global replication.
-            </DialogDescription>
-          </DialogHeader>
+    <Dialog
+      open={open}
+      onClose={() => !isSubmitting && onOpenChange(false)}
+      fullWidth
+      maxWidth="xs"
+    >
+      <Box component="form" onSubmit={handleSubmit}>
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box
+            sx={{
+              mb: 1.5,
+              display: "inline-flex",
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              color: "var(--primary)",
+            }}
+          >
+            <Database size={20} />
+          </Box>
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+            Create Database
+          </Typography>
+        </DialogTitle>
 
-          <div className="flex flex-col gap-4 py-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="db-name">Database Name</Label>
-              <Input
-                id="db-name"
-                placeholder="e.g. production-db, analytics, myapp"
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (error) setError(null);
-                }}
-                disabled={isSubmitting}
-                autoFocus
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <p className="text-xs text-muted-foreground">
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <DialogContentText>
+            Deploy a new ultra-fast libSQL database with instant global replication.
+          </DialogContentText>
+
+          <TextField
+            id="db-name"
+            label="Database Name"
+            size="small"
+            fullWidth
+            placeholder="e.g. production-db, analytics, myapp"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (error) setError(null);
+            }}
+            disabled={isSubmitting}
+            autoFocus
+            autoComplete="off"
+            slotProps={{ htmlInput: { spellCheck: false } }}
+            helperText={
+              <>
                 Domain preview:{" "}
-                <span className="font-mono text-foreground font-medium">
-                  {previewSlug}_[id].cloudisy.top
-                </span>
-              </p>
-            </div>
+                <Box
+                  component="span"
+                  sx={{ fontFamily: "var(--font-mono)", color: "var(--foreground)", fontWeight: 500 }}
+                >
+                  {previewSlug}-[id].cloudisy.top
+                </Box>
+              </>
+            }
+          />
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="db-region">Primary Region</Label>
-              <Select
-                id="db-region"
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                disabled={isSubmitting}
-              >
-                {REGIONS.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Primary writer instance region. Read replicas can sync globally.
-              </p>
-            </div>
+          <TextField
+            id="db-region"
+            label="Primary Region"
+            select
+            size="small"
+            fullWidth
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            disabled={isSubmitting}
+            helperText="Primary writer instance region. Read replicas can sync globally."
+          >
+            {REGIONS.map((r) => (
+              <MenuItem key={r.value} value={r.value}>
+                {r.label}
+              </MenuItem>
+            ))}
+          </TextField>
 
-            {error && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
-                <AlertCircle className="size-4 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-          </div>
+          {error && <Alert severity="error">{error}</Alert>}
+        </DialogContent>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting || !name.trim()}>
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                "Create Database"
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            type="button"
+            variant="outlined"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={isSubmitting || !name.trim()}
+            startIcon={isSubmitting ? <CircularProgress size={14} color="inherit" /> : undefined}
+          >
+            {isSubmitting ? "Creating..." : "Create Database"}
+          </Button>
+        </DialogActions>
+      </Box>
     </Dialog>
   );
 }

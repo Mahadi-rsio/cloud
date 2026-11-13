@@ -360,6 +360,20 @@ curl https://cloud.rsioex.workers.dev/api/v1/storage/namespaces/my-files/files/h
   -H "x-api-key: <your-api-key>"
 ```
 
+### 3.12 Databases (SQLite / libSQL) [Implemented]
+
+Multi-tenant SQLite/libSQL (`sqld`) database management endpoints. All endpoints require an authenticated user session (`requireUser()`).
+
+| Endpoint | Method | Description | Success | Status |
+| --- | --- | --- | --- | --- |
+| `/api/v1/databases` | `GET` | List all databases owned by the current user (with stats) | `200` `{ databases[] }` | Implemented |
+| `/api/v1/databases` | `POST` | Provision a new tenant libSQL namespace & mint Ed25519 JWT token | `201` `{ database }` | Implemented |
+| `/api/v1/databases/:id` | `GET` | Get details, connection URL, and stats for a database | `200` `{ database }` | Implemented |
+| `/api/v1/databases/:id` | `DELETE` | Delete a tenant libSQL namespace and its control-plane record | `200` `{ success, id, namespace }` | Implemented |
+
+- **Validation:** `createDatabaseSchema` in `lib/validators/database.ts`.
+- **Rate Limits:** `120 req/min` on list/get; `20 req/min` on create/delete.
+
 ## 4. Security and Reliability Requirements (All Endpoints)
 
 - Auth vs authz: session proves identity; every resource access re-checks ownership server-side.

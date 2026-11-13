@@ -1,14 +1,23 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Loader2 } from "lucide-react";
+import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
 
 const Studio = dynamic(() => import("@/components/studio/Studio").then((m) => m.Studio), {
   ssr: false,
   loading: () => (
-    <div className="flex h-dvh items-center justify-center bg-background">
-      <Loader2 className="size-6 animate-spin text-muted-foreground" />
-    </div>
+    <Box
+      sx={{
+        display: "flex",
+        height: "100dvh",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: "var(--background)",
+      }}
+    >
+      <CircularProgress size={24} sx={{ color: "var(--muted-foreground)" }} />
+    </Box>
   ),
 });
 

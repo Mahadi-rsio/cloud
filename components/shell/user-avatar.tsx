@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Avatar from "@mui/material/Avatar";
-import { cn } from "cn";
+import type { SxProps, Theme } from "@mui/material/styles";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).slice(0, 2);
@@ -12,28 +12,32 @@ function initials(name: string) {
 export function UserAvatar({
   name,
   src,
-  className,
+  sx,
   size = 32,
 }: {
   name: string;
   src?: string;
-  className?: string;
+  sx?: SxProps<Theme>;
   size?: number;
 }) {
   return (
     <Avatar
       src={src}
       alt={name}
-      sx={{
-        width: size,
-        height: size,
-        fontSize: size <= 32 ? "0.75rem" : "0.875rem",
-        fontWeight: 600,
-        backgroundColor: "var(--accent)",
-        color: "var(--foreground)",
-        border: "1.5px solid var(--border)",
-      }}
-      className={cn("shrink-0 transition-transform", className)}
+      sx={[
+        {
+          width: size,
+          height: size,
+          flexShrink: 0,
+          fontSize: size <= 32 ? "0.75rem" : "0.875rem",
+          fontWeight: 600,
+          backgroundColor: "var(--accent)",
+          color: "var(--foreground)",
+          border: "1.5px solid var(--border)",
+          transition: "transform 0.15s ease",
+        },
+        ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+      ]}
     >
       {initials(name)}
     </Avatar>

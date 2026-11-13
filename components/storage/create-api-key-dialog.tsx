@@ -1,19 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { Key, Copy, Check, AlertTriangle, Loader2, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import Divider from "@mui/material/Divider";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import { Key, Copy, Check, ShieldCheck } from "lucide-react";
 import { createStorageApiKey, type StorageApiKey, type CreateApiKeyResult } from "@/lib/storage-client";
 import { extractErrorMessage } from "@/lib/errors";
 
@@ -34,7 +36,6 @@ export function CreateApiKeyDialog({
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Success state with secret key reveal
   const [createdResult, setCreatedResult] = React.useState<CreateApiKeyResult | null>(null);
   const [copied, setCopied] = React.useState(false);
 
@@ -99,175 +100,216 @@ export function CreateApiKeyDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        {createdResult ? (
-          // Step 2: Key created, reveal secret key
-          <div className="flex flex-col gap-4">
-            <DialogHeader>
-              <div className="mb-2 inline-flex size-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
-                <ShieldCheck className="size-5" />
-              </div>
-              <DialogTitle>API Key Created</DialogTitle>
-              <DialogDescription>
-                Copy your secret API key now. For security, it will not be displayed again.
-              </DialogDescription>
-            </DialogHeader>
+    <Dialog
+      open={open}
+      onClose={() => !isSubmitting && onOpenChange(false)}
+      fullWidth
+      maxWidth="xs"
+    >
+      {createdResult ? (
+        <>
+          <DialogTitle sx={{ pb: 1 }}>
+            <Box
+              sx={{
+                mb: 1.5,
+                display: "inline-flex",
+                width: 40,
+                height: 40,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "8px",
+                backgroundColor: "rgba(61, 214, 140, 0.12)",
+                color: "#3dd68c",
+              }}
+            >
+              <ShieldCheck size={20} />
+            </Box>
+            <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+              API Key Created
+            </Typography>
+          </DialogTitle>
 
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
-              <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-              <span>
-                Please store this key in a secure location (e.g. environment variable). You won't be able to retrieve it later.
-              </span>
-            </div>
+          <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <DialogContentText>
+              Copy your secret API key now. For security, it will not be displayed again.
+            </DialogContentText>
 
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-xs font-semibold">Secret API Key</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  readOnly
+            <Alert severity="warning" sx={{ fontSize: "0.75rem" }}>
+              Please store this key in a secure location (e.g. environment variable). You won't be able to retrieve it later.
+            </Alert>
+
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+              <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                Secret API Key
+              </Typography>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <TextField
+                  size="small"
+                  fullWidth
                   value={createdResult.secretKey}
-                  className="font-mono text-xs bg-muted/50 select-all"
+                  slotProps={{
+                    input: {
+                      readOnly: true,
+                      sx: { fontFamily: "var(--font-mono)", fontSize: "0.75rem" },
+                    },
+                  }}
                 />
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
+                  variant="outlined"
+                  size="small"
                   onClick={handleCopyKey}
+                  startIcon={
+                    copied ? <Check size={14} color="#3dd68c" /> : <Copy size={14} />
+                  }
+                  sx={{ flexShrink: 0 }}
                 >
-                  {copied ? (
-                    <>
-                      <Check className="mr-1.5 size-4 text-emerald-500" />
-                      Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="mr-1.5 size-4" />
-                      Copy
-                    </>
-                  )}
+                  {copied ? "Copied" : "Copy"}
                 </Button>
-              </div>
-            </div>
+              </Box>
+            </Box>
 
-            <div className="flex flex-col gap-1 border-t pt-2 text-xs text-muted-foreground">
-              <p className="font-semibold text-foreground">Usage with Authorization header:</p>
-              <code className="rounded bg-muted p-2 font-mono text-[11px] text-foreground block overflow-x-auto">
+            <Divider />
+
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+              <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                Usage with Authorization header:
+              </Typography>
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 1,
+                  backgroundColor: "var(--muted)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "11px",
+                  overflowX: "auto",
+                }}
+              >
                 curl -H "Authorization: Bearer {createdResult.secretKey.slice(0, 10)}..." \
                 <br />
                 {"  "}{typeof window !== "undefined" ? window.location.origin : ""}/api/v1/storage/usage
-              </code>
-            </div>
+              </Paper>
+            </Box>
+          </DialogContent>
 
-            <DialogFooter className="mt-2">
-              <Button type="button" className="w-full" onClick={() => onOpenChange(false)}>
-                Done
-              </Button>
-            </DialogFooter>
-          </div>
-        ) : (
-          // Step 1: Create Form
-          <form onSubmit={handleSubmit}>
-            <DialogHeader>
-              <div className="mb-2 inline-flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Key className="size-5" />
-              </div>
-              <DialogTitle>Create Storage API Key</DialogTitle>
-              <DialogDescription>
-                Generate an API key to access storage buckets programmatically with REST or S3 tools.
-              </DialogDescription>
-            </DialogHeader>
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button type="button" variant="contained" fullWidth onClick={() => onOpenChange(false)}>
+              Done
+            </Button>
+          </DialogActions>
+        </>
+      ) : (
+        <Box component="form" onSubmit={handleSubmit}>
+          <DialogTitle sx={{ pb: 1 }}>
+            <Box
+              sx={{
+                mb: 1.5,
+                display: "inline-flex",
+                width: 40,
+                height: 40,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "8px",
+                backgroundColor: "rgba(56, 189, 248, 0.12)",
+                color: "var(--primary)",
+              }}
+            >
+              <Key size={20} />
+            </Box>
+            <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+              Create Storage API Key
+            </Typography>
+          </DialogTitle>
 
-            <div className="flex flex-col gap-4 py-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="key-name">Key Name</Label>
-                <Input
-                  id="key-name"
-                  placeholder="e.g. production-backend, backup-worker"
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (error) setError(null);
-                  }}
-                  disabled={isSubmitting}
-                  autoFocus
-                />
-              </div>
+          <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <DialogContentText>
+              Generate an API key to access storage buckets programmatically with REST or S3 tools.
+            </DialogContentText>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="key-env">Environment</Label>
-                  <Select
-                    id="key-env"
-                    value={environment}
-                    onChange={(e) => setEnvironment(e.target.value as "live" | "test")}
-                    disabled={isSubmitting}
-                  >
-                    <option value="live">Live</option>
-                    <option value="test">Test</option>
-                  </Select>
-                </div>
+            <TextField
+              id="key-name"
+              label="Key Name"
+              size="small"
+              fullWidth
+              placeholder="e.g. production-backend, backup-worker"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (error) setError(null);
+              }}
+              disabled={isSubmitting}
+              autoFocus
+            />
 
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="key-scopes">Permissions</Label>
-                  <Select
-                    id="key-scopes"
-                    value={scopes}
-                    onChange={(e) => setScopes(e.target.value)}
-                    disabled={isSubmitting}
-                  >
-                    <option value="storage:read,storage:write">Read & Write</option>
-                    <option value="storage:read">Read Only</option>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="key-exp">Expiration</Label>
-                <Select
-                  id="key-exp"
-                  value={expiration}
-                  onChange={(e) => setExpiration(e.target.value)}
-                  disabled={isSubmitting}
-                >
-                  <option value="never">Never expires</option>
-                  <option value="30">30 days</option>
-                  <option value="90">90 days</option>
-                  <option value="365">1 year (365 days)</option>
-                </Select>
-              </div>
-
-              {error && (
-                <div className="rounded-lg bg-destructive/10 p-3 text-sm font-medium text-destructive">
-                  {error}
-                </div>
-              )}
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
+            <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5 }}>
+              <TextField
+                id="key-env"
+                label="Environment"
+                select
+                size="small"
+                fullWidth
+                value={environment}
+                onChange={(e) => setEnvironment(e.target.value as "live" | "test")}
                 disabled={isSubmitting}
               >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isSubmitting || !name.trim()}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  "Generate Key"
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        )}
-      </DialogContent>
+                <MenuItem value="live">Live</MenuItem>
+                <MenuItem value="test">Test</MenuItem>
+              </TextField>
+
+              <TextField
+                id="key-scopes"
+                label="Permissions"
+                select
+                size="small"
+                fullWidth
+                value={scopes}
+                onChange={(e) => setScopes(e.target.value)}
+                disabled={isSubmitting}
+              >
+                <MenuItem value="storage:read,storage:write">Read & Write</MenuItem>
+                <MenuItem value="storage:read">Read Only</MenuItem>
+              </TextField>
+            </Box>
+
+            <TextField
+              id="key-exp"
+              label="Expiration"
+              select
+              size="small"
+              fullWidth
+              value={expiration}
+              onChange={(e) => setExpiration(e.target.value)}
+              disabled={isSubmitting}
+            >
+              <MenuItem value="never">Never expires</MenuItem>
+              <MenuItem value="30">30 days</MenuItem>
+              <MenuItem value="90">90 days</MenuItem>
+              <MenuItem value="365">1 year (365 days)</MenuItem>
+            </TextField>
+
+            {error && <Alert severity="error">{error}</Alert>}
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, pb: 2.5 }}>
+            <Button
+              type="button"
+              variant="outlined"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={isSubmitting || !name.trim()}
+              startIcon={isSubmitting ? <CircularProgress size={14} color="inherit" /> : undefined}
+            >
+              {isSubmitting ? "Generating..." : "Generate Key"}
+            </Button>
+          </DialogActions>
+        </Box>
+      )}
     </Dialog>
   );
 }

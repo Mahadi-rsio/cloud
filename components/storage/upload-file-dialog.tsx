@@ -1,18 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { UploadCloud, File, Loader2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
+import Paper from "@mui/material/Paper";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
+import { UploadCloud, File, X } from "lucide-react";
 import { formatBytes, uploadStorageFile } from "@/lib/storage-client";
 import { extractErrorMessage } from "@/lib/errors";
 
@@ -46,7 +48,6 @@ export function UploadFileDialog({
 
   const handleFileSelection = (file: File) => {
     setSelectedFile(file);
-    // Sanitize default filename path
     const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     setCustomPath(cleanName);
     setError(null);
@@ -97,139 +98,194 @@ export function UploadFileDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <div className="mb-2 inline-flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <UploadCloud className="size-5" />
-            </div>
-            <DialogTitle>Upload File</DialogTitle>
-            <DialogDescription>
-              Upload a file to storage bucket <code className="font-semibold text-foreground">{namespace}</code>.
-            </DialogDescription>
-          </DialogHeader>
+    <Dialog
+      open={open}
+      onClose={() => !isUploading && onOpenChange(false)}
+      fullWidth
+      maxWidth="xs"
+    >
+      <Box component="form" onSubmit={handleSubmit}>
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box
+            sx={{
+              mb: 1.5,
+              display: "inline-flex",
+              width: 40,
+              height: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              color: "var(--primary)",
+            }}
+          >
+            <UploadCloud size={20} />
+          </Box>
+          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+            Upload File
+          </Typography>
+        </DialogTitle>
 
-          <div className="flex flex-col gap-4 py-4">
-            {/* Drag & Drop Area */}
-            {!selectedFile ? (
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
-                  isDragging
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50 hover:bg-muted/30"
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      handleFileSelection(file);
-                    }
-                  }}
-                  disabled={isUploading}
-                />
-                <div className="rounded-full bg-muted p-3 text-muted-foreground">
-                  <UploadCloud className="size-6" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    Click to select or drag & drop
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Up to 100 MB per file. Direct R2 stream with atomic quota check.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between rounded-xl border bg-muted/30 p-3.5">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="rounded-lg bg-primary/10 p-2 text-primary shrink-0">
-                    <File className="size-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {selectedFile.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatBytes(selectedFile.size)} • {selectedFile.type || "application/octet-stream"}
-                    </p>
-                  </div>
-                </div>
-                {!isUploading && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground hover:text-foreground shrink-0"
-                    onClick={() => {
-                      setSelectedFile(null);
-                      setCustomPath("");
-                    }}
-                  >
-                    <X className="size-4" />
-                  </Button>
-                )}
-              </div>
-            )}
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <DialogContentText>
+            Upload a file to storage bucket{" "}
+            <Box component="code" sx={{ fontWeight: 600, color: "var(--foreground)" }}>
+              {namespace}
+            </Box>
+            .
+          </DialogContentText>
 
-            {/* Destination Path Input */}
-            {selectedFile && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="file-path">Destination Path</Label>
-                <Input
-                  id="file-path"
-                  value={customPath}
-                  onChange={(e) => {
-                    setCustomPath(e.target.value);
-                    if (error) setError(null);
-                  }}
-                  placeholder="e.g. photos/holiday.jpg or logo.png"
-                  disabled={isUploading}
-                />
-                <p className="text-xs text-muted-foreground">
-                  File will be stored as: <code className="text-foreground">{namespace}/{customPath || "..."}</code>
-                </p>
-              </div>
-            )}
-
-            {/* Error Message */}
-            {error && (
-              <div className="rounded-lg bg-destructive/10 p-3 text-sm font-medium text-destructive">
-                {error}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isUploading}
+          {!selectedFile ? (
+            <Box
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                borderRadius: "12px",
+                border: "2px dashed",
+                borderColor: isDragging ? "var(--primary)" : "var(--border)",
+                backgroundColor: isDragging ? "rgba(56, 189, 248, 0.06)" : "transparent",
+                p: 3,
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+                "&:hover": {
+                  borderColor: "var(--primary)",
+                  backgroundColor: "var(--muted)",
+                },
+              }}
             >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isUploading || !selectedFile}>
-              {isUploading ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                "Upload File"
+              <input
+                ref={fileInputRef}
+                type="file"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    handleFileSelection(file);
+                  }
+                }}
+                disabled={isUploading}
+              />
+              <Box
+                sx={{
+                  borderRadius: "9999px",
+                  backgroundColor: "var(--muted)",
+                  p: 1.5,
+                  color: "var(--muted-foreground)",
+                }}
+              >
+                <UploadCloud size={24} />
+              </Box>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  Click to select or drag & drop
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Up to 100 MB per file. Direct R2 stream with atomic quota check.
+                </Typography>
+              </Box>
+            </Box>
+          ) : (
+            <Paper
+              variant="outlined"
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderRadius: "12px",
+                backgroundColor: "var(--muted)",
+                p: 1.75,
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
+                <Box
+                  sx={{
+                    borderRadius: "8px",
+                    backgroundColor: "rgba(56, 189, 248, 0.12)",
+                    p: 1,
+                    color: "var(--primary)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <File size={20} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
+                    {selectedFile.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {formatBytes(selectedFile.size)} • {selectedFile.type || "application/octet-stream"}
+                  </Typography>
+                </Box>
+              </Box>
+              {!isUploading && (
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    setSelectedFile(null);
+                    setCustomPath("");
+                  }}
+                  sx={{ flexShrink: 0 }}
+                >
+                  <X size={16} />
+                </IconButton>
               )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+            </Paper>
+          )}
+
+          {selectedFile && (
+            <TextField
+              id="file-path"
+              label="Destination Path"
+              size="small"
+              fullWidth
+              value={customPath}
+              onChange={(e) => {
+                setCustomPath(e.target.value);
+                if (error) setError(null);
+              }}
+              placeholder="e.g. photos/holiday.jpg or logo.png"
+              disabled={isUploading}
+              helperText={
+                <>
+                  File will be stored as:{" "}
+                  <Box component="code" sx={{ color: "var(--foreground)" }}>
+                    {namespace}/{customPath || "..."}
+                  </Box>
+                </>
+              }
+            />
+          )}
+
+          {error && <Alert severity="error">{error}</Alert>}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            type="button"
+            variant="outlined"
+            onClick={() => onOpenChange(false)}
+            disabled={isUploading}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={isUploading || !selectedFile}
+            startIcon={isUploading ? <CircularProgress size={14} color="inherit" /> : undefined}
+          >
+            {isUploading ? "Uploading..." : "Upload File"}
+          </Button>
+        </DialogActions>
+      </Box>
     </Dialog>
   );
 }

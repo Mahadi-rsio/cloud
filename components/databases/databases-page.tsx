@@ -1,6 +1,23 @@
 "use client";
 
 import * as React from "react";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
+import Chip from "@mui/material/Chip";
+import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
+import LinearProgress from "@mui/material/LinearProgress";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import Skeleton from "@mui/material/Skeleton";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 import {
   Database,
   Plus,
@@ -16,8 +33,6 @@ import {
   Check,
   Copy,
   Activity,
-  HardDrive,
-  ArrowUpRight,
   Table2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -27,15 +42,6 @@ import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { CopyField } from "@/components/shared/copy-field";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { RelativeTime } from "@/components/shared/relative-time";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { CreateDatabaseDialog } from "./create-database-dialog";
 import { ConnectDatabaseDialog } from "./connect-database-dialog";
 import {
@@ -44,7 +50,6 @@ import {
   type DatabaseItem,
 } from "@/lib/databases/client";
 import { formatBytes } from "@/lib/storage-client";
-import { cn } from "@/lib/utils";
 import { extractErrorMessage } from "@/lib/errors";
 import { useStudioIntentStore } from "@/stores/studio-intent";
 
@@ -61,15 +66,17 @@ export function DatabasesPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
 
-  // Dialog states
   const [createOpen, setCreateOpen] = React.useState(false);
   const [connectDb, setConnectDb] = React.useState<DatabaseItem | null>(null);
   const [deleteDb, setDeleteDb] = React.useState<DatabaseItem | null>(null);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
-  // Copied token tracker for inline copy buttons
   const [copiedTokenId, setCopiedTokenId] = React.useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = React.useState<{
+    el: HTMLElement;
+    db: DatabaseItem;
+  } | null>(null);
 
   const loadDatabases = React.useCallback(async () => {
     try {
@@ -99,19 +106,16 @@ export function DatabasesPage() {
   const handleCopyToken = async (db: DatabaseItem) => {
     try {
       await navigator.clipboard.writeText(db.defaultToken);
-      setCopiedTokenId(db.id);
-      setTimeout(() => setCopiedTokenId(null), 2000);
     } catch {
-      // Fallback
       const textarea = document.createElement("textarea");
       textarea.value = db.defaultToken;
       document.body.appendChild(textarea);
       textarea.select();
       document.execCommand("copy");
       document.body.removeChild(textarea);
-      setCopiedTokenId(db.id);
-      setTimeout(() => setCopiedTokenId(null), 2000);
     }
+    setCopiedTokenId(db.id);
+    setTimeout(() => setCopiedTokenId(null), 2000);
   };
 
   const handleDeleteConfirm = async () => {
@@ -141,92 +145,154 @@ export function DatabasesPage() {
   }, [databases, searchQuery]);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <PageHeader
         title="Databases"
         description="Serverless, distributed libSQL & SQLite databases with zero cold starts, replication, and instant branching."
         actions={
-          <div className="flex items-center gap-2">
+          <Stack direction="row" spacing={1}>
             <Button
               type="button"
-              variant="outline"
-              size="sm"
+              variant="outlined"
+              size="small"
               onClick={() => void loadDatabases()}
               disabled={isLoading}
-              className="gap-1.5"
+              startIcon={
+                <RefreshCw
+                  size={14}
+                  style={isLoading ? { animation: "spin 1s linear infinite" } : undefined}
+                />
+              }
             >
-              <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
             <Button
               type="button"
-              size="sm"
+              variant="contained"
+              size="small"
               onClick={() => setCreateOpen(true)}
-              className="gap-1.5"
+              startIcon={<Plus size={16} />}
             >
-              <Plus className="size-4" />
               Create Database
             </Button>
-          </div>
+          </Stack>
         }
       />
 
-      {/* Info / Quick Stats bar */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="flex items-center gap-3 rounded-xl border bg-card p-4 shadow-2xs">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Database className="size-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xs text-muted-foreground">Active Databases</span>
-            <span className="text-lg font-semibold">{databases.length}</span>
-          </div>
-        </div>
+      {/* Quick Stats bar */}
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" },
+          gap: 2,
+        }}
+      >
+        <Card sx={{ display: "flex", alignItems: "center", gap: 1.5, p: 2 }}>
+          <Box
+            sx={{
+              display: "flex",
+              width: 40,
+              height: 40,
+              flexShrink: 0,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              color: "var(--primary)",
+            }}
+          >
+            <Database size={20} />
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              Active Databases
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              {databases.length}
+            </Typography>
+          </Box>
+        </Card>
 
-        <div className="flex items-center gap-3 rounded-xl border bg-card p-4 shadow-2xs">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
-            <Server className="size-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xs text-muted-foreground">Engine & Protocol</span>
-            <span className="text-lg font-semibold">libSQL / SQLite</span>
-          </div>
-        </div>
+        <Card sx={{ display: "flex", alignItems: "center", gap: 1.5, p: 2 }}>
+          <Box
+            sx={{
+              display: "flex",
+              width: 40,
+              height: 40,
+              flexShrink: 0,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(59, 130, 246, 0.12)",
+              color: "#3b82f6",
+            }}
+          >
+            <Server size={20} />
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              Engine & Protocol
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              libSQL / SQLite
+            </Typography>
+          </Box>
+        </Card>
 
-        <div className="flex items-center gap-3 rounded-xl border bg-card p-4 shadow-2xs">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
-            <ShieldCheck className="size-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xs text-muted-foreground">Auth & Encryption</span>
-            <span className="text-lg font-semibold">Ed25519 JWT + TLS</span>
-          </div>
-        </div>
-      </div>
+        <Card sx={{ display: "flex", alignItems: "center", gap: 1.5, p: 2 }}>
+          <Box
+            sx={{
+              display: "flex",
+              width: 40,
+              height: 40,
+              flexShrink: 0,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              backgroundColor: "rgba(61, 214, 140, 0.12)",
+              color: "#3dd68c",
+            }}
+          >
+            <ShieldCheck size={20} />
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              Auth & Encryption
+            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Ed25519 JWT + TLS
+            </Typography>
+          </Box>
+        </Card>
+      </Box>
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-full sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search databases by name or namespace..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-      </div>
+      {/* Search Bar */}
+      <Box sx={{ maxWidth: { xs: "100%", sm: 380 } }}>
+        <TextField
+          size="small"
+          fullWidth
+          placeholder="Search databases by name or namespace..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search size={16} />
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+      </Box>
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       {isLoading && databases.length === 0 ? (
-        <div className="flex flex-col gap-3">
+        <Stack spacing={1.5}>
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-28 animate-pulse rounded-xl border border-muted bg-muted/20"
-            />
+            <Skeleton key={i} variant="rounded" height={112} sx={{ borderRadius: "12px" }} />
           ))}
-        </div>
+        </Stack>
       ) : error ? (
         <ErrorState
           title="Failed to load databases"
@@ -235,29 +301,28 @@ export function DatabasesPage() {
         />
       ) : databases.length === 0 ? (
         <EmptyState
-          icon={<Database className="size-6" />}
+          icon={<Database size={24} />}
           title="No databases found"
           description="You haven't created any databases yet. Create your first libSQL database in seconds."
           action={
-            <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus className="size-4" />
+            <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => setCreateOpen(true)}>
               Create Database
             </Button>
           }
         />
       ) : filteredDatabases.length === 0 ? (
         <EmptyState
-          icon={<Search className="size-6" />}
+          icon={<Search size={24} />}
           title="No matching databases"
           description={`No database found matching "${searchQuery}".`}
           action={
-            <Button variant="outline" onClick={() => setSearchQuery("")}>
+            <Button variant="outlined" onClick={() => setSearchQuery("")}>
               Clear Search
             </Button>
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4">
+        <Stack spacing={2}>
           {filteredDatabases.map((db) => {
             const hasCopiedToken = copiedTokenId === db.id;
             const stats = db.stats;
@@ -280,244 +345,356 @@ export function DatabasesPage() {
             );
 
             return (
-              <div
+              <Card
                 key={db.id}
-                className="flex flex-col rounded-xl border bg-card p-5 shadow-2xs transition-all hover:border-foreground/20 gap-4"
+                sx={{
+                  p: 2.5,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  transition: "border-color 0.15s ease",
+                  "&:hover": { borderColor: "text.secondary" },
+                }}
               >
-                <div className="flex flex-col justify-between sm:flex-row sm:items-center gap-4">
-                  <div className="flex flex-col gap-2 min-w-0 flex-1">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <Database className="size-4" />
-                      </div>
-                      <span className="font-semibold text-foreground text-base truncate">
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: { xs: "column", sm: "row" },
+                    justifyContent: "space-between",
+                    alignItems: { sm: "center" },
+                    gap: 2,
+                  }}
+                >
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0, flex: 1 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          width: 32,
+                          height: 32,
+                          flexShrink: 0,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderRadius: "8px",
+                          backgroundColor: "rgba(56, 189, 248, 0.12)",
+                          color: "var(--primary)",
+                        }}
+                      >
+                        <Database size={16} />
+                      </Box>
+                      <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
                         {db.name}
-                      </span>
-                      <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
-                        {db.namespace}
-                      </span>
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label={db.namespace}
+                        sx={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "0.7rem",
+                          height: 22,
+                          borderRadius: "6px",
+                        }}
+                      />
                       <StatusBadge status={db.status} />
-                      <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-                        {db.region.toUpperCase()}
-                      </span>
-                    </div>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={db.region.toUpperCase()}
+                        sx={{ fontSize: "0.7rem", height: 22 }}
+                      />
+                    </Box>
 
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="shrink-0 font-medium text-foreground">URL:</span>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexDirection: { xs: "column", sm: "row" },
+                        alignItems: { sm: "center" },
+                        gap: { xs: 0.75, sm: 2 },
+                      }}
+                    >
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, flexShrink: 0 }}>
+                          URL:
+                        </Typography>
                         <CopyField
                           value={db.libsqlUrl}
-                          className="rounded bg-muted/40 px-2 py-0.5 max-w-xs sm:max-w-md"
+                          sx={{
+                            borderRadius: "6px",
+                            backgroundColor: "var(--muted)",
+                            px: 1,
+                            py: 0.25,
+                            maxWidth: { xs: 300, sm: 420 },
+                          }}
                         />
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span>Created</span>
-                        <RelativeTime value={db.createdAt} className="font-medium" />
-                      </div>
-                    </div>
-                  </div>
+                      </Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                        Created <RelativeTime value={db.createdAt} sx={{ fontWeight: 500 }} />
+                      </Typography>
+                    </Box>
+                  </Box>
 
-                  {/* Database Actions */}
-                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0">
+                  {/* Actions */}
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    sx={{
+                      alignItems: "center",
+                      flexShrink: 0,
+                      pt: { xs: 1.5, sm: 0 },
+                      borderTop: { xs: "1px solid var(--border)", sm: "none" },
+                      justifyContent: { xs: "flex-end", sm: "flex-start" },
+                    }}
+                  >
                     <Button
                       type="button"
-                      variant="outline"
-                      size="sm"
+                      variant="outlined"
+                      size="small"
+                      startIcon={<Table2 size={14} />}
                       onClick={() => openStudio(db)}
-                      className="gap-1.5 flex-1 sm:flex-initial"
                     >
-                      <Table2 className="size-3.5" />
                       Studio
                     </Button>
-
                     <Button
                       type="button"
-                      variant="outline"
-                      size="sm"
+                      variant="outlined"
+                      size="small"
+                      startIcon={<Code2 size={14} />}
                       onClick={() => setConnectDb(db)}
-                      className="gap-1.5 flex-1 sm:flex-initial"
                     >
-                      <Code2 className="size-3.5" />
                       Connect
                     </Button>
-
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="sm"
+                      variant="text"
+                      size="small"
                       onClick={() => void handleCopyToken(db)}
-                      className="gap-1 text-xs shrink-0"
+                      startIcon={
+                        hasCopiedToken ? (
+                          <Check size={14} color="#3dd68c" />
+                        ) : (
+                          <KeyRound size={14} />
+                        )
+                      }
                       title="Copy Primary Auth Token"
                     >
-                      {hasCopiedToken ? (
-                        <>
-                          <Check className="size-3.5 text-emerald-500" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <KeyRound className="size-3.5" />
-                          Token
-                        </>
-                      )}
+                      {hasCopiedToken ? "Copied" : "Token"}
                     </Button>
+                    <IconButton
+                      size="small"
+                      aria-label="Open menu"
+                      onClick={(e) => setMenuAnchor({ el: e.currentTarget, db })}
+                    >
+                      <MoreHorizontal size={16} />
+                    </IconButton>
+                  </Stack>
+                </Box>
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon-sm" className="size-8 shrink-0">
-                          <MoreHorizontal className="size-4" />
-                          <span className="sr-only">Open menu</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuItem onClick={() => openStudio(db)}>
-                          <Table2 className="mr-2 size-4" />
-                          Open in Studio
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setConnectDb(db)}>
-                          <Code2 className="mr-2 size-4" />
-                          Connection Guide
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void handleCopyToken(db)}>
-                          <KeyRound className="mr-2 size-4" />
-                          Copy Auth Token
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            void navigator.clipboard.writeText(db.libsqlUrl);
-                          }}
-                        >
-                          <Copy className="mr-2 size-4" />
-                          Copy LibSQL URL
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            void navigator.clipboard.writeText(db.httpUrl);
-                          }}
-                        >
-                          <ExternalLink className="mr-2 size-4" />
-                          Copy HTTP URL
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                          onClick={() => {
-                            setDeleteError(null);
-                            setDeleteDb(db);
-                          }}
-                        >
-                          <Trash2 className="mr-2 size-4" />
-                          Delete Database
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-
-                {/* Usage & Metering (Free Tier: 1M reads, 100k writes, 512MB storage) */}
-                <div className="rounded-lg border bg-muted/15 p-3.5">
-                  <div className="flex items-center justify-between text-xs font-medium mb-2.5 flex-wrap gap-2">
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <Activity className="size-3.5 text-primary" />
-                      <span>Monthly Usage & Quotas</span>
-                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                        FREE TIER
-                      </span>
-                    </div>
-                    <span className="text-[11px] text-muted-foreground font-mono">
+                {/* Usage & Metering */}
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 1.75,
+                    borderRadius: "10px",
+                    backgroundColor: "var(--muted)",
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      flexWrap: "wrap",
+                      gap: 1,
+                      mb: 1.5,
+                    }}
+                  >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                      <Activity size={14} color="var(--primary)" />
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                        Monthly Usage & Quotas
+                      </Typography>
+                      <Chip
+                        size="small"
+                        label="FREE TIER"
+                        sx={{
+                          height: 18,
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          color: "var(--primary)",
+                          backgroundColor: "rgba(56, 189, 248, 0.12)",
+                        }}
+                      />
+                    </Box>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                    >
                       {queryCount.toLocaleString()} queries processed
-                    </span>
-                  </div>
+                    </Typography>
+                  </Box>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" },
+                      gap: 2,
+                    }}
+                  >
                     {/* Rows Read */}
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-muted-foreground">Rows Read</span>
-                        <span className="font-mono font-medium text-foreground">
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                      <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                        <Typography variant="caption" color="text.secondary">
+                          Rows Read
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>
                           {rowsRead.toLocaleString()}{" "}
-                          <span className="text-muted-foreground font-normal">
+                          <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
                             / 1M ({readPercent}%)
-                          </span>
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full rounded-full bg-muted/80 overflow-hidden">
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-all",
-                            readPercent >= 100
-                              ? "bg-red-500"
-                              : readPercent > 80
-                                ? "bg-amber-500"
-                                : "bg-primary",
-                          )}
-                          style={{
-                            width: `${Math.max(readPercent > 0 ? 2 : 0, readPercent)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
+                          </Box>
+                        </Typography>
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.max(readPercent > 0 ? 2 : 0, readPercent)}
+                        color={readPercent >= 100 ? "error" : readPercent > 80 ? "warning" : "primary"}
+                        sx={{ height: 6, borderRadius: 3 }}
+                      />
+                    </Box>
 
                     {/* Rows Written */}
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-muted-foreground">Rows Written</span>
-                        <span
-                          className={cn(
-                            "font-mono font-medium",
-                            writePercent > 80 ? "text-amber-500" : "text-foreground",
-                          )}
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                      <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                        <Typography variant="caption" color="text.secondary">
+                          Rows Written
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color={writePercent > 80 ? "warning.main" : "text.primary"}
+                          sx={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}
                         >
                           {rowsWritten.toLocaleString()}{" "}
-                          <span className="text-muted-foreground font-normal">
+                          <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
                             / 100k ({writePercent}%)
-                          </span>
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full rounded-full bg-muted/80 overflow-hidden">
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-all",
-                            writePercent >= 100
-                              ? "bg-red-500"
-                              : writePercent > 80
-                                ? "bg-amber-500"
-                                : "bg-emerald-500",
-                          )}
-                          style={{
-                            width: `${Math.max(writePercent > 0 ? 2 : 0, writePercent)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
+                          </Box>
+                        </Typography>
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.max(writePercent > 0 ? 2 : 0, writePercent)}
+                        color={writePercent >= 100 ? "error" : writePercent > 80 ? "warning" : "success"}
+                        sx={{ height: 6, borderRadius: 3 }}
+                      />
+                    </Box>
 
                     {/* Storage */}
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-muted-foreground">Disk Storage</span>
-                        <span className="font-mono font-medium text-foreground">
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                      <Box sx={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                        <Typography variant="caption" color="text.secondary">
+                          Disk Storage
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>
                           {formatBytes(storageBytes)}{" "}
-                          <span className="text-muted-foreground font-normal">
+                          <Box component="span" sx={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
                             / 512 MB ({storagePercent}%)
-                          </span>
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full rounded-full bg-muted/80 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-blue-500 transition-all"
-                          style={{
-                            width: `${Math.max(storagePercent > 0 ? 2 : 0, storagePercent)}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                          </Box>
+                        </Typography>
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.max(storagePercent > 0 ? 2 : 0, storagePercent)}
+                        color="info"
+                        sx={{ height: 6, borderRadius: 3 }}
+                      />
+                    </Box>
+                  </Box>
+                </Paper>
+              </Card>
             );
           })}
-        </div>
+        </Stack>
       )}
+
+      {/* Row Action Menu */}
+      <Menu
+        anchorEl={menuAnchor?.el}
+        open={Boolean(menuAnchor)}
+        onClose={() => setMenuAnchor(null)}
+        transformOrigin={{ horizontal: "right", vertical: "top" }}
+        anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
+      >
+        <MenuItem
+          onClick={() => {
+            if (menuAnchor) openStudio(menuAnchor.db);
+            setMenuAnchor(null);
+          }}
+        >
+          <ListItemIcon>
+            <Table2 size={16} />
+          </ListItemIcon>
+          Open in Studio
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (menuAnchor) setConnectDb(menuAnchor.db);
+            setMenuAnchor(null);
+          }}
+        >
+          <ListItemIcon>
+            <Code2 size={16} />
+          </ListItemIcon>
+          Connection Guide
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (menuAnchor) void handleCopyToken(menuAnchor.db);
+            setMenuAnchor(null);
+          }}
+        >
+          <ListItemIcon>
+            <KeyRound size={16} />
+          </ListItemIcon>
+          Copy Auth Token
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (menuAnchor) void navigator.clipboard.writeText(menuAnchor.db.libsqlUrl);
+            setMenuAnchor(null);
+          }}
+        >
+          <ListItemIcon>
+            <Copy size={16} />
+          </ListItemIcon>
+          Copy LibSQL URL
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (menuAnchor) void navigator.clipboard.writeText(menuAnchor.db.httpUrl);
+            setMenuAnchor(null);
+          }}
+        >
+          <ListItemIcon>
+            <ExternalLink size={16} />
+          </ListItemIcon>
+          Copy HTTP URL
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          onClick={() => {
+            if (menuAnchor) {
+              setDeleteError(null);
+              setDeleteDb(menuAnchor.db);
+            }
+            setMenuAnchor(null);
+          }}
+          sx={{ color: "var(--destructive)" }}
+        >
+          <ListItemIcon sx={{ color: "var(--destructive)" }}>
+            <Trash2 size={16} />
+          </ListItemIcon>
+          Delete Database
+        </MenuItem>
+      </Menu>
 
       {/* Create Dialog */}
       <CreateDatabaseDialog
@@ -551,24 +728,22 @@ export function DatabasesPage() {
         }}
         title={`Delete "${deleteDb?.name}"?`}
         description={
-          <div className="flex flex-col gap-2">
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
             <span>
               This will permanently delete database{" "}
-              <strong className="text-foreground">{deleteDb?.name}</strong> and all associated
-              tables, data, and access keys. This action cannot be undone.
+              <Box component="strong" sx={{ color: "var(--foreground)" }}>
+                {deleteDb?.name}
+              </Box>{" "}
+              and all associated tables, data, and access keys. This action cannot be undone.
             </span>
-            {deleteError && (
-              <span className="rounded bg-destructive/10 p-2 text-xs text-destructive">
-                {deleteError}
-              </span>
-            )}
-          </div>
+            {deleteError && <Alert severity="error">{deleteError}</Alert>}
+          </Box>
         }
         confirmText={deleteDb?.name}
         confirmLabel={isDeleting ? "Deleting..." : "Delete Database"}
         isPending={isDeleting}
         onConfirm={() => void handleDeleteConfirm()}
       />
-    </div>
+    </Box>
   );
 }
