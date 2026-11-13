@@ -233,7 +233,7 @@ function StudioShell() {
       </Box>
 
       {connected ? (
-        <Box sx={{ display: "flex", minHeight: 0, flex: 1 }}>
+        <Box sx={{ display: "flex", minHeight: 0, minWidth: 0, flex: 1, overflow: "hidden" }}>
           <Drawer
             open={!isDesktop && sidebarOpen}
             onClose={() => setSidebarOpen(false)}
@@ -276,9 +276,9 @@ function StudioShell() {
               </Panel>
             </PanelGroup>
           ) : (
-            <Box sx={{ display: "flex", minHeight: 0, flex: 1, flexDirection: "column" }}>
+            <Box sx={{ display: "flex", minHeight: 0, minWidth: 0, flex: 1, flexDirection: "column", overflow: "hidden" }}>
               <TabBar />
-              <Box sx={{ minHeight: 0, flex: 1 }}>
+              <Box sx={{ minHeight: 0, minWidth: 0, flex: 1, overflow: "hidden" }}>
                 <WorkspaceContent
                   activeTabId={activeTabId}
                   onCreateTable={() => setCreateTableOpen(true)}

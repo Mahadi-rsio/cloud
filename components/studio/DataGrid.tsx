@@ -301,14 +301,16 @@ export function DataGrid({
       ? 0
       : 1;
   const endIndex = pagination
-    ? Math.min(effectiveTotal, startIndex + rows.length - 1)
+    ? effectiveTotal === 0 || rows.length === 0
+      ? 0
+      : Math.min(effectiveTotal, startIndex + rows.length - 1)
     : rows.length;
   const totalPages = pagination
     ? Math.max(1, Math.ceil(effectiveTotal / pagination.pageSize))
     : 1;
 
   return (
-    <Box sx={{ display: "flex", height: "100%", minHeight: 0, flexDirection: "column" }}>
+    <Box sx={{ display: "flex", height: "100%", minHeight: 0, minWidth: 0, flexDirection: "column" }}>
       <Box
         ref={scrollRef}
         sx={{
