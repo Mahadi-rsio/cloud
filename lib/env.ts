@@ -31,10 +31,6 @@ type Env = {
   // Optional GitHub API token (raises rate limits; never required for public repos)
   GITHUB_API_TOKEN?: string;
 
-  // Upstash Redis (cache + rate limiting)
-  UPSTASH_REDIS_REST_URL?: string;
-  UPSTASH_REDIS_REST_TOKEN?: string;
-
   // Cloudflare Storage (R2 + libSQL control plane)
   STORAGE_DATABASE_URL?: string;
   STORAGE_DATABASE_AUTH_TOKEN?: string;
@@ -68,8 +64,6 @@ const KEYS: (keyof Env)[] = [
   "BUILD_WORKSPACE_DIR",
   "BUILD_DEFAULT_INTERNAL_PORT",
   "GITHUB_API_TOKEN",
-  "UPSTASH_REDIS_REST_URL",
-  "UPSTASH_REDIS_REST_TOKEN",
   "STORAGE_DATABASE_URL",
   "STORAGE_DATABASE_AUTH_TOKEN",
   "LIBSQL_ADMIN_URL",

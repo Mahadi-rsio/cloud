@@ -103,6 +103,12 @@ export async function POST(request: NextRequest) {
     // queued, so a cold start overlaps with request processing.
     await wakeBuilder();
     await enqueueDeployJob({ type: "deploy-build", deploymentId: deployment.id });
+    const { registerDeploymentRecovery } = await import("@/lib/build/deployment-stream-do");
+    const { markActiveDeploymentHint } = await import("@/lib/build/recovery");
+    await Promise.all([
+      registerDeploymentRecovery(deployment.id),
+      markActiveDeploymentHint(),
+    ]).catch(() => {});
 
     return jsonOk({ deployment: deployment }, 201);
   } catch (error) {

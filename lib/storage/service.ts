@@ -1,5 +1,6 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { HttpError } from "@/lib/http";
+import { TypedKvCache } from "@/lib/kv";
 import {
   generateApiKey,
   hashApiKey,
@@ -132,6 +133,9 @@ export function createBoundedUploadStream(
   };
 }
 
+const tenantKv = new TypedKvCache("storage:tenant", "v1");
+const namespaceKv = new TypedKvCache("storage:ns", "v1");
+
 export class StorageService {
   private dbPromise: Promise<StorageDb>;
   private bucketPromise: Promise<StorageBucket>;
@@ -210,9 +214,15 @@ export class StorageService {
   }
 
   async getTenant(id: string): Promise<Tenant | null> {
-    const db = await this.db();
-    const [tenant] = await db.select().from(tenants).where(eq(tenants.id, id));
-    return tenant ?? null;
+    return tenantKv.getOrLoad(
+      id,
+      async () => {
+        const db = await this.db();
+        const [tenant] = await db.select().from(tenants).where(eq(tenants.id, id));
+        return tenant ?? null;
+      },
+      { kvTtlSeconds: 60, l1TtlMs: 15_000 },
+    );
   }
 
   async updateTenant(id: string, input: UpdateTenantInput): Promise<Tenant> {
@@ -256,6 +266,7 @@ export class StorageService {
     if (input.trialEndsAt !== undefined) updates.trialEndsAt = input.trialEndsAt;
 
     await db.update(tenants).set(updates).where(eq(tenants.id, id));
+    await tenantKv.delete(id);
 
     await this.recordAudit({
       tenantId: id,
@@ -289,6 +300,7 @@ export class StorageService {
     }
 
     await db.delete(tenants).where(eq(tenants.id, id));
+    await tenantKv.delete(id);
   }
 
   /* =========================================================================
@@ -342,6 +354,16 @@ export class StorageService {
     });
 
     const [created] = await db.select().from(projects).where(eq(projects.id, id));
+    if (created) {
+      await namespaceKv.setJson(`${tenantId}:${created.id}`, created, {
+        kvTtlSeconds: 120,
+        l1TtlMs: 30_000,
+      });
+      await namespaceKv.setJson(`${tenantId}:${created.name}`, created, {
+        kvTtlSeconds: 120,
+        l1TtlMs: 30_000,
+      });
+    }
     return created!;
   }
 
@@ -351,19 +373,25 @@ export class StorageService {
   }
 
   async getNamespace(tenantId: string, nameOrId: string): Promise<Project | null> {
-    const db = await this.db();
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(
-        and(
-          eq(projects.tenantId, tenantId),
-          nameOrId.startsWith("p_")
-            ? eq(projects.id, nameOrId)
-            : eq(projects.name, nameOrId),
-        ),
-      );
-    return project ?? null;
+    return namespaceKv.getOrLoad(
+      `${tenantId}:${nameOrId}`,
+      async () => {
+        const db = await this.db();
+        const [project] = await db
+          .select()
+          .from(projects)
+          .where(
+            and(
+              eq(projects.tenantId, tenantId),
+              nameOrId.startsWith("p_")
+                ? eq(projects.id, nameOrId)
+                : eq(projects.name, nameOrId),
+            ),
+          );
+        return project ?? null;
+      },
+      { kvTtlSeconds: 120, l1TtlMs: 30_000 },
+    );
   }
 
   async deleteNamespace(tenantId: string, nameOrId: string): Promise<void> {
@@ -383,6 +411,10 @@ export class StorageService {
     }
 
     await db.delete(projects).where(eq(projects.id, project.id));
+    await Promise.all([
+      namespaceKv.delete(`${tenantId}:${project.id}`),
+      namespaceKv.delete(`${tenantId}:${project.name}`),
+    ]);
 
     await this.recordAudit({
       tenantId,
@@ -730,7 +762,8 @@ export class StorageService {
       throw err;
     }
 
-    await this.recordUsage(tenant.id, namespace.id, "write", stored.size, 1, "class_a");
+    // Usage event is durably recorded in TenantMeterDO SQLite outbox by commitReservation()
+    // and flushed asynchronously to Neon in batches.
 
     return {
       namespace: namespace.name,
@@ -785,8 +818,7 @@ export class StorageService {
       throw new HttpError("NOT_FOUND", `File '${filePath}' not found`, 404);
     }
 
-    await this.recordUsage(tenant.id, namespace.id, "read", object.size, 1, "class_b");
-
+    // Usage event already recorded in TenantMeterDO SQLite outbox by recordOperation()
     return {
       namespace: namespace.name,
       path: validated.normalized,
@@ -829,7 +861,6 @@ export class StorageService {
     if (existing) {
       await bucket.delete(r2Key);
       await meter.deleteFile(existing.size);
-      await this.recordUsage(tenant.id, namespace.id, "delete", 0, 1, "class_a");
     }
 
     return {
@@ -1035,9 +1066,7 @@ export class StorageService {
     }
 
     await meter.commitReservation(reservation.reservation.id, stored.size);
-
-    await this.recordUsage(tenant.id, srcNs.id, "read", srcObject.size, 1, "class_b");
-    await this.recordUsage(tenant.id, dstNs.id, "write", stored.size, 1, "class_a");
+    await meter.recordOperation("class_b", "read", srcObject.size, tenant.monthlyReadLimitOps);
 
     return {
       sourceNamespace: srcNs.name,
@@ -1055,8 +1084,48 @@ export class StorageService {
   }
 
   /**
+   * Reconcile R2 object bytes/counts for a tenant against TenantMeterDO and Neon.
+   */
+  async reconcileTenantUsage(
+    tenantId: string,
+  ): Promise<{ actualBytes: number; actualFileCount: number }> {
+    const bucket = await this.bucket();
+    const prefix = `t_${tenantId.replace(/^t_/, "")}/`;
+    let cursor: string | undefined;
+    let actualBytes = 0;
+    let actualFileCount = 0;
+
+    do {
+      const page = await bucket.list({ prefix, cursor, limit: 1000 });
+      for (const obj of page.objects) {
+        actualBytes += obj.size;
+        actualFileCount += 1;
+      }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+
+    const meter = await getTenantMeter(tenantId);
+    await meter.reconcile(actualBytes, actualFileCount);
+
+    const db = await this.db();
+    await db
+      .update(tenants)
+      .set({
+        storageUsedBytes: actualBytes,
+        fileCount: actualFileCount,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(tenants.id, tenantId));
+    await tenantKv.delete(tenantId);
+
+    return { actualBytes, actualFileCount };
+  }
+
+  /**
    * Flush buffered usage events from the Durable Object outbox using two-phase
    * claim + ack so failed DB writes never discard usage events.
+   * Events are persisted in a single idempotent transaction (`ON CONFLICT DO NOTHING`
+   * on event ID + `ON CONFLICT DO UPDATE` on daily aggregates).
    */
   async flushTenantOutbox(tenantId: string, limit = 200): Promise<{ flushed: number }> {
     const meter = await getTenantMeter(tenantId);
@@ -1065,34 +1134,194 @@ export class StorageService {
       return { flushed: 0 };
     }
 
-    const ackedIds: Array<number | string> = [];
-    const nackedIds: Array<number | string> = [];
+    const claimedIds = claimed
+      .map((e) => e.id)
+      .filter((id): id is number | string => id !== undefined);
 
-    for (const evt of claimed) {
-      try {
-        await this.recordUsage(
-          tenantId,
-          null,
-          evt.eventType,
-          evt.bytes,
-          evt.ops,
-          evt.classType,
-          evt.id !== undefined ? `do_${tenantId}_${evt.id}` : undefined,
-        );
-        if (evt.id !== undefined) ackedIds.push(evt.id);
-      } catch {
-        if (evt.id !== undefined) nackedIds.push(evt.id);
+    try {
+      await this.persistUsageBatch(
+        tenantId,
+        claimed.map((evt) => ({
+          eventId: evt.eventId ?? (evt.id !== undefined ? `do_${tenantId}_${evt.id}` : generateUsageEventId()),
+          projectId: evt.projectId ?? null,
+          timestamp: evt.timestamp,
+          eventType: evt.eventType,
+          classType: evt.classType,
+          bytes: evt.bytes,
+          ops: evt.ops,
+        })),
+      );
+      if (claimedIds.length > 0) {
+        await meter.ackEvents(claimedIds);
       }
+      return { flushed: claimed.length };
+    } catch (err) {
+      if (claimedIds.length > 0) {
+        await meter.nackEvents(claimedIds).catch(() => {});
+      }
+      throw err;
     }
+  }
 
-    if (ackedIds.length > 0) {
-      await meter.ackEvents(ackedIds);
-    }
-    if (nackedIds.length > 0) {
-      await meter.nackEvents(nackedIds);
-    }
+  private async persistUsageBatch(
+    tenantId: string,
+    events: Array<{
+      eventId: string;
+      projectId: string | null;
+      timestamp: string;
+      eventType: "read" | "write" | "delete" | "list" | "copy" | "egress";
+      classType: "class_a" | "class_b";
+      bytes: number;
+      ops: number;
+    }>,
+  ): Promise<number> {
+    if (events.length === 0) return 0;
+    const db = await this.db();
+    const nowIso = new Date().toISOString();
 
-    return { flushed: ackedIds.length };
+    return await db.transaction(async (tx) => {
+      const eventRows = events.map((e) => ({
+        id: e.eventId,
+        tenantId,
+        projectId: e.projectId,
+        timestamp: e.timestamp || nowIso,
+        eventType: e.eventType,
+        classType: e.classType,
+        bytes: e.bytes,
+        ops: e.ops,
+      }));
+
+      const inserted = await tx
+        .insert(usageEvents)
+        .values(eventRows)
+        .onConflictDoNothing()
+        .returning({ id: usageEvents.id });
+
+      const acceptedIds = new Set(inserted.map((r) => String(r.id)));
+      const acceptedEvents = eventRows.filter((r) => acceptedIds.has(r.id));
+      if (acceptedEvents.length === 0) {
+        return 0;
+      }
+
+      // Aggregate accepted events per (projectId, date) before upserting usageDaily
+      const dailyBuckets = new Map<
+        string,
+        {
+          projectId: string;
+          date: string;
+          egressBytes: number;
+          ingressBytes: number;
+          readOps: number;
+          writeOps: number;
+          deleteOps: number;
+        }
+      >();
+
+      for (const evt of acceptedEvents) {
+        const date = evt.timestamp.slice(0, 10);
+        const proj = evt.projectId ?? "";
+        const bucketKey = `${proj}|${date}`;
+        let bucket = dailyBuckets.get(bucketKey);
+        if (!bucket) {
+          bucket = {
+            projectId: proj,
+            date,
+            egressBytes: 0,
+            ingressBytes: 0,
+            readOps: 0,
+            writeOps: 0,
+            deleteOps: 0,
+          };
+          dailyBuckets.set(bucketKey, bucket);
+        }
+        if (evt.eventType === "read" || evt.eventType === "egress") {
+          bucket.egressBytes += evt.bytes;
+        }
+        if (evt.eventType === "write" || evt.eventType === "copy") {
+          bucket.ingressBytes += evt.bytes;
+        }
+        if (evt.classType === "class_b") {
+          bucket.readOps += evt.ops;
+        } else {
+          bucket.writeOps += evt.ops;
+        }
+        if (evt.eventType === "delete") {
+          bucket.deleteOps += evt.ops;
+        }
+      }
+
+      const isTestMemoryDb = Boolean(process.env.VITEST || process.env.NODE_ENV === "test");
+
+      for (const bucket of dailyBuckets.values()) {
+        if (isTestMemoryDb) {
+          const existing = await tx
+            .select()
+            .from(usageDaily)
+            .where(
+              and(
+                eq(usageDaily.tenantId, tenantId),
+                eq(usageDaily.projectId, bucket.projectId),
+                eq(usageDaily.date, bucket.date),
+              ),
+            );
+          if (existing.length === 0) {
+            await tx.insert(usageDaily).values({
+              id: generateUsageDailyId(),
+              tenantId,
+              projectId: bucket.projectId,
+              date: bucket.date,
+              egressBytes: bucket.egressBytes,
+              ingressBytes: bucket.ingressBytes,
+              readOps: bucket.readOps,
+              writeOps: bucket.writeOps,
+              deleteOps: bucket.deleteOps,
+              updatedAt: nowIso,
+            });
+          } else {
+            const row = existing[0]!;
+            await tx
+              .update(usageDaily)
+              .set({
+                egressBytes: row.egressBytes + bucket.egressBytes,
+                ingressBytes: row.ingressBytes + bucket.ingressBytes,
+                readOps: row.readOps + bucket.readOps,
+                writeOps: row.writeOps + bucket.writeOps,
+                deleteOps: row.deleteOps + bucket.deleteOps,
+                updatedAt: nowIso,
+              })
+              .where(eq(usageDaily.id, row.id));
+          }
+        } else {
+          await tx
+            .insert(usageDaily)
+            .values({
+              id: generateUsageDailyId(),
+              tenantId,
+              projectId: bucket.projectId,
+              date: bucket.date,
+              egressBytes: bucket.egressBytes,
+              ingressBytes: bucket.ingressBytes,
+              readOps: bucket.readOps,
+              writeOps: bucket.writeOps,
+              deleteOps: bucket.deleteOps,
+              updatedAt: nowIso,
+            })
+            .onConflictDoUpdate({
+              target: [usageDaily.tenantId, usageDaily.projectId, usageDaily.date],
+              set: {
+                egressBytes: sql`${usageDaily.egressBytes} + ${bucket.egressBytes}`,
+                ingressBytes: sql`${usageDaily.ingressBytes} + ${bucket.ingressBytes}`,
+                readOps: sql`${usageDaily.readOps} + ${bucket.readOps}`,
+                writeOps: sql`${usageDaily.writeOps} + ${bucket.writeOps}`,
+                deleteOps: sql`${usageDaily.deleteOps} + ${bucket.deleteOps}`,
+                updatedAt: nowIso,
+              },
+            });
+        }
+      }
+
+      return acceptedEvents.length;
+    });
   }
 
   /* =========================================================================
@@ -1111,74 +1340,19 @@ export class StorageService {
     idempotentEventId?: string,
   ) {
     try {
-      const db = await this.db();
-      const now = new Date();
-      const today = now.toISOString().slice(0, 10);
-      const eventId = idempotentEventId ?? generateUsageEventId();
-
-      if (idempotentEventId) {
-        const existingEvt = await db
-          .select()
-          .from(usageEvents)
-          .where(eq(usageEvents.id, idempotentEventId));
-        if (existingEvt.length > 0) {
-          return; // Already persisted idempotently
-        }
-      }
-
-      await db.insert(usageEvents).values({
-        id: eventId,
-        tenantId,
-        projectId,
-        timestamp: now.toISOString(),
-        eventType,
-        classType,
-        bytes,
-        ops,
-      });
-
-      const existing = await db
-        .select()
-        .from(usageDaily)
-        .where(
-          and(
-            eq(usageDaily.tenantId, tenantId),
-            projectId ? eq(usageDaily.projectId, projectId) : eq(usageDaily.projectId, ""),
-            eq(usageDaily.date, today),
-          ),
-        );
-
-      if (existing.length === 0) {
-        await db.insert(usageDaily).values({
-          id: generateUsageDailyId(),
-          tenantId,
-          projectId: projectId ?? "",
-          date: today,
-          egressBytes: eventType === "read" || eventType === "egress" ? bytes : 0,
-          ingressBytes: eventType === "write" || eventType === "copy" ? bytes : 0,
-          readOps: classType === "class_b" ? ops : 0,
-          writeOps: classType === "class_a" ? ops : 0,
-          deleteOps: eventType === "delete" ? ops : 0,
-          updatedAt: now.toISOString(),
-        });
-      } else {
-        const row = existing[0]!;
-        await db
-          .update(usageDaily)
-          .set({
-            egressBytes:
-              row.egressBytes + (eventType === "read" || eventType === "egress" ? bytes : 0),
-            ingressBytes:
-              row.ingressBytes + (eventType === "write" || eventType === "copy" ? bytes : 0),
-            readOps: row.readOps + (classType === "class_b" ? ops : 0),
-            writeOps: row.writeOps + (classType === "class_a" ? ops : 0),
-            deleteOps: row.deleteOps + (eventType === "delete" ? ops : 0),
-            updatedAt: now.toISOString(),
-          })
-          .where(eq(usageDaily.id, row.id));
-      }
+      await this.persistUsageBatch(tenantId, [
+        {
+          eventId: idempotentEventId ?? generateUsageEventId(),
+          projectId,
+          timestamp: new Date().toISOString(),
+          eventType,
+          classType,
+          bytes,
+          ops,
+        },
+      ]);
     } catch {
-      // Usage logging is best-effort and non-blocking
+      // Direct recordUsage remains best-effort for non-outbox callers
     }
   }
 

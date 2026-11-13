@@ -20,12 +20,58 @@ export default defineConfig({
     exports: {
       ...cache.exports,
       TenantMeterDO: exports.durableObject({ storage: "sqlite" }),
+      DeploymentStreamDO: exports.durableObject({ storage: "sqlite" }),
     },
     env: {
       ...cache.env,
+      APP_KV: bindings.kv(),
+      HYPERDRIVE: bindings.hyperdrive({
+        id:
+          process.env.CLOUDFLARE_HYPERDRIVE_ID ??
+          "00000000000000000000000000000000",
+        dev: {
+          connectionString: process.env.DATABASE_URL,
+        },
+      }),
+      RL_API_FREE: bindings.rateLimit({
+        namespace: "1001",
+        simple: { limit: 120, period: 60 },
+      }),
+      RL_API_PRO: bindings.rateLimit({
+        namespace: "1002",
+        simple: { limit: 600, period: 60 },
+      }),
+      RL_STUDIO: bindings.rateLimit({
+        namespace: "1003",
+        simple: { limit: 180, period: 60 },
+      }),
+      RL_STORAGE_READ: bindings.rateLimit({
+        namespace: "1004",
+        simple: { limit: 1000, period: 60 },
+      }),
+      RL_STORAGE_WRITE: bindings.rateLimit({
+        namespace: "1005",
+        simple: { limit: 300, period: 60 },
+      }),
+      RL_STORAGE_ADMIN: bindings.rateLimit({
+        namespace: "1006",
+        simple: { limit: 60, period: 60 },
+      }),
+      RL_STORAGE_PRO_READ: bindings.rateLimit({
+        namespace: "1007",
+        simple: { limit: 5000, period: 60 },
+      }),
+      RL_STORAGE_PRO_WRITE: bindings.rateLimit({
+        namespace: "1008",
+        simple: { limit: 1500, period: 60 },
+      }),
       STORAGE_METER: bindings.durableObject({
         worker: "cloud",
         exportName: "TenantMeterDO",
+      }),
+      DEPLOYMENT_STREAM: bindings.durableObject({
+        worker: "cloud",
+        exportName: "DeploymentStreamDO",
       }),
       ASSETS: bindings.assets(),
       AUTH_JOBS: bindings.queue({ name: "auth-jobs" }),
@@ -51,8 +97,6 @@ export default defineConfig({
       BUILD_WORKSPACE_DIR: bindings.secret(),
       BUILD_DEFAULT_INTERNAL_PORT: bindings.secret(),
       GITHUB_API_TOKEN: bindings.secret(),
-      UPSTASH_REDIS_REST_URL: bindings.secret(),
-      UPSTASH_REDIS_REST_TOKEN: bindings.secret(),
       STORAGE_BUCKET: bindings.r2({ name: "cloud-storage" }),
     },
     ...(isPreviewBuild

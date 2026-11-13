@@ -6,7 +6,6 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { member as memberTable, organization as organizationTable } from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
-import { redisSecondaryStorage } from "@/lib/auth/storage/redis";
 import { enqueueAuthJob } from "@/lib/queue";
 
 function toOrgSlug(input: string): string {
@@ -32,7 +31,16 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
       protocol: "auto",
       fallback: fallbackURL,
     },
-    secondaryStorage: redisSecondaryStorage(),
+    // Authoritative sessions remain in Neon PostgreSQL; short-lived signed
+    // cookieCache eliminates repeated DB session lookups on hot read paths
+    // without relying on Redis or eventually consistent KV for session state.
+    session: {
+      cookieCache: {
+        enabled: true,
+        maxAge: 60,
+        strategy: "compact",
+      },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,

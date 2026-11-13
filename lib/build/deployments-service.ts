@@ -22,6 +22,10 @@ import {
   isTerminalStatus,
   type DeploymentStatus,
 } from "@/lib/build/status";
+import {
+  notifyDeploymentLogs,
+  notifyDeploymentStatus,
+} from "@/lib/build/deployment-stream-do";
 import type { DeploymentLogStream } from "@/lib/build/logs";
 import { deploymentAppName } from "@/lib/build/names";
 
@@ -60,7 +64,7 @@ export async function appendDeploymentLogs(
 ): Promise<DeploymentLog[]> {
   if (entries.length === 0) return [];
   const db = await getDb();
-  return db
+  const rows = await db
     .insert(deploymentLogs)
     .values(
       entries.map((entry) => ({
@@ -70,6 +74,8 @@ export async function appendDeploymentLogs(
       })),
     )
     .returning();
+  await notifyDeploymentLogs(deploymentId, rows);
+  return rows;
 }
 
 export async function appendSystemLog(deploymentId: string, message: string) {
@@ -128,7 +134,14 @@ export async function setDeploymentStatus(
       .where(and(eq(deployments.id, deploymentId), eq(deployments.status, current.status)))
       .returning();
 
-    if (updated) return updated;
+    if (updated) {
+      await notifyDeploymentStatus(deploymentId, {
+        status: updated.status,
+        errorMessage: updated.errorMessage,
+        publicUrl: updated.publicUrl,
+      });
+      return updated;
+    }
   }
 
   const latest = await findDeployment(deploymentId);

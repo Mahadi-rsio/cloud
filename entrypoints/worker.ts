@@ -1,10 +1,14 @@
 import fetchHandler from "vinext/server/fetch-handler";
 import type { AuthJob } from "../lib/queue";
 import { processDeployJob, type DeployJob } from "../lib/build/process-job";
-import { recoverStaleDeployments } from "../lib/build/recovery";
+import {
+  hasActiveDeploymentHint,
+  recoverStaleDeployments,
+} from "../lib/build/recovery";
+import { DeploymentStreamDO } from "../lib/build/deployment-stream-do";
 import { TenantMeterDO } from "../lib/storage/quota-do";
 
-export { TenantMeterDO };
+export { TenantMeterDO, DeploymentStreamDO };
 
 const handler = typeof fetchHandler === "function" ? { fetch: fetchHandler } : fetchHandler;
 
@@ -38,6 +42,14 @@ export default {
   },
   scheduled: async () => {
     try {
+      // Only hit Neon on 5-minute ticks if KV hint indicates an active deployment,
+      // or once per hour (minutes 0..4) as a low-frequency reconciliation safety net.
+      const isHourlyReconcileTick = new Date().getUTCMinutes() < 5;
+      const activeHint = isHourlyReconcileTick ? true : await hasActiveDeploymentHint();
+      if (!activeHint) {
+        return;
+      }
+
       const recovered = await recoverStaleDeployments();
       if (recovered > 0) {
         console.log(`[cron] marked ${recovered} stale deployment(s) as failed`);

@@ -43,6 +43,8 @@ export interface TenantUsageSnapshot {
 
 export interface UnflushedUsageEvent {
   id?: number | string;
+  eventId?: string;
+  projectId?: string | null;
   timestamp: string;
   eventType: "read" | "write" | "delete" | "list" | "copy" | "egress";
   classType: "class_a" | "class_b";
@@ -124,6 +126,10 @@ export interface TenantMeterInterface {
 const DEFAULT_RESERVATION_TTL_MS = 15 * 60 * 1000;
 const CLAIM_TIMEOUT_MS = 2 * 60 * 1000;
 const MAX_OUTBOX_EVENTS = 10_000;
+const MAX_OUTBOX_ATTEMPTS = 10;
+const FLUSH_ALARM_INTERVAL_MS = 30_000;
+const MAX_FLUSH_BACKOFF_MS = 15 * 60 * 1000;
+const DEAD_LETTER_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getCurrentMonth(): string {
   const d = new Date();
@@ -163,6 +169,8 @@ export class TenantMeterDO implements TenantMeterInterface {
         );
         CREATE TABLE IF NOT EXISTS unflushed_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id TEXT,
+          project_id TEXT,
           timestamp TEXT NOT NULL,
           event_type TEXT NOT NULL,
           class_type TEXT NOT NULL,
@@ -172,19 +180,31 @@ export class TenantMeterDO implements TenantMeterInterface {
           claimed_at INTEGER,
           attempts INTEGER NOT NULL DEFAULT 0
         );
+        CREATE TABLE IF NOT EXISTS dead_letter_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id TEXT,
+          project_id TEXT,
+          timestamp TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          class_type TEXT NOT NULL,
+          bytes INTEGER NOT NULL,
+          ops INTEGER NOT NULL DEFAULT 1,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          failed_at INTEGER NOT NULL
+        );
       `);
-      try {
-        this.ctx.storage.sql.exec(
-          `ALTER TABLE unflushed_events ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'`,
-        );
-        this.ctx.storage.sql.exec(
-          `ALTER TABLE unflushed_events ADD COLUMN claimed_at INTEGER`,
-        );
-        this.ctx.storage.sql.exec(
-          `ALTER TABLE unflushed_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
-        );
-      } catch {
-        // Columns already exist
+      for (const ddl of [
+        `ALTER TABLE unflushed_events ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'`,
+        `ALTER TABLE unflushed_events ADD COLUMN claimed_at INTEGER`,
+        `ALTER TABLE unflushed_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
+        `ALTER TABLE unflushed_events ADD COLUMN event_id TEXT`,
+        `ALTER TABLE unflushed_events ADD COLUMN project_id TEXT`,
+      ]) {
+        try {
+          this.ctx.storage.sql.exec(ddl);
+        } catch {
+          // Column already exists
+        }
       }
     }
     this.initialized = true;
@@ -262,11 +282,26 @@ export class TenantMeterDO implements TenantMeterInterface {
     return this.getMonthlyOps(period, opClass);
   }
 
+  private scheduleFlushAlarm(delayMs = FLUSH_ALARM_INTERVAL_MS): void {
+    const storage = this.ctx?.storage;
+    if (!storage || typeof storage.setAlarm !== "function") return;
+    Promise.resolve(storage.getAlarm?.())
+      .then((existing: number | null | undefined) => {
+        if (existing == null) {
+          return storage.setAlarm(Date.now() + delayMs);
+        }
+      })
+      .catch(() => {});
+  }
+
   private queueEvent(event: UnflushedUsageEvent): void {
     this.ensureSchema();
     if (!this.ctx?.storage?.sql) return;
+    const eventId = event.eventId ?? generateUsageEventId();
     this.ctx.storage.sql.exec(
-      "INSERT INTO unflushed_events (timestamp, event_type, class_type, bytes, ops, status, attempts) VALUES (?, ?, ?, ?, ?, 'pending', 0)",
+      "INSERT INTO unflushed_events (event_id, project_id, timestamp, event_type, class_type, bytes, ops, status, attempts) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0)",
+      eventId,
+      event.projectId ?? null,
       event.timestamp,
       event.eventType,
       event.classType,
@@ -279,6 +314,7 @@ export class TenantMeterDO implements TenantMeterInterface {
       )`,
       MAX_OUTBOX_EVENTS,
     );
+    this.scheduleFlushAlarm();
   }
 
   async createReservation(
@@ -612,8 +648,26 @@ export class TenantMeterDO implements TenantMeterInterface {
     if (!this.ctx?.storage?.sql) return [];
     const now = Date.now();
     const staleCutoff = now - CLAIM_TIMEOUT_MS;
+
+    // Move events that exceeded MAX_OUTBOX_ATTEMPTS to dead_letter_events
+    this.ctx.storage.sql.exec(
+      `INSERT INTO dead_letter_events (event_id, project_id, timestamp, event_type, class_type, bytes, ops, attempts, failed_at)
+       SELECT event_id, project_id, timestamp, event_type, class_type, bytes, ops, attempts, ?
+       FROM unflushed_events WHERE attempts >= ?`,
+      now,
+      MAX_OUTBOX_ATTEMPTS,
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM unflushed_events WHERE attempts >= ?`,
+      MAX_OUTBOX_ATTEMPTS,
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM dead_letter_events WHERE failed_at < ?`,
+      now - DEAD_LETTER_RETENTION_MS,
+    );
+
     const cursor = this.ctx.storage.sql.exec(
-      `SELECT id, timestamp, event_type, class_type, bytes, ops, attempts
+      `SELECT id, event_id, project_id, timestamp, event_type, class_type, bytes, ops, attempts
        FROM unflushed_events
        WHERE status = 'pending' OR (status = 'claimed' AND claimed_at < ?)
        ORDER BY id ASC LIMIT ?`,
@@ -627,6 +681,8 @@ export class TenantMeterDO implements TenantMeterInterface {
       ids.push(id);
       events.push({
         id,
+        eventId: row.event_id ? String(row.event_id) : undefined,
+        projectId: row.project_id ? String(row.project_id) : null,
         timestamp: String(row.timestamp),
         eventType: String(row.event_type) as UnflushedUsageEvent["eventType"],
         classType: String(row.class_type) as UnflushedUsageEvent["classType"],
@@ -696,6 +752,40 @@ export class TenantMeterDO implements TenantMeterInterface {
       );
     }
     return events;
+  }
+
+  async alarm(): Promise<void> {
+    this.ensureSchema();
+    this.expireReservationsSync();
+    const tenantId = this.ctx?.id?.name as string | undefined;
+    if (!tenantId || !this.ctx?.storage?.sql) return;
+
+    try {
+      const { getStorageService } = await import("./service");
+      const service = getStorageService();
+      await service.flushTenantOutbox(tenantId, 200);
+      this.setMeterVal("flush_failures", 0);
+
+      // If more events remain, schedule another flush soon
+      const cursor = this.ctx.storage.sql.exec(
+        "SELECT COUNT(*) AS cnt FROM unflushed_events",
+      );
+      let remaining = 0;
+      for (const row of cursor) {
+        remaining = Number(row.cnt) || 0;
+      }
+      if (remaining > 0) {
+        this.scheduleFlushAlarm(5_000);
+      }
+    } catch {
+      const failures = this.getMeterVal("flush_failures", 0) + 1;
+      this.setMeterVal("flush_failures", failures);
+      const backoffMs = Math.min(
+        MAX_FLUSH_BACKOFF_MS,
+        FLUSH_ALARM_INTERVAL_MS * Math.pow(2, Math.min(failures, 6)),
+      );
+      this.scheduleFlushAlarm(backoffMs);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -942,6 +1032,7 @@ export class MemoryTenantMeter implements TenantMeterInterface {
   ): void {
     this.events.push({
       id: this.nextEventId++,
+      eventId: generateUsageEventId(),
       timestamp: new Date().toISOString(),
       eventType,
       classType,

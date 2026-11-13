@@ -274,7 +274,13 @@ function createMemoryStorageDb(): StorageDb {
 
           return {
             onConflictDoNothing() {
-              return Promise.resolve(executeInsert(true));
+              const res = executeInsert(true);
+              const p = Promise.resolve(res);
+              return Object.assign(p, {
+                returning() {
+                  return Promise.resolve(res);
+                },
+              });
             },
             onConflictDoUpdate(cfg: { target?: unknown[]; set?: Row }) {
               return Promise.resolve(executeInsert(false, cfg.set ?? {}, cfg.target));
@@ -325,6 +331,9 @@ function createMemoryStorageDb(): StorageDb {
           };
         },
       };
+    },
+    async transaction<T>(fn: (tx: StorageDb) => Promise<T>): Promise<T> {
+      return fn(db as unknown as StorageDb);
     },
     delete(table: unknown) {
       const rows = getTableRows(table);
