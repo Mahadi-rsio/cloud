@@ -125,12 +125,13 @@ function StudioShell() {
           </IconButton>
         )}
 
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
           <Box
             sx={{
               display: "flex",
               width: 28,
               height: 28,
+              flexShrink: 0,
               alignItems: "center",
               justifyContent: "center",
               borderRadius: "7px",
@@ -140,13 +141,21 @@ function StudioShell() {
           >
             <Database style={{ width: 15, height: 15 }} />
           </Box>
-          <Typography sx={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em" }}>
+          <Typography
+            noWrap
+            sx={{
+              fontSize: { xs: 13, sm: 14 },
+              fontWeight: 700,
+              letterSpacing: "-0.01em",
+              display: { xs: connected ? "none" : "block", sm: "block" },
+            }}
+          >
             SQLite Studio
           </Typography>
         </Stack>
 
         {connected && (
-          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
             <Button
               type="button"
               variant="outlined"
@@ -155,10 +164,10 @@ function StudioShell() {
               title="Switch connected database"
               startIcon={<Plug style={{ width: 13, height: 13, color: "var(--success)", flexShrink: 0 }} />}
               sx={{
-                ml: 0.5,
+                ml: { xs: 0, sm: 0.5 },
                 height: 28,
-                maxWidth: { xs: 140, sm: 240 },
-                px: 1.25,
+                maxWidth: { xs: 130, sm: 240 },
+                px: { xs: 1, sm: 1.25 },
                 fontSize: 12,
                 fontFamily: "var(--font-mono)",
                 "& .MuiButton-startIcon": { mr: 0.75 },
@@ -209,7 +218,13 @@ function StudioShell() {
           variant="outlined"
           size="small"
           startIcon={<ArrowLeft style={{ width: 14, height: 14 }} />}
-          sx={{ height: 30, px: 1.25, fontSize: 12 }}
+          sx={{
+            height: 30,
+            minWidth: { xs: 32, sm: "auto" },
+            px: { xs: 0.75, sm: 1.25 },
+            fontSize: 12,
+            "& .MuiButton-startIcon": { mr: { xs: 0, sm: 0.75 } },
+          }}
         >
           <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
             Databases
@@ -237,6 +252,7 @@ function StudioShell() {
                 setSidebarOpen(false);
                 setCreateTableOpen(true);
               }}
+              onNavigate={() => setSidebarOpen(false)}
             />
           </Drawer>
 

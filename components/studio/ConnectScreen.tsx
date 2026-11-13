@@ -113,7 +113,7 @@ export function ConnectScreen() {
           >
             <Database style={{ width: 22, height: 22 }} />
           </Box>
-          <Typography variant="h1" sx={{ fontSize: 19, fontWeight: 700 }}>
+          <Typography component="h1" variant="h6" sx={{ fontSize: 19, fontWeight: 700 }}>
             Connect to a Database
           </Typography>
           <Typography sx={{ fontSize: 13.5, color: "var(--muted-foreground)" }}>

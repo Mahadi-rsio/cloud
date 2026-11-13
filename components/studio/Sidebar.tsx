@@ -40,9 +40,10 @@ import type { StudioTableInfo } from "@/lib/studio/types";
 
 interface SidebarProps {
   onCreateTable: () => void;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ onCreateTable }: SidebarProps) {
+export function Sidebar({ onCreateTable, onNavigate }: SidebarProps) {
   const queryClient = useQueryClient();
   const openTable = useStudioStore((s) => s.openTable);
   const openSchemaOverview = useStudioStore((s) => s.openSchemaOverview);
@@ -174,7 +175,10 @@ export function Sidebar({ onCreateTable }: SidebarProps) {
             size="small"
             fullWidth
             startIcon={<Terminal size={14} />}
-            onClick={newQuery}
+            onClick={() => {
+              newQuery();
+              onNavigate?.();
+            }}
             sx={{ height: 30, fontSize: 12 }}
           >
             SQL Query
@@ -187,7 +191,10 @@ export function Sidebar({ onCreateTable }: SidebarProps) {
           size="small"
           fullWidth
           startIcon={<Layers size={14} />}
-          onClick={openSchemaOverview}
+          onClick={() => {
+            openSchemaOverview();
+            onNavigate?.();
+          }}
           sx={{
             height: 30,
             justifyContent: "flex-start",
@@ -300,7 +307,10 @@ export function Sidebar({ onCreateTable }: SidebarProps) {
                   <Box
                     component="button"
                     type="button"
-                    onClick={() => openTable(table.name)}
+                    onClick={() => {
+                      openTable(table.name);
+                      onNavigate?.();
+                    }}
                     title={`${table.name} · ${table.rowCount ?? 0} rows · ${table.columnCount} columns`}
                     sx={{
                       display: "flex",

@@ -380,7 +380,12 @@ export function TableView({ tab }: { tab: StudioTab }) {
 
         {/* Data View Toolbar Actions */}
         {tableState.view === "data" && (
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <Stack
+            direction="row"
+            spacing={0.75}
+            useFlexGap
+            sx={{ alignItems: "center", flexWrap: "wrap", width: { xs: "100%", sm: "auto" } }}
+          >
             <TextField
               size="small"
               placeholder="Search rows..."
@@ -410,10 +415,11 @@ export function TableView({ tab }: { tab: StudioTab }) {
                   sx: {
                     height: 30,
                     fontSize: 12,
-                    width: { xs: 140, sm: 190 },
+                    width: { xs: "100%", sm: 190 },
                   },
                 },
               }}
+              sx={{ flex: { xs: "1 1 160px", sm: "0 0 auto" } }}
             />
 
             <Button
@@ -467,7 +473,7 @@ export function TableView({ tab }: { tab: StudioTab }) {
               startIcon={<Download size={13} />}
               onClick={(e) => setExportAnchor(e.currentTarget)}
               disabled={!rowsQuery.data || rowsQuery.data.rows.length === 0}
-              sx={{ height: 30, px: 1, fontSize: 12, display: { xs: "none", sm: "inline-flex" } }}
+              sx={{ height: 30, px: 1, fontSize: 12 }}
             >
               Export
             </Button>
@@ -524,11 +530,12 @@ export function TableView({ tab }: { tab: StudioTab }) {
                   key={f.id ?? idx}
                   direction="row"
                   spacing={1}
+                  useFlexGap
                   sx={{ alignItems: "center", flexWrap: "wrap" }}
                 >
                   <Typography
                     sx={{
-                      width: 48,
+                      width: { xs: "auto", sm: 48 },
                       fontSize: 11.5,
                       fontWeight: 600,
                       color: "var(--muted-foreground)",
@@ -543,7 +550,7 @@ export function TableView({ tab }: { tab: StudioTab }) {
                     size="small"
                     value={f.column}
                     onChange={(e) => updateFilterCondition(idx, { column: e.target.value })}
-                    sx={{ minWidth: 140 }}
+                    sx={{ minWidth: { xs: "calc(50% - 28px)", sm: 140 }, flex: { xs: 1, sm: "0 0 auto" } }}
                     slotProps={{
                       input: { sx: { height: 28, fontSize: 12, fontFamily: "var(--font-mono)" } },
                     }}

@@ -89,7 +89,7 @@ export function SchemaView({ onCreateTable }: SchemaViewProps) {
           py: 0.75,
         }}
       >
-        <Stack direction="row" spacing={1.25} sx={{ alignItems: "center" }}>
+        <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
           <Layers size={16} color="var(--primary)" />
           <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>
             Database Schema Explorer
@@ -106,7 +106,12 @@ export function SchemaView({ onCreateTable }: SchemaViewProps) {
           />
         </Stack>
 
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          sx={{ alignItems: "center", flexWrap: "wrap", width: { xs: "100%", sm: "auto" } }}
+        >
           <TextField
             size="small"
             placeholder="Filter tables or columns..."
@@ -119,9 +124,10 @@ export function SchemaView({ onCreateTable }: SchemaViewProps) {
                     <Search size={13} color="var(--muted-foreground)" />
                   </InputAdornment>
                 ),
-                sx: { height: 30, fontSize: 12, width: { xs: 160, sm: 220 } },
+                sx: { height: 30, fontSize: 12, width: { xs: "100%", sm: 220 } },
               },
             }}
+            sx={{ flex: { xs: "1 1 160px", sm: "0 0 auto" } }}
           />
 
           <Button

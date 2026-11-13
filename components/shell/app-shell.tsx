@@ -22,7 +22,7 @@ export function AppShell({
     <Box
       sx={{
         display: "flex",
-        minHeight: "100vh",
+        minHeight: "100dvh",
         backgroundColor: "var(--background)",
         color: "var(--foreground)",
       }}
@@ -48,8 +48,8 @@ export function AppShell({
             flex: "1 1 0%",
             flexDirection: "column",
             overflowY: "auto",
-            px: { xs: 2, sm: 3.5, md: 5 },
-            py: { xs: 3, sm: 4, md: 5 },
+            px: { xs: 1.5, sm: 3, md: 4.5 },
+            py: { xs: 2, sm: 3, md: 4 },
           }}
         >
           {children}

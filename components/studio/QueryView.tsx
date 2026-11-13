@@ -189,7 +189,7 @@ export function QueryView({ tab }: { tab: StudioTab }) {
           size="small"
           onClick={(e) => setSnippetsAnchor(e.currentTarget)}
           startIcon={<Sparkles size={13} />}
-          sx={{ height: 30, px: 1.25, fontSize: 12, display: { xs: "none", sm: "inline-flex" } }}
+          sx={{ height: 30, px: 1.25, fontSize: 12 }}
         >
           Snippets
         </Button>
@@ -336,7 +336,7 @@ export function QueryView({ tab }: { tab: StudioTab }) {
                   color: "var(--muted-foreground)",
                 }}
               >
-                <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+                <Stack direction="row" spacing={1.25} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
                   <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", color: "var(--success)" }}>
                     <CheckCircle2 size={13} />
                     <Typography sx={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>

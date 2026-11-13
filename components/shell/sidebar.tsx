@@ -337,6 +337,9 @@ export function MobileSidebar({
       </Box>
 
       <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 2 }}>
+        <Box sx={{ mb: 2 }}>
+          <OrgSwitcher collapsed={false} />
+        </Box>
         <List disablePadding>
           {PRIMARY_NAV.map((link) => (
             <NavItem

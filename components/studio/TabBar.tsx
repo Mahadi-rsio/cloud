@@ -35,7 +35,7 @@ export function TabBar() {
               position: "relative",
               display: "flex",
               height: "100%",
-              maxWidth: 200,
+              maxWidth: { xs: 155, sm: 200 },
               flexShrink: 0,
               cursor: "pointer",
               userSelect: "none",
@@ -85,7 +85,7 @@ export function TabBar() {
               title="Close tab"
               sx={{
                 p: 0.25,
-                opacity: active ? 1 : 0,
+                opacity: { xs: 0.75, md: active ? 1 : 0 },
                 transition: "opacity 150ms",
                 color: "inherit",
               }}

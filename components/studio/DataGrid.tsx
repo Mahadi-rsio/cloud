@@ -508,6 +508,7 @@ export function DataGrid({
                       borderBottom: "1px solid var(--border)",
                       height: ROW_HEIGHT,
                       width: totalSize,
+                      minWidth: "100%",
                       bgcolor: isSelected
                         ? "rgba(56, 189, 248, 0.08)"
                         : virtualRow.index % 2 === 1
@@ -644,7 +645,7 @@ export function DataGrid({
       >
         {pagination ? (
           <>
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+            <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
               <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", fontVariantNumeric: "tabular-nums" }}>
                 Showing{" "}
                 <Box component="span" sx={{ fontWeight: 600, color: "var(--foreground)" }}>
@@ -674,11 +675,16 @@ export function DataGrid({
               )}
             </Stack>
 
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
+            <Stack
+              direction="row"
+              spacing={1.25}
+              useFlexGap
+              sx={{ alignItems: "center", flexWrap: "wrap", justifyContent: { xs: "space-between", sm: "flex-end" }, width: { xs: "100%", sm: "auto" } }}
+            >
               {pagination.onPageSizeChange && (
-                <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", display: { xs: "none", sm: "flex" } }}>
+                <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
                   <Typography sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>
-                    Rows per page:
+                    Rows:
                   </Typography>
                   <Select
                     size="small"
