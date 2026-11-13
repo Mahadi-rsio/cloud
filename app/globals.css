@@ -56,6 +56,50 @@
   --warning: #f5a524;
 }
 
+/* Cloudisy Create Application Flow — intentional 2-theme token set */
+.cloudisy-create-flow {
+  --cd-canvas: #f6f8f7;
+  --cd-surface: #ffffff;
+  --cd-surface-alt: #edf1ef;
+  --cd-ink: #11181c;
+  --cd-muted: #576369;
+  --cd-border: #d5ddda;
+  --cd-accent: #0f766e;
+  --cd-accent-ink: #ffffff;
+  --cd-accent-tint: rgba(15, 118, 110, 0.08);
+  --cd-free: #15803d;
+  --cd-cost: #b45309;
+  --cd-danger: #dc2626;
+  --cd-danger-tint: rgba(220, 38, 38, 0.08);
+  --cd-radius-control: 6px;
+  --cd-radius-container: 10px;
+}
+
+.dark .cloudisy-create-flow {
+  --cd-canvas: #0f1417;
+  --cd-surface: #171f24;
+  --cd-surface-alt: #1d272d;
+  --cd-ink: #edf2f4;
+  --cd-muted: #94a3ab;
+  --cd-border: rgba(237, 242, 244, 0.12);
+  --cd-accent: #14b8a6;
+  --cd-accent-ink: #06201e;
+  --cd-accent-tint: rgba(20, 184, 166, 0.12);
+  --cd-free: #34d399;
+  --cd-cost: #f59e0b;
+  --cd-danger: #f87171;
+  --cd-danger-tint: rgba(248, 113, 113, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloudisy-create-flow *,
+  .cloudisy-create-flow *::before,
+  .cloudisy-create-flow *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
 *,
 *::before,
 *::after {

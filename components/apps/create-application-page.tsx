@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -9,39 +9,20 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
-  Box as BoxIcon,
   Check,
-  CheckCircle2,
-  ChevronRight,
-  Cpu,
   ExternalLink,
   FolderGit2,
   GitBranch,
-  Globe,
-  HardDrive,
-  Layers,
-  Loader2,
-  Plus,
-  RefreshCw,
   Rocket,
   Search,
-  Server,
-  Sparkles,
-  Terminal,
-  Trash2,
   Unplug,
 } from "lucide-react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
-import Divider from "@mui/material/Divider";
-import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import Tab from "@mui/material/Tab";
-import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { createApplicationSchema } from "@/lib/validators/application";
@@ -52,7 +33,6 @@ import {
   discoverRepository,
   type ValidatedRepository,
   type DiscoveredRepositoryResult,
-  type DiscoveredProjectCandidate,
 } from "@/lib/deployments";
 import { parseDockerInput, type ParsedDockerImage } from "@/lib/docker";
 import { extractErrorMessage } from "@/lib/errors";
@@ -64,59 +44,151 @@ import {
 } from "@/lib/github-client";
 import { ConnectGitHubDialog } from "./connect-github-dialog";
 import { DeploymentLogsViewer } from "@/components/deployments/deployment-logs-viewer";
-import { StatusBadge } from "@/components/shared/status-badge";
 import { CopyField } from "@/components/shared/copy-field";
 
 function GitHubIcon({ size = 16 }: { size?: number }) {
   return (
-    <svg role="img" viewBox="0 0 24 24" fill="currentColor" width={size} height={size}>
+    <svg role="img" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" width={size} height={size}>
       <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
     </svg>
   );
 }
 
-const cardSx = {
-  borderRadius: 2.5,
-  border: "1px solid var(--border)",
-  bgcolor: "var(--card)",
-  p: { xs: 2, sm: 3 },
-} as const;
-
-const cardHeaderSx = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 1.5,
-  pb: 1.5,
-  borderBottom: "1px solid var(--border)",
-} as const;
-
 type Step = "configure" | "analyze" | "deploying";
 
-// Machine sizing options
 const RAM_OPTIONS = [
-  { value: 256, label: "256 MB", isFree: true },
-  { value: 512, label: "512 MB", isFree: false },
-  { value: 1024, label: "1 GB", isFree: false },
-  { value: 2048, label: "2 GB", isFree: false },
-  { value: 4096, label: "4 GB", isFree: false },
-  { value: 8192, label: "8 GB", isFree: false },
-];
+  { value: 256, label: "256 MB", delta: 0, deltaLabel: null },
+  { value: 512, label: "512 MB", delta: 2.5, deltaLabel: "+$2.50/mo" },
+  { value: 1024, label: "1 GB", delta: 5.0, deltaLabel: "+$5/mo" },
+  { value: 2048, label: "2 GB", delta: 11.0, deltaLabel: "+$11/mo" },
+  { value: 4096, label: "4 GB", delta: 22.0, deltaLabel: "+$22/mo" },
+  { value: 8192, label: "8 GB", delta: 44.0, deltaLabel: "+$44/mo" },
+] as const;
 
 const CPU_OPTIONS = [
-  { value: 1, label: "1 vCPU", isFree: false },
-  { value: 2, label: "2 vCPU", isFree: true },
-  { value: 4, label: "4 vCPU", isFree: false },
-  { value: 8, label: "8 vCPU", isFree: false },
-];
+  { value: 1, label: "1 vCPU", delta: 0, deltaLabel: null },
+  { value: 2, label: "2 vCPU", delta: 0, deltaLabel: null },
+  { value: 4, label: "4 vCPU", delta: 5.0, deltaLabel: "+$5/mo" },
+  { value: 8, label: "8 vCPU", delta: 15.0, deltaLabel: "+$15/mo" },
+] as const;
 
 const VOLUME_OPTIONS = [
-  { value: 0, label: "None (Ephemeral)", isFree: true },
-  { value: 1, label: "1 GB Disk", isFree: false },
-  { value: 3, label: "3 GB Disk", isFree: false },
-  { value: 5, label: "5 GB Disk", isFree: false },
-  { value: 10, label: "10 GB Disk", isFree: false },
-];
+  { value: 0, label: "None", delta: 0, deltaLabel: null },
+  { value: 1, label: "1 GB", delta: 0.15, deltaLabel: "+$0.15/mo" },
+  { value: 3, label: "3 GB", delta: 0.45, deltaLabel: "+$0.45/mo" },
+  { value: 5, label: "5 GB", delta: 0.75, deltaLabel: "+$0.75/mo" },
+  { value: 10, label: "10 GB", delta: 1.5, deltaLabel: "+$1.50/mo" },
+] as const;
+
+const PERFORMANCE_CPU_DELTA = 29.0;
+
+function formatRamLabel(ramMb: number): string {
+  return ramMb >= 1024 ? `${ramMb / 1024} GB` : `${ramMb} MB`;
+}
+
+function calculateMonthlyEstimate(
+  machineType: "shared" | "performance",
+  ramMb: number,
+  cpus: number,
+  volumeGb: number,
+): number {
+  const ramCost = RAM_OPTIONS.find((r) => r.value === ramMb)?.delta ?? 0;
+  const cpuCost = CPU_OPTIONS.find((c) => c.value === cpus)?.delta ?? 0;
+  const diskCost = VOLUME_OPTIONS.find((v) => v.value === volumeGb)?.delta ?? 0;
+  const computeCost = machineType === "performance" ? PERFORMANCE_CPU_DELTA : 0;
+  return computeCost + ramCost + cpuCost + diskCost;
+}
+
+function formatMonthlyCost(amount: number): string {
+  if (amount <= 0) return "$0 / month";
+  return `~$${amount.toFixed(2)} / month`;
+}
+
+function toAppSlugPreview(rawName: string): string {
+  const cleaned = rawName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || "my-app";
+}
+
+function FieldLabel({
+  htmlFor,
+  label,
+  required = false,
+  optional = false,
+}: {
+  htmlFor?: string;
+  label: string;
+  required?: boolean;
+  optional?: boolean;
+}) {
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: 1,
+        mb: 0.75,
+      }}
+    >
+      <Typography
+        component={htmlFor ? "label" : "span"}
+        htmlFor={htmlFor}
+        sx={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: "var(--cd-ink)",
+          lineHeight: 1.35,
+        }}
+      >
+        {label}
+        {required && (
+          <Box component="span" aria-hidden="true" sx={{ color: "var(--cd-accent)", ml: 0.5 }}>
+            *
+          </Box>
+        )}
+      </Typography>
+      {optional && (
+        <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", fontWeight: 400 }}>
+          Optional
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+const inputSx = {
+  "& .MuiOutlinedInput-root": {
+    minHeight: 44,
+    borderRadius: "var(--cd-radius-control)",
+    bgcolor: "var(--cd-surface)",
+    color: "var(--cd-ink)",
+    fontSize: 14,
+    "& fieldset": {
+      borderColor: "var(--cd-border)",
+    },
+    "&:hover fieldset": {
+      borderColor: "var(--cd-muted)",
+    },
+    "&.Mui-focused fieldset": {
+      borderColor: "var(--cd-accent)",
+      borderWidth: "2px",
+    },
+  },
+  "& .MuiInputBase-input::placeholder": {
+    color: "var(--cd-muted)",
+    opacity: 1,
+    fontFamily: "var(--font-sans)",
+  },
+} as const;
+
+const sectionDividerSx = {
+  py: 3,
+  borderBottom: "1px solid var(--cd-border)",
+} as const;
 
 function CreateApplicationContent() {
   const router = useRouter();
@@ -336,14 +408,14 @@ function CreateApplicationContent() {
   const handleProceedToAnalysis = async () => {
     setDeployError(null);
     if (!name.trim()) {
-      setDeployError("Please provide an application name.");
+      setDeployError("Enter an app name before continuing.");
       return;
     }
 
     if (sourceType === "github") {
       const trimmedUrl = repoUrl.trim();
       if (!trimmedUrl) {
-        setDeployError("Please enter or select a GitHub repository.");
+        setDeployError("Add a GitHub repository URL or select a repository to continue.");
         return;
       }
       setStep("analyze");
@@ -352,7 +424,7 @@ function CreateApplicationContent() {
     } else {
       const cleanImg = dockerParsed ? dockerParsed.cleanedImage : dockerInputRaw.trim();
       if (!cleanImg) {
-        setDeployError("Please enter a Docker container image or pick a template.");
+        setDeployError("Enter a Docker image or pick a starter image to continue.");
         return;
       }
       setStep("analyze");
@@ -436,30 +508,76 @@ function CreateApplicationContent() {
 
   const isFreeTier =
     machineType === "shared" && ramMb === 256 && cpus === 2 && volumeGb === 0;
+  const monthlyEstimate = calculateMonthlyEstimate(machineType, ramMb, cpus, volumeGb);
+  const monthlyCostLabel = formatMonthlyCost(monthlyEstimate);
 
   const selectedRegionObj = FLY_REGIONS.find((r) => r.code === region);
   const selectedRegionName = selectedRegionObj?.name || region;
+  const diskSummaryLabel = volumeGb > 0 ? `${volumeGb} GB disk` : "No disk";
+  const specSummaryLine = `${formatRamLabel(ramMb)} · ${cpus} vCPU · ${diskSummaryLabel} · ${selectedRegionName}`;
+
+  const appSlugPreview = toAppSlugPreview(name);
+  const previewDomainUrl = `https://${appSlugPreview}.cloudisy.top`;
+
+  const disabledReason = !name.trim()
+    ? "Enter an app name to continue"
+    : sourceType === "github" && !repoUrl.trim()
+      ? "Add a repository URL to continue"
+      : sourceType === "docker" && !dockerInputRaw.trim()
+        ? "Add a Docker image to continue"
+        : null;
+
+  const isConfigureReady = disabledReason === null;
+  const primaryConfigureCta =
+    sourceType === "github" ? "Continue to repo analysis" : "Continue to review";
 
   const filteredRepos = ghRepos.filter((r) =>
     r.fullName.toLowerCase().includes(repoSearch.toLowerCase()),
   );
 
-  const selectedCandidate = discoveryResult?.candidates.find(
-    (c) => c.id === selectedCandidateId,
-  );
+  const stepIndex = step === "configure" ? 0 : step === "analyze" ? 1 : 2;
+  const stepsList: { id: Step; label: string }[] = [
+    { id: "configure", label: "Configure" },
+    { id: "analyze", label: "Review" },
+    { id: "deploying", label: "Deploy" },
+  ];
 
   return (
-    <Box sx={{ mx: "auto", width: "100%", maxWidth: 1040, pb: 10, px: { xs: 1.5, sm: 2 } }}>
-      <Stack spacing={3.5}>
-        {/* Navigation Breadcrumb / Header */}
-        <Box>
+    <Box
+      className="cloudisy-create-flow"
+      sx={{
+        minHeight: "100%",
+        bgcolor: "var(--cd-canvas)",
+        color: "var(--cd-ink)",
+        overflowX: "hidden",
+      }}
+    >
+      <Box
+        sx={{
+          mx: "auto",
+          width: "100%",
+          maxWidth: 1080,
+          px: 2, // 16px mobile & desktop gutter
+          pt: { xs: 2, sm: 3 },
+          pb: { xs: 14, lg: 8 },
+        }}
+      >
+        {/* Top Navigation & Header */}
+        <Box sx={{ pb: 2.5, borderBottom: "1px solid var(--cd-border)" }}>
           <Button
             component={Link}
             href="/apps"
             variant="text"
             size="small"
             startIcon={<ArrowLeft style={{ width: 16, height: 16 }} />}
-            sx={{ ml: -1, color: "var(--muted-foreground)", mb: 1 }}
+            sx={{
+              ml: -1,
+              minHeight: 44,
+              px: 1,
+              color: "var(--cd-muted)",
+              fontSize: 14,
+              "&:hover": { color: "var(--cd-ink)", bgcolor: "transparent" },
+            }}
           >
             Back to Apps
           </Button>
@@ -467,94 +585,118 @@ function CreateApplicationContent() {
           <Box
             sx={{
               display: "flex",
-              flexDirection: { xs: "column", sm: "row" },
-              alignItems: { xs: "flex-start", sm: "center" },
+              flexDirection: { xs: "column", md: "row" },
+              alignItems: { xs: "stretch", md: "flex-end" },
               justifyContent: "space-between",
               gap: 2,
-              borderBottom: "1px solid var(--border)",
-              pb: 2.5,
+              mt: 0.5,
             }}
           >
-            <Box>
+            <Box sx={{ maxWidth: "65ch" }}>
               <Typography
                 variant="h1"
-                sx={{ fontSize: { xs: 22, sm: 26 }, fontWeight: 700, letterSpacing: "-0.02em" }}
+                sx={{
+                  fontSize: { xs: 20, sm: 28 },
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                  letterSpacing: "-0.02em",
+                  color: "var(--cd-ink)",
+                }}
               >
-                Create New Application
+                Create new application
               </Typography>
-              <Typography sx={{ fontSize: 13, color: "var(--muted-foreground)", mt: 0.5 }}>
-                Deploy web services and background workers from GitHub or Docker with automated builds and free SSL.
+              <Typography
+                sx={{
+                  fontSize: 14,
+                  color: "var(--cd-muted)",
+                  mt: 0.75,
+                  lineHeight: 1.5,
+                }}
+              >
+                Connect a repo or container image, pick compute, and deploy to a public Cloudisy URL.
               </Typography>
             </Box>
 
-            {/* Stepper Pill Indicators */}
-            <Stack
-              direction="row"
-              spacing={1}
+            {/* Compact 3-step Progress Bar (never wraps) */}
+            <Box
+              component="nav"
+              aria-label="Deployment progress"
               sx={{
-                borderRadius: 99,
-                bgcolor: "var(--muted)",
-                p: 0.5,
-                fontSize: 12,
-                border: "1px solid var(--border)",
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 1,
+                minWidth: { md: 280 },
+                flexShrink: 0,
               }}
             >
-              <Box
-                sx={{
-                  px: 1.5,
-                  py: 0.5,
-                  borderRadius: 99,
-                  fontWeight: 600,
-                  bgcolor: step === "configure" ? "var(--primary)" : "transparent",
-                  color: step === "configure" ? "var(--primary-foreground)" : "var(--muted-foreground)",
-                  cursor: step !== "deploying" ? "pointer" : "default",
-                }}
-                onClick={() => {
-                  if (step !== "deploying") setStep("configure");
-                }}
-              >
-                1. Configure
-              </Box>
-              <Box
-                sx={{
-                  px: 1.5,
-                  py: 0.5,
-                  borderRadius: 99,
-                  fontWeight: 600,
-                  bgcolor: step === "analyze" ? "var(--primary)" : "transparent",
-                  color: step === "analyze" ? "var(--primary-foreground)" : "var(--muted-foreground)",
-                }}
-              >
-                2. Analyze &amp; Path
-              </Box>
-              <Box
-                sx={{
-                  px: 1.5,
-                  py: 0.5,
-                  borderRadius: 99,
-                  fontWeight: 600,
-                  bgcolor: step === "deploying" ? "var(--primary)" : "transparent",
-                  color: step === "deploying" ? "var(--primary-foreground)" : "var(--muted-foreground)",
-                }}
-              >
-                3. Deploy &amp; Live Logs
-              </Box>
-            </Stack>
+              {stepsList.map((item, idx) => {
+                const isActive = idx === stepIndex;
+                const isDone = idx < stepIndex;
+                const canClickBack = item.id === "configure" && step === "analyze";
+                return (
+                  <Box
+                    key={item.id}
+                    component={canClickBack ? "button" : "div"}
+                    type={canClickBack ? "button" : undefined}
+                    onClick={canClickBack ? () => setStep("configure") : undefined}
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 0.75,
+                      textAlign: "left",
+                      background: "none",
+                      border: "none",
+                      p: 0,
+                      cursor: canClickBack ? "pointer" : "default",
+                      minHeight: 44,
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        fontSize: 12,
+                        fontWeight: isActive ? 700 : 500,
+                        color: isActive
+                          ? "var(--cd-ink)"
+                          : isDone
+                            ? "var(--cd-accent)"
+                            : "var(--cd-muted)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {idx + 1}. {item.label}
+                    </Typography>
+                    <Box
+                      sx={{
+                        height: 3,
+                        width: "100%",
+                        borderRadius: 99,
+                        bgcolor: isActive || isDone ? "var(--cd-accent)" : "var(--cd-border)",
+                        transition: "background-color 150ms ease",
+                      }}
+                    />
+                  </Box>
+                );
+              })}
+            </Box>
           </Box>
         </Box>
 
+        {/* Global Error Banner */}
         {deployError && (
           <Stack
             direction="row"
             spacing={1.25}
+            role="alert"
             sx={{
               alignItems: "center",
-              borderRadius: 2,
-              border: "1px solid rgba(239,68,68,0.3)",
-              bgcolor: "rgba(239,68,68,0.08)",
-              p: 2,
-              color: "var(--destructive)",
-              fontSize: 13,
+              mt: 2.5,
+              borderRadius: "var(--cd-radius-control)",
+              border: "1px solid var(--cd-danger)",
+              bgcolor: "var(--cd-danger-tint)",
+              p: 1.5,
+              color: "var(--cd-danger)",
+              fontSize: 14,
             }}
           >
             <AlertCircle style={{ width: 18, height: 18, flexShrink: 0 }} />
@@ -563,348 +705,174 @@ function CreateApplicationContent() {
         )}
 
         {/* =========================================================================
-            STEP 1: CONFIGURE (APP NAME, SOURCE, MACHINE SPECS)
+            STEP 1: CONFIGURE
         ========================================================================= */}
         {step === "configure" && (
-          <Stack spacing={3.5}>
-            {/* 1. App Name */}
-            <Stack spacing={2} sx={cardSx}>
-              <Box sx={cardHeaderSx}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <Server style={{ width: 16, height: 16, color: "var(--primary)" }} />
-                  <Typography sx={{ fontSize: 14, fontWeight: 600 }}>App Name &amp; Identity</Typography>
-                </Stack>
-                <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>Step 1 of 2</Typography>
-              </Box>
-
-              <Box>
-                <Typography component="label" htmlFor="app-name-input" sx={{ display: "block", fontSize: 12.5, fontWeight: 500, mb: 0.75 }}>
-                  Application Name *
-                </Typography>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1fr) 340px" },
+              gap: { xs: 0, lg: 5 },
+              alignItems: "start",
+            }}
+          >
+            {/* Left Column: Flat Form Sections */}
+            <Box sx={{ minWidth: 0 }}>
+              {/* 1. App Name */}
+              <Box sx={sectionDividerSx}>
+                <FieldLabel htmlFor="app-name-input" label="App name" required />
                 <TextField
                   id="app-name-input"
                   size="small"
                   fullWidth
                   autoComplete="off"
-                  placeholder="my-cool-service"
+                  placeholder="my-api-service"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  slotProps={{ htmlInput: { sx: { fontFamily: "var(--font-mono)", fontSize: 13.5 } } }}
+                  sx={inputSx}
                 />
-                <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                  <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>Target URL preview:</Typography>
+                <Typography
+                  sx={{
+                    fontSize: 12,
+                    color: "var(--cd-muted)",
+                    mt: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 0.75,
+                  }}
+                >
+                  <span>Live URL:</span>
                   <Box
                     component="code"
                     sx={{
                       fontFamily: "var(--font-mono)",
                       fontSize: 12,
-                      px: 1,
-                      py: 0.25,
-                      borderRadius: 1,
-                      bgcolor: "var(--muted)",
-                      color: "var(--primary)",
-                      border: "1px solid var(--border)",
+                      color: "var(--cd-ink)",
+                      wordBreak: "break-all",
                     }}
                   >
-                    https://{name ? name.toLowerCase().replace(/[^a-z0-9]+/g, "-") : "my-cool-service"}-[id].fly.dev
+                    {previewDomainUrl}
                   </Box>
-                </Box>
-              </Box>
-            </Stack>
-
-            {/* 2. Source Tabs (GitHub vs Docker) */}
-            <Stack spacing={2.5} sx={cardSx}>
-              <Box sx={cardHeaderSx}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <Layers style={{ width: 16, height: 16, color: "var(--primary)" }} />
-                  <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Source Code &amp; Packaging</Typography>
-                </Stack>
-                <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-                  Select source tab
                 </Typography>
               </Box>
 
-              {/* Segmented Source Tabs */}
-              <Box
-                sx={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 1.5,
-                  p: 0.5,
-                  borderRadius: 2,
-                  bgcolor: "var(--muted)",
-                  border: "1px solid var(--border)",
-                }}
-              >
+              {/* 2. Source */}
+              <Box sx={sectionDividerSx}>
+                <FieldLabel label="Source" required />
+
+                {/* Segmented Source Toggle */}
                 <Box
-                  component="button"
-                  type="button"
-                  onClick={() => setSourceType("github")}
+                  role="tablist"
+                  aria-label="Deployment source"
                   sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 1,
-                    py: 1.25,
-                    px: 2,
-                    borderRadius: 1.5,
-                    border: "none",
-                    cursor: "pointer",
-                    fontWeight: 600,
-                    fontSize: 13.5,
-                    bgcolor: sourceType === "github" ? "var(--card)" : "transparent",
-                    color: sourceType === "github" ? "var(--foreground)" : "var(--muted-foreground)",
-                    boxShadow: sourceType === "github" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                    transition: "all 150ms ease",
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 0.5,
+                    p: 0.5,
+                    borderRadius: "var(--cd-radius-control)",
+                    bgcolor: "var(--cd-surface-alt)",
+                    border: "1px solid var(--cd-border)",
+                    mb: 2.5,
                   }}
                 >
-                  <GitHubIcon size={16} />
-                  <span>GitHub Repository</span>
-                </Box>
-
-                <Box
-                  component="button"
-                  type="button"
-                  onClick={() => setSourceType("docker")}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 1,
-                    py: 1.25,
-                    px: 2,
-                    borderRadius: 1.5,
-                    border: "none",
-                    cursor: "pointer",
-                    fontWeight: 600,
-                    fontSize: 13.5,
-                    bgcolor: sourceType === "docker" ? "var(--card)" : "transparent",
-                    color: sourceType === "docker" ? "var(--foreground)" : "var(--muted-foreground)",
-                    boxShadow: sourceType === "docker" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                    transition: "all 150ms ease",
-                  }}
-                >
-                  <BoxIcon style={{ width: 16, height: 16 }} />
-                  <span>Docker Image</span>
-                </Box>
-              </Box>
-
-              {/* GitHub Tab Content */}
-              {sourceType === "github" && (
-                <Stack spacing={2.5} sx={{ pt: 1 }}>
-                  {/* Connected Status or Connect Button */}
                   <Box
+                    component="button"
+                    type="button"
+                    role="tab"
+                    aria-selected={sourceType === "github"}
+                    onClick={() => setSourceType("github")}
                     sx={{
                       display: "flex",
-                      flexDirection: { xs: "column", sm: "row" },
-                      alignItems: { xs: "flex-start", sm: "center" },
-                      justifyContent: "space-between",
-                      gap: 1.5,
-                      borderRadius: 2,
-                      border: "1px solid var(--border)",
-                      bgcolor: ghConnected ? "rgba(16,185,129,0.06)" : "var(--muted)",
-                      p: 2,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 1,
+                      minHeight: 40,
+                      px: 1.5,
+                      borderRadius: "4px",
+                      border: "none",
+                      cursor: "pointer",
+                      fontWeight: sourceType === "github" ? 700 : 500,
+                      fontSize: 14,
+                      fontFamily: "var(--font-sans)",
+                      bgcolor: sourceType === "github" ? "var(--cd-surface)" : "transparent",
+                      color: sourceType === "github" ? "var(--cd-ink)" : "var(--cd-muted)",
+                      transition: "background-color 150ms ease, color 150ms ease",
                     }}
                   >
-                    <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                      <Box
-                        sx={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: "50%",
-                          bgcolor: "var(--background)",
-                          border: "1px solid var(--border)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <GitHubIcon size={18} />
-                      </Box>
-                      <Box>
-                        {ghConnected ? (
-                          <>
-                            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
-                              <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>
-                                Connected to GitHub
-                              </Typography>
-                              <Chip
-                                size="small"
-                                label={`@${ghUsername}`}
-                                sx={{ height: 20, fontSize: 11, fontWeight: 600, bgcolor: "rgba(16,185,129,0.15)", color: "#10b981" }}
-                              />
-                            </Stack>
-                            <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mt: 0.25 }}>
-                              {ghRepos.length} repositories loaded from your GitHub account.
-                            </Typography>
-                          </>
-                        ) : (
-                          <>
-                            <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>
-                              GitHub Account Not Connected
-                            </Typography>
-                            <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mt: 0.25 }}>
-                              Connect your account to pick private or org repos, or paste any public repository URL below.
-                            </Typography>
-                          </>
-                        )}
-                      </Box>
-                    </Stack>
-
-                    <Stack direction="row" spacing={1} sx={{ alignSelf: { xs: "flex-start", sm: "center" } }}>
-                      {ghConnected ? (
-                        <Button
-                          type="button"
-                          variant="outlined"
-                          size="small"
-                          color="inherit"
-                          onClick={() => void handleDisconnectGitHub()}
-                          startIcon={<Unplug style={{ width: 14, height: 14 }} />}
-                          sx={{ fontSize: 12 }}
-                        >
-                          Disconnect
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="contained"
-                          size="small"
-                          onClick={() => setIsConnectDialogOpen(true)}
-                          startIcon={<GitHubIcon size={14} />}
-                          sx={{ fontSize: 12 }}
-                        >
-                          Connect GitHub
-                        </Button>
-                      )}
-                    </Stack>
+                    <GitHubIcon size={16} />
+                    <span>GitHub</span>
                   </Box>
 
-                  {/* If connected: Show repository selector or search */}
-                  {ghConnected && ghRepos.length > 0 && !showManualUrl && (
-                    <Stack spacing={1.5}>
-                      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>
-                          Select from your GitHub Repositories:
-                        </Typography>
-                        <Button
-                          type="button"
-                          variant="text"
-                          size="small"
-                          onClick={() => setShowManualUrl(true)}
-                          sx={{ fontSize: 11.5, p: 0 }}
+                  <Box
+                    component="button"
+                    type="button"
+                    role="tab"
+                    aria-selected={sourceType === "docker"}
+                    onClick={() => setSourceType("docker")}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 1,
+                      minHeight: 40,
+                      px: 1.5,
+                      borderRadius: "4px",
+                      border: "none",
+                      cursor: "pointer",
+                      fontWeight: sourceType === "docker" ? 700 : 500,
+                      fontSize: 14,
+                      fontFamily: "var(--font-sans)",
+                      bgcolor: sourceType === "docker" ? "var(--cd-surface)" : "transparent",
+                      color: sourceType === "docker" ? "var(--cd-ink)" : "var(--cd-muted)",
+                      transition: "background-color 150ms ease, color 150ms ease",
+                    }}
+                  >
+                    <span>Docker image</span>
+                  </Box>
+                </Box>
+
+                {/* GitHub Source Content */}
+                {sourceType === "github" && (
+                  <Stack spacing={2.5}>
+                    {/* Public URL first when not connected or manual mode */}
+                    {(showManualUrl || !ghConnected || ghRepos.length === 0) && (
+                      <Box>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "baseline",
+                            justifyContent: "space-between",
+                            gap: 1,
+                          }}
                         >
-                          Paste a custom URL instead
-                        </Button>
-                      </Box>
-
-                      <TextField
-                        size="small"
-                        placeholder="Search your repositories…"
-                        value={repoSearch}
-                        onChange={(e) => setRepoSearch(e.target.value)}
-                        slotProps={{
-                          input: {
-                            startAdornment: (
-                              <Search style={{ width: 14, height: 14, marginRight: 8, color: "var(--muted-foreground)" }} />
-                            ),
-                          },
-                        }}
-                      />
-
-                      <Box
-                        sx={{
-                          maxHeight: 220,
-                          overflowY: "auto",
-                          borderRadius: 2,
-                          border: "1px solid var(--border)",
-                          bgcolor: "var(--background)",
-                        }}
-                      >
-                        {filteredRepos.length === 0 ? (
-                          <Box sx={{ p: 2, textAlign: "center", color: "var(--muted-foreground)", fontSize: 12 }}>
-                            No matching repositories found.
+                          <Box sx={{ flex: 1 }}>
+                            <FieldLabel htmlFor="repo-url-input" label="Repository URL" required />
                           </Box>
-                        ) : (
-                          filteredRepos.map((repo) => {
-                            const isSelected = repoUrl === repo.url;
-                            return (
-                              <Box
-                                key={repo.id}
-                                component="button"
-                                type="button"
-                                onClick={() => handleSelectGhRepo(repo)}
-                                sx={{
-                                  display: "flex",
-                                  width: "100%",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  p: 1.5,
-                                  borderBottom: "1px solid var(--border)",
-                                  borderLeft: isSelected ? "3px solid var(--primary)" : "3px solid transparent",
-                                  bgcolor: isSelected ? "rgba(59,130,246,0.08)" : "transparent",
-                                  textAlign: "left",
-                                  cursor: "pointer",
-                                  color: "inherit",
-                                  "&:hover": { bgcolor: "var(--muted)" },
-                                  "&:last-child": { borderBottom: "none" },
-                                }}
-                              >
-                                <Box>
-                                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                                    <FolderGit2 style={{ width: 14, height: 14, color: "var(--primary)" }} />
-                                    <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{repo.fullName}</Typography>
-                                    {repo.isPrivate && (
-                                      <Chip label="Private" size="small" sx={{ height: 18, fontSize: 10 }} />
-                                    )}
-                                  </Stack>
-                                  {repo.description && (
-                                    <Typography noWrap sx={{ fontSize: 11.5, color: "var(--muted-foreground)", mt: 0.25, maxWidth: 420 }}>
-                                      {repo.description}
-                                    </Typography>
-                                  )}
-                                </Box>
+                          {ghConnected && ghRepos.length > 0 && (
+                            <Button
+                              type="button"
+                              variant="text"
+                              size="small"
+                              onClick={() => setShowManualUrl(false)}
+                              sx={{
+                                fontSize: 12,
+                                minHeight: 32,
+                                color: "var(--cd-accent)",
+                                p: 0,
+                              }}
+                            >
+                              Pick from my repos
+                            </Button>
+                          )}
+                        </Box>
 
-                                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                                  <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--muted-foreground)" }}>
-                                    {repo.defaultBranch}
-                                  </Typography>
-                                  {isSelected && <CheckCircle2 style={{ width: 16, height: 16, color: "var(--primary)" }} />}
-                                </Stack>
-                              </Box>
-                            );
-                          })
-                        )}
-                      </Box>
-                    </Stack>
-                  )}
-
-                  {/* Public Repository URL Input */}
-                  {(showManualUrl || !ghConnected || ghRepos.length === 0) && (
-                    <Box>
-                      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 0.75 }}>
-                        <Typography component="label" htmlFor="repo-url-input" sx={{ fontSize: 12.5, fontWeight: 500 }}>
-                          Public GitHub Repository URL *
-                        </Typography>
-                        {ghConnected && ghRepos.length > 0 && (
-                          <Button
-                            type="button"
-                            variant="text"
-                            size="small"
-                            onClick={() => setShowManualUrl(false)}
-                            sx={{ fontSize: 11.5, p: 0 }}
-                          >
-                            Pick from my repositories
-                          </Button>
-                        )}
-                      </Box>
-
-                      <Stack direction="row" spacing={1}>
                         <TextField
                           id="repo-url-input"
                           type="url"
                           size="small"
                           fullWidth
-                          placeholder="https://github.com/username/repository"
+                          placeholder="https://github.com/owner/repo"
                           value={repoUrl}
                           onChange={(e) => {
                             setRepoUrl(e.target.value);
@@ -912,543 +880,1073 @@ function CreateApplicationContent() {
                             setRepoError(null);
                           }}
                           onBlur={() => void handleValidateGitHub()}
-                          slotProps={{ htmlInput: { sx: { fontFamily: "var(--font-mono)", fontSize: 13 } } }}
+                          sx={inputSx}
+                          slotProps={{
+                            htmlInput: {
+                              sx: {
+                                fontFamily: repoUrl ? "var(--font-mono)" : "var(--font-sans)",
+                                fontSize: 13.5,
+                              },
+                            },
+                            input: {
+                              endAdornment: (
+                                <Button
+                                  type="button"
+                                  size="small"
+                                  variant="text"
+                                  onClick={() => void handleValidateGitHub()}
+                                  disabled={isValidatingRepo || !repoUrl.trim()}
+                                  sx={{
+                                    minHeight: 36,
+                                    minWidth: 64,
+                                    px: 1.25,
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: "var(--cd-accent)",
+                                    "&.Mui-disabled": { color: "var(--cd-muted)" },
+                                  }}
+                                >
+                                  {isValidatingRepo ? <CircularProgress size={14} /> : "Verify"}
+                                </Button>
+                              ),
+                            },
+                          }}
                         />
-                        <Button
-                          type="button"
-                          variant="outlined"
-                          size="small"
-                          onClick={() => void handleValidateGitHub()}
-                          disabled={isValidatingRepo || !repoUrl.trim()}
-                          sx={{ flexShrink: 0, px: 2 }}
+                        <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mt: 0.75 }}>
+                          Paste any public GitHub URL. We inspect the repo in the next step.
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {/* Connected GitHub Repo Picker */}
+                    {ghConnected && ghRepos.length > 0 && !showManualUrl && (
+                      <Stack spacing={1.5}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 1,
+                          }}
                         >
-                          {isValidatingRepo ? <CircularProgress size={14} /> : "Verify"}
-                        </Button>
+                          <FieldLabel label="Select repository" required />
+                          <Button
+                            type="button"
+                            variant="text"
+                            size="small"
+                            onClick={() => setShowManualUrl(true)}
+                            sx={{ fontSize: 12, color: "var(--cd-accent)", p: 0 }}
+                          >
+                            Paste URL instead
+                          </Button>
+                        </Box>
+
+                        <TextField
+                          size="small"
+                          fullWidth
+                          placeholder="Search your repositories"
+                          value={repoSearch}
+                          onChange={(e) => setRepoSearch(e.target.value)}
+                          sx={inputSx}
+                          slotProps={{
+                            input: {
+                              startAdornment: (
+                                <Search
+                                  style={{
+                                    width: 15,
+                                    height: 15,
+                                    marginRight: 8,
+                                    color: "var(--cd-muted)",
+                                    flexShrink: 0,
+                                  }}
+                                />
+                              ),
+                            },
+                          }}
+                        />
+
+                        <Box
+                          sx={{
+                            maxHeight: 224,
+                            overflowY: "auto",
+                            borderRadius: "var(--cd-radius-container)",
+                            border: "1px solid var(--cd-border)",
+                            bgcolor: "var(--cd-surface)",
+                          }}
+                        >
+                          {filteredRepos.length === 0 ? (
+                            <Box sx={{ p: 2, textAlign: "center", color: "var(--cd-muted)", fontSize: 13 }}>
+                              No repositories match "{repoSearch}".
+                            </Box>
+                          ) : (
+                            filteredRepos.map((repo) => {
+                              const isSelected = repoUrl === repo.url;
+                              return (
+                                <Box
+                                  key={repo.id}
+                                  component="button"
+                                  type="button"
+                                  onClick={() => handleSelectGhRepo(repo)}
+                                  sx={{
+                                    display: "flex",
+                                    width: "100%",
+                                    minHeight: 48,
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: 1.5,
+                                    px: 1.5,
+                                    py: 1,
+                                    border: "none",
+                                    borderBottom: "1px solid var(--cd-border)",
+                                    borderLeft: isSelected
+                                      ? "3px solid var(--cd-accent)"
+                                      : "3px solid transparent",
+                                    bgcolor: isSelected ? "var(--cd-accent-tint)" : "transparent",
+                                    textAlign: "left",
+                                    cursor: "pointer",
+                                    color: "var(--cd-ink)",
+                                    fontFamily: "var(--font-sans)",
+                                    "&:hover": { bgcolor: "var(--cd-surface-alt)" },
+                                    "&:last-child": { borderBottom: "none" },
+                                  }}
+                                >
+                                  <Box sx={{ minWidth: 0 }}>
+                                    <Typography
+                                      noWrap
+                                      sx={{ fontSize: 14, fontWeight: isSelected ? 700 : 500 }}
+                                    >
+                                      {repo.fullName}
+                                      {repo.isPrivate ? " (Private)" : ""}
+                                    </Typography>
+                                    {repo.description && (
+                                      <Typography
+                                        noWrap
+                                        sx={{ fontSize: 12, color: "var(--cd-muted)", mt: 0.25 }}
+                                      >
+                                        {repo.description}
+                                      </Typography>
+                                    )}
+                                  </Box>
+
+                                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexShrink: 0 }}>
+                                    <Typography
+                                      sx={{
+                                        fontFamily: "var(--font-mono)",
+                                        fontSize: 12,
+                                        color: "var(--cd-muted)",
+                                      }}
+                                    >
+                                      {repo.defaultBranch}
+                                    </Typography>
+                                    {isSelected && (
+                                      <Check style={{ width: 16, height: 16, color: "var(--cd-accent)" }} />
+                                    )}
+                                  </Stack>
+                                </Box>
+                              );
+                            })
+                          )}
+                        </Box>
                       </Stack>
-                      <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mt: 0.75 }}>
-                        Enter any public GitHub repository. Next step will automatically scan and detect deployable paths.
-                      </Typography>
-                    </Box>
-                  )}
+                    )}
 
-                  {repoError && (
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      sx={{
-                        alignItems: "center",
-                        borderRadius: 1.5,
-                        border: "1px solid rgba(239,68,68,0.25)",
-                        bgcolor: "rgba(239,68,68,0.08)",
-                        p: 1.5,
-                        fontSize: 12.5,
-                        color: "var(--destructive)",
-                      }}
-                    >
-                      <AlertCircle style={{ width: 16, height: 16, flexShrink: 0 }} />
-                      <span>{repoError}</span>
-                    </Stack>
-                  )}
+                    {/* Validation Error */}
+                    {repoError && (
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        role="alert"
+                        sx={{
+                          alignItems: "center",
+                          borderRadius: "var(--cd-radius-control)",
+                          border: "1px solid var(--cd-danger)",
+                          bgcolor: "var(--cd-danger-tint)",
+                          p: 1.25,
+                          fontSize: 13,
+                          color: "var(--cd-danger)",
+                        }}
+                      >
+                        <AlertCircle style={{ width: 16, height: 16, flexShrink: 0 }} />
+                        <span>{repoError}</span>
+                      </Stack>
+                    )}
 
-                  {repoPreview && (
-                    <Box
-                      sx={{
-                        borderRadius: 2,
-                        border: "1px solid rgba(16,185,129,0.3)",
-                        bgcolor: "rgba(16,185,129,0.05)",
-                        p: 2,
-                      }}
-                    >
-                      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                          <GitBranch style={{ width: 16, height: 16, color: "#10b981" }} />
-                          <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 13.5, fontWeight: 600 }}>
+                    {/* Verified Repo Inline Confirmation */}
+                    {repoPreview && (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          flexWrap: "wrap",
+                          gap: 1,
+                          px: 1.5,
+                          py: 1,
+                          borderRadius: "var(--cd-radius-control)",
+                          border: "1px solid var(--cd-free)",
+                          bgcolor: "var(--cd-surface)",
+                        }}
+                      >
+                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
+                          <GitBranch style={{ width: 15, height: 15, color: "var(--cd-free)", flexShrink: 0 }} />
+                          <Typography
+                            noWrap
+                            sx={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600 }}
+                          >
                             {repoPreview.owner}/{repoPreview.name}
                           </Typography>
                         </Stack>
-                        <Chip
-                          label="Verified Repo"
-                          size="small"
-                          sx={{ height: 20, bgcolor: "rgba(16,185,129,0.15)", color: "#10b981", fontWeight: 600, fontSize: 11 }}
-                        />
-                      </Box>
-                      <Box sx={{ display: "flex", gap: 2, mt: 1, fontSize: 12 }}>
-                        <Typography sx={{ color: "var(--muted-foreground)" }}>
-                          Default branch: <Box component="span" sx={{ color: "var(--foreground)", fontWeight: 600 }}>{repoPreview.defaultBranch}</Box>
-                        </Typography>
-                        <Typography sx={{ color: "var(--muted-foreground)" }}>
-                          Type: <Box component="span" sx={{ color: "var(--foreground)", fontWeight: 600 }}>{repoPreview.fork ? "Fork" : "Source"}</Box>
+                        <Typography sx={{ fontSize: 12, color: "var(--cd-free)", fontWeight: 600 }}>
+                          Verified ·{" "}
+                          <Box component="span" sx={{ fontFamily: "var(--font-mono)" }}>
+                            {repoPreview.defaultBranch}
+                          </Box>
                         </Typography>
                       </Box>
-                    </Box>
-                  )}
+                    )}
 
-                  <Box>
-                    <Typography component="label" htmlFor="repo-branch-input" sx={{ display: "block", fontSize: 12.5, fontWeight: 500, mb: 0.75 }}>
-                      Branch (optional)
-                    </Typography>
-                    <TextField
-                      id="repo-branch-input"
-                      size="small"
-                      fullWidth
-                      placeholder={repoPreview?.defaultBranch || "main"}
-                      value={repoBranch}
-                      onChange={(e) => setRepoBranch(e.target.value)}
-                      slotProps={{ htmlInput: { sx: { fontFamily: "var(--font-mono)", fontSize: 12.5 } } }}
-                    />
-                  </Box>
-                </Stack>
-              )}
-
-              {/* Docker Tab Content */}
-              {sourceType === "docker" && (
-                <Stack spacing={2.5} sx={{ pt: 1 }}>
-                  <Box>
-                    <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mb: 1 }}>
-                      Quick start with popular container templates:
-                    </Typography>
-                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-                      {STARTER_TEMPLATES.map((tpl) => {
-                        const active = selectedTemplate === tpl.name;
-                        return (
-                          <Button
-                            key={tpl.name}
-                            type="button"
-                            size="small"
-                            variant={active ? "contained" : "outlined"}
-                            onClick={() => handleApplyTemplate(tpl)}
-                            startIcon={active ? <Check style={{ width: 12, height: 12 }} /> : undefined}
-                            sx={{ fontSize: 12 }}
-                          >
-                            {tpl.name}
-                          </Button>
-                        );
-                      })}
-                    </Stack>
-                  </Box>
-
-                  <Box>
-                    <Typography component="label" htmlFor="docker-image-input" sx={{ display: "block", fontSize: 12.5, fontWeight: 500, mb: 0.75 }}>
-                      Docker Image or Pull Command *
-                    </Typography>
-                    <TextField
-                      id="docker-image-input"
-                      size="small"
-                      fullWidth
-                      placeholder="nginx:alpine or docker pull ghcr.io/owner/repo:latest"
-                      value={dockerInputRaw}
-                      onChange={(e) => handleDockerInputChange(e.target.value)}
-                      slotProps={{ htmlInput: { sx: { fontFamily: "var(--font-mono)", fontSize: 13 } } }}
-                    />
-                  </Box>
-
-                  {dockerParsed && (
+                    {/* Compact Single-Row GitHub Connect Prompt */}
                     <Box
                       sx={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        borderRadius: 2,
-                        border: "1px solid var(--border)",
-                        bgcolor: "var(--muted)",
-                        p: 1.5,
+                        gap: 1.5,
+                        px: 1.5,
+                        py: 1,
+                        minHeight: 48,
+                        borderRadius: "var(--cd-radius-container)",
+                        border: "1px solid var(--cd-border)",
+                        bgcolor: "var(--cd-surface)",
                       }}
                     >
-                      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                        <BoxIcon style={{ width: 16, height: 16, color: "var(--primary)" }} />
-                        <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>{dockerParsed.registryLabel}</Typography>
-                      </Stack>
-                      <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
-                        {dockerParsed.cleanedImage}
+                      {ghConnected ? (
+                        <>
+                          <Typography sx={{ fontSize: 13, color: "var(--cd-ink)", minWidth: 0 }} noWrap>
+                            GitHub connected as{" "}
+                            <Box component="span" sx={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>
+                              @{ghUsername}
+                            </Box>{" "}
+                            ({ghRepos.length} repos)
+                          </Typography>
+                          <Button
+                            type="button"
+                            variant="text"
+                            size="small"
+                            onClick={() => void handleDisconnectGitHub()}
+                            startIcon={<Unplug style={{ width: 14, height: 14 }} />}
+                            sx={{
+                              minHeight: 36,
+                              flexShrink: 0,
+                              fontSize: 12.5,
+                              color: "var(--cd-muted)",
+                            }}
+                          >
+                            Disconnect
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Typography sx={{ fontSize: 13, color: "var(--cd-muted)" }}>
+                            {isLoadingGh
+                              ? "Checking GitHub connection…"
+                              : "Deploying a private repository?"}
+                          </Typography>
+                          <Button
+                            type="button"
+                            variant="outlined"
+                            size="small"
+                            disabled={isLoadingGh}
+                            onClick={() => setIsConnectDialogOpen(true)}
+                            startIcon={<GitHubIcon size={14} />}
+                            sx={{
+                              minHeight: 36,
+                              flexShrink: 0,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              borderRadius: "var(--cd-radius-control)",
+                              borderColor: "var(--cd-border)",
+                              color: "var(--cd-ink)",
+                              "&:hover": {
+                                borderColor: "var(--cd-accent)",
+                                bgcolor: "var(--cd-accent-tint)",
+                              },
+                            }}
+                          >
+                            Connect GitHub
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+
+                    {/* Optional Branch */}
+                    <Box>
+                      <FieldLabel htmlFor="repo-branch-input" label="Branch" optional />
+                      <TextField
+                        id="repo-branch-input"
+                        size="small"
+                        fullWidth
+                        placeholder={repoPreview?.defaultBranch || "main"}
+                        value={repoBranch}
+                        onChange={(e) => setRepoBranch(e.target.value)}
+                        sx={inputSx}
+                        slotProps={{
+                          htmlInput: {
+                            sx: {
+                              fontFamily: repoBranch ? "var(--font-mono)" : "var(--font-sans)",
+                              fontSize: 13.5,
+                            },
+                          },
+                        }}
+                      />
+                      <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mt: 0.75 }}>
+                        Defaults to the repository&apos;s default branch if left blank.
                       </Typography>
                     </Box>
-                  )}
+                  </Stack>
+                )}
 
-                  <Box>
-                    <Typography component="label" htmlFor="docker-port-input" sx={{ display: "block", fontSize: 12.5, fontWeight: 500, mb: 0.75 }}>
-                      Container Internal Port (optional)
-                    </Typography>
-                    <TextField
-                      id="docker-port-input"
-                      type="number"
-                      size="small"
-                      fullWidth
-                      placeholder="Auto-detected (e.g. 80, 3000, 8080)"
-                      value={internalPort}
-                      onChange={(e) => setInternalPort(e.target.value)}
-                    />
-                  </Box>
-                </Stack>
-              )}
-            </Stack>
+                {/* Docker Source Content */}
+                {sourceType === "docker" && (
+                  <Stack spacing={2.5}>
+                    <Box>
+                      <FieldLabel label="Starter images" optional />
+                      <Box
+                        sx={{
+                          display: "grid",
+                          gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" },
+                          gap: 1,
+                        }}
+                      >
+                        {STARTER_TEMPLATES.map((tpl) => {
+                          const active = selectedTemplate === tpl.name;
+                          return (
+                            <Box
+                              key={tpl.name}
+                              component="button"
+                              type="button"
+                              onClick={() => handleApplyTemplate(tpl)}
+                              sx={{
+                                minHeight: 44,
+                                px: 1.5,
+                                borderRadius: "var(--cd-radius-control)",
+                                border: active
+                                  ? "2px solid var(--cd-accent)"
+                                  : "1px solid var(--cd-border)",
+                                bgcolor: active ? "var(--cd-accent-tint)" : "var(--cd-surface)",
+                                color: "var(--cd-ink)",
+                                fontWeight: active ? 700 : 500,
+                                fontSize: 13.5,
+                                fontFamily: "var(--font-sans)",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 0.75,
+                              }}
+                            >
+                              {active && <Check style={{ width: 14, height: 14, color: "var(--cd-accent)" }} />}
+                              <span>{tpl.name}</span>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    </Box>
 
-            {/* 3. Machine Type & Resource Selectors */}
-            <Stack spacing={2.5} sx={cardSx}>
-              <Box sx={cardHeaderSx}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <Cpu style={{ width: 16, height: 16, color: "var(--primary)" }} />
-                  <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Machine Type &amp; Resources</Typography>
-                </Stack>
-                {isFreeTier && (
-                  <Chip
-                    icon={<Sparkles style={{ width: 12, height: 12 }} />}
-                    label="Free Tier Included"
-                    size="small"
-                    sx={{
-                      bgcolor: "rgba(16,185,129,0.15)",
-                      color: "#10b981",
-                      fontWeight: 700,
-                      fontSize: 11.5,
-                      border: "1px solid rgba(16,185,129,0.3)",
-                    }}
-                  />
+                    <Box>
+                      <FieldLabel htmlFor="docker-image-input" label="Docker image" required />
+                      <TextField
+                        id="docker-image-input"
+                        size="small"
+                        fullWidth
+                        placeholder="nginx:alpine or ghcr.io/owner/app:latest"
+                        value={dockerInputRaw}
+                        onChange={(e) => handleDockerInputChange(e.target.value)}
+                        sx={inputSx}
+                        slotProps={{
+                          htmlInput: {
+                            sx: {
+                              fontFamily: dockerInputRaw ? "var(--font-mono)" : "var(--font-sans)",
+                              fontSize: 13.5,
+                            },
+                          },
+                        }}
+                      />
+                      <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mt: 0.75 }}>
+                        Supports Docker Hub, GHCR, or a full docker pull command.
+                      </Typography>
+                    </Box>
+
+                    {dockerParsed && (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 1.5,
+                          flexWrap: "wrap",
+                          px: 1.5,
+                          py: 1,
+                          borderRadius: "var(--cd-radius-control)",
+                          border: "1px solid var(--cd-border)",
+                          bgcolor: "var(--cd-surface)",
+                        }}
+                      >
+                        <Typography sx={{ fontSize: 13, color: "var(--cd-muted)" }}>
+                          {dockerParsed.registryLabel}
+                        </Typography>
+                        <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600 }}>
+                          {dockerParsed.cleanedImage}
+                        </Typography>
+                      </Box>
+                    )}
+
+                    <Box>
+                      <FieldLabel htmlFor="docker-port-input" label="Internal port" optional />
+                      <TextField
+                        id="docker-port-input"
+                        type="number"
+                        size="small"
+                        fullWidth
+                        placeholder="Auto-detected (80, 3000, 8080)"
+                        value={internalPort}
+                        onChange={(e) => setInternalPort(e.target.value)}
+                        sx={inputSx}
+                      />
+                      <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mt: 0.75 }}>
+                        Leave blank to auto-detect from the container EXPOSE directive.
+                      </Typography>
+                    </Box>
+                  </Stack>
                 )}
               </Box>
 
-              {/* Machine Type Selection (Shared vs Performance) */}
-              <Box>
-                <Typography sx={{ fontSize: 12.5, fontWeight: 500, mb: 1 }}>
-                  Machine Type *
-                </Typography>
-                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5 }}>
-                  <Box
-                    component="button"
-                    type="button"
-                    onClick={() => setMachineType("shared")}
-                    sx={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-start",
-                      p: 2,
-                      borderRadius: 2,
-                      border: machineType === "shared" ? "2px solid var(--primary)" : "1px solid var(--border)",
-                      bgcolor: machineType === "shared" ? "rgba(59,130,246,0.06)" : "var(--background)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      color: "inherit",
-                    }}
-                  >
-                    <Box sx={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center" }}>
-                      <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>Shared CPU</Typography>
-                      <Chip label="Free Tier Eligible" size="small" sx={{ height: 18, fontSize: 10, bgcolor: "rgba(16,185,129,0.12)", color: "#10b981", fontWeight: 600 }} />
+              {/* 3. Compute & Resources */}
+              <Box sx={{ ...sectionDividerSx, borderBottom: { xs: "1px solid var(--cd-border)", lg: "none" } }}>
+                <Stack spacing={3}>
+                  {/* Compute */}
+                  <Box>
+                    <FieldLabel label="Compute" required />
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                        gap: 1.25,
+                      }}
+                    >
+                      <Box
+                        component="button"
+                        type="button"
+                        onClick={() => setMachineType("shared")}
+                        sx={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "flex-start",
+                          gap: 0.5,
+                          p: 1.75,
+                          minHeight: 44,
+                          borderRadius: "var(--cd-radius-control)",
+                          border:
+                            machineType === "shared"
+                              ? "2px solid var(--cd-accent)"
+                              : "1px solid var(--cd-border)",
+                          bgcolor:
+                            machineType === "shared" ? "var(--cd-accent-tint)" : "var(--cd-surface)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          color: "var(--cd-ink)",
+                          fontFamily: "var(--font-sans)",
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            display: "flex",
+                            width: "100%",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 1,
+                          }}
+                        >
+                          <Typography sx={{ fontSize: 14, fontWeight: machineType === "shared" ? 700 : 600 }}>
+                            Shared CPU
+                          </Typography>
+                          {machineType === "shared" && (
+                            <Check style={{ width: 16, height: 16, color: "var(--cd-accent)", flexShrink: 0 }} />
+                          )}
+                        </Box>
+                        <Typography sx={{ fontSize: 12.5, color: "var(--cd-muted)", lineHeight: 1.45 }}>
+                          Shared CPU. Good for web apps and APIs. Can slow down under sustained load.
+                        </Typography>
+                      </Box>
+
+                      <Box
+                        component="button"
+                        type="button"
+                        onClick={() => setMachineType("performance")}
+                        sx={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "flex-start",
+                          gap: 0.5,
+                          p: 1.75,
+                          minHeight: 44,
+                          borderRadius: "var(--cd-radius-control)",
+                          border:
+                            machineType === "performance"
+                              ? "2px solid var(--cd-accent)"
+                              : "1px solid var(--cd-border)",
+                          bgcolor:
+                            machineType === "performance"
+                              ? "var(--cd-accent-tint)"
+                              : "var(--cd-surface)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          color: "var(--cd-ink)",
+                          fontFamily: "var(--font-sans)",
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            display: "flex",
+                            width: "100%",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: 1,
+                          }}
+                        >
+                          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                            <Typography
+                              sx={{
+                                fontSize: 14,
+                                fontWeight: machineType === "performance" ? 700 : 600,
+                              }}
+                            >
+                              Dedicated CPU
+                            </Typography>
+                            <Typography sx={{ fontSize: 12, fontWeight: 600, color: "var(--cd-cost)" }}>
+                              +$29/mo
+                            </Typography>
+                          </Stack>
+                          {machineType === "performance" && (
+                            <Check style={{ width: 16, height: 16, color: "var(--cd-accent)", flexShrink: 0 }} />
+                          )}
+                        </Box>
+                        <Typography sx={{ fontSize: 12.5, color: "var(--cd-muted)", lineHeight: 1.45 }}>
+                          Dedicated CPU. Full cores, no throttling. For production.
+                        </Typography>
+                      </Box>
                     </Box>
-                    <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mt: 0.5 }}>
-                      Burstable microVM, cost-effective, ideal for web services and APIs.
+                  </Box>
+
+                  {/* RAM Grid */}
+                  <Box>
+                    <FieldLabel label="Memory (RAM)" required />
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)" },
+                        gap: 1,
+                      }}
+                    >
+                      {RAM_OPTIONS.map((opt) => {
+                        const isSelected = ramMb === opt.value;
+                        return (
+                          <Box
+                            key={opt.value}
+                            component="button"
+                            type="button"
+                            onClick={() => setRamMb(opt.value)}
+                            sx={{
+                              minHeight: 44,
+                              px: 1.5,
+                              py: 1,
+                              borderRadius: "var(--cd-radius-control)",
+                              border: isSelected
+                                ? "2px solid var(--cd-accent)"
+                                : "1px solid var(--cd-border)",
+                              bgcolor: isSelected ? "var(--cd-accent-tint)" : "var(--cd-surface)",
+                              color: "var(--cd-ink)",
+                              cursor: "pointer",
+                              fontFamily: "var(--font-sans)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 0.75,
+                            }}
+                          >
+                            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                              {isSelected && (
+                                <Check style={{ width: 14, height: 14, color: "var(--cd-accent)", flexShrink: 0 }} />
+                              )}
+                              <Typography sx={{ fontSize: 13.5, fontWeight: isSelected ? 700 : 500 }}>
+                                {opt.label}
+                              </Typography>
+                            </Stack>
+                            {opt.deltaLabel && (
+                              <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--cd-cost)" }}>
+                                {opt.deltaLabel}
+                              </Typography>
+                            )}
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+
+                  {/* CPU Grid */}
+                  <Box>
+                    <FieldLabel label="CPU" required />
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" },
+                        gap: 1,
+                      }}
+                    >
+                      {CPU_OPTIONS.map((opt) => {
+                        const isSelected = cpus === opt.value;
+                        return (
+                          <Box
+                            key={opt.value}
+                            component="button"
+                            type="button"
+                            onClick={() => setCpus(opt.value)}
+                            sx={{
+                              minHeight: 44,
+                              px: 1.25,
+                              py: 1,
+                              borderRadius: "var(--cd-radius-control)",
+                              border: isSelected
+                                ? "2px solid var(--cd-accent)"
+                                : "1px solid var(--cd-border)",
+                              bgcolor: isSelected ? "var(--cd-accent-tint)" : "var(--cd-surface)",
+                              color: "var(--cd-ink)",
+                              cursor: "pointer",
+                              fontFamily: "var(--font-sans)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 0.5,
+                            }}
+                          >
+                            <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }}>
+                              {isSelected && (
+                                <Check style={{ width: 14, height: 14, color: "var(--cd-accent)", flexShrink: 0 }} />
+                              )}
+                              <Typography sx={{ fontSize: 13.5, fontWeight: isSelected ? 700 : 500 }}>
+                                {opt.label}
+                              </Typography>
+                            </Stack>
+                            {opt.deltaLabel && (
+                              <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: "var(--cd-cost)" }}>
+                                {opt.deltaLabel}
+                              </Typography>
+                            )}
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+
+                  {/* Disk Segmented Row */}
+                  <Box>
+                    <FieldLabel label="Disk" optional />
+                    <Box
+                      role="radiogroup"
+                      aria-label="Disk size"
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(5, 1fr)",
+                        borderRadius: "var(--cd-radius-control)",
+                        border: "1px solid var(--cd-border)",
+                        bgcolor: "var(--cd-surface)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {VOLUME_OPTIONS.map((opt, idx) => {
+                        const isSelected = volumeGb === opt.value;
+                        return (
+                          <Box
+                            key={opt.value}
+                            component="button"
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            onClick={() => setVolumeGb(opt.value)}
+                            sx={{
+                              minHeight: 44,
+                              px: 0.5,
+                              py: 0.75,
+                              border: "none",
+                              borderRight:
+                                idx < VOLUME_OPTIONS.length - 1
+                                  ? "1px solid var(--cd-border)"
+                                  : "none",
+                              bgcolor: isSelected ? "var(--cd-accent-tint)" : "transparent",
+                              boxShadow: isSelected ? "inset 0 0 0 2px var(--cd-accent)" : "none",
+                              color: "var(--cd-ink)",
+                              cursor: "pointer",
+                              fontFamily: "var(--font-sans)",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              lineHeight: 1.2,
+                            }}
+                          >
+                            <Typography
+                              sx={{
+                                fontSize: 13,
+                                fontWeight: isSelected ? 700 : 500,
+                                color: isSelected ? "var(--cd-accent)" : "var(--cd-ink)",
+                              }}
+                            >
+                              {opt.label}
+                            </Typography>
+                            {opt.deltaLabel && (
+                              <Typography
+                                sx={{
+                                  fontSize: 10.5,
+                                  fontWeight: 600,
+                                  color: "var(--cd-cost)",
+                                  mt: 0.25,
+                                }}
+                              >
+                                {opt.deltaLabel}
+                              </Typography>
+                            )}
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                    <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mt: 0.75 }}>
+                      {volumeGb === 0
+                        ? "Ephemeral storage. Data resets on every deploy."
+                        : `Persistent ${volumeGb} GB disk mounted for stateful data across deploys.`}
                     </Typography>
                   </Box>
 
-                  <Box
-                    component="button"
-                    type="button"
-                    onClick={() => setMachineType("performance")}
-                    sx={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-start",
-                      p: 2,
-                      borderRadius: 2,
-                      border: machineType === "performance" ? "2px solid var(--primary)" : "1px solid var(--border)",
-                      bgcolor: machineType === "performance" ? "rgba(59,130,246,0.06)" : "var(--background)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      color: "inherit",
-                    }}
-                  >
-                    <Box sx={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center" }}>
-                      <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>Performance CPU</Typography>
-                      <Chip label="Dedicated" size="small" sx={{ height: 18, fontSize: 10 }} />
-                    </Box>
-                    <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mt: 0.5 }}>
-                      Dedicated CPU cores without throttling for production workloads.
+                  {/* Region */}
+                  <Box>
+                    <FieldLabel htmlFor="region-select" label="Region" required />
+                    <Select
+                      id="region-select"
+                      size="small"
+                      fullWidth
+                      value={region}
+                      onChange={(e) => setRegion(e.target.value)}
+                      sx={{
+                        minHeight: 44,
+                        borderRadius: "var(--cd-radius-control)",
+                        bgcolor: "var(--cd-surface)",
+                        color: "var(--cd-ink)",
+                        fontSize: 14,
+                        "& .MuiOutlinedInput-notchedOutline": {
+                          borderColor: "var(--cd-border)",
+                        },
+                        "&:hover .MuiOutlinedInput-notchedOutline": {
+                          borderColor: "var(--cd-muted)",
+                        },
+                        "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                          borderColor: "var(--cd-accent)",
+                          borderWidth: "2px",
+                        },
+                      }}
+                    >
+                      {FLY_REGIONS.map(({ code, name: rName }) => (
+                        <MenuItem key={code} value={code} sx={{ minHeight: 44, fontSize: 14 }}>
+                          {rName} ({code.toUpperCase()})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                    <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mt: 0.75 }}>
+                      Singapore (SIN) gives the lowest latency from Bangladesh.
                     </Typography>
                   </Box>
-                </Box>
-              </Box>
-
-              {/* RAM Selector */}
-              <Box>
-                <Typography sx={{ fontSize: 12.5, fontWeight: 500, mb: 1 }}>
-                  RAM Selector *
-                </Typography>
-                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-                  {RAM_OPTIONS.map((opt) => {
-                    const isSelected = ramMb === opt.value;
-                    return (
-                      <Box
-                        key={opt.value}
-                        component="button"
-                        type="button"
-                        onClick={() => setRamMb(opt.value)}
-                        sx={{
-                          py: 1,
-                          px: 2,
-                          borderRadius: 1.5,
-                          border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
-                          bgcolor: isSelected ? "rgba(59,130,246,0.1)" : "var(--background)",
-                          color: isSelected ? "var(--primary)" : "inherit",
-                          fontWeight: 600,
-                          fontSize: 13,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 0.75,
-                        }}
-                      >
-                        <span>{opt.label}</span>
-                        {opt.isFree && machineType === "shared" && (
-                          <Chip label="Free" size="small" sx={{ height: 16, fontSize: 9, bgcolor: "rgba(16,185,129,0.15)", color: "#10b981", fontWeight: 700 }} />
-                        )}
-                      </Box>
-                    );
-                  })}
                 </Stack>
               </Box>
 
-              {/* CPU Selector */}
-              <Box>
-                <Typography sx={{ fontSize: 12.5, fontWeight: 500, mb: 1 }}>
-                  CPU Selector *
+              {/* Mobile Inline Summary Row (above sticky bottom CTA bar) */}
+              <Box
+                sx={{
+                  display: { xs: "flex", lg: "none" },
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 1.5,
+                  mt: 3,
+                  p: 2,
+                  borderRadius: "var(--cd-radius-container)",
+                  border: "1px solid var(--cd-border)",
+                  bgcolor: "var(--cd-surface)",
+                }}
+              >
+                <Typography sx={{ fontSize: 13, color: "var(--cd-muted)", lineHeight: 1.4 }}>
+                  {specSummaryLine}
                 </Typography>
-                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-                  {CPU_OPTIONS.map((opt) => {
-                    const isSelected = cpus === opt.value;
-                    return (
-                      <Box
-                        key={opt.value}
-                        component="button"
-                        type="button"
-                        onClick={() => setCpus(opt.value)}
-                        sx={{
-                          py: 1,
-                          px: 2,
-                          borderRadius: 1.5,
-                          border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
-                          bgcolor: isSelected ? "rgba(59,130,246,0.1)" : "var(--background)",
-                          color: isSelected ? "var(--primary)" : "inherit",
-                          fontWeight: 600,
-                          fontSize: 13,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 0.75,
-                        }}
-                      >
-                        <span>{opt.label}</span>
-                        {opt.isFree && machineType === "shared" && (
-                          <Chip label="Free" size="small" sx={{ height: 16, fontSize: 9, bgcolor: "rgba(16,185,129,0.15)", color: "#10b981", fontWeight: 700 }} />
-                        )}
-                      </Box>
-                    );
-                  })}
-                </Stack>
-              </Box>
-
-              {/* Volume Selector */}
-              <Box>
-                <Typography sx={{ fontSize: 12.5, fontWeight: 500, mb: 1 }}>
-                  Persistent Storage Volume
-                </Typography>
-                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-                  {VOLUME_OPTIONS.map((opt) => {
-                    const isSelected = volumeGb === opt.value;
-                    return (
-                      <Box
-                        key={opt.value}
-                        component="button"
-                        type="button"
-                        onClick={() => setVolumeGb(opt.value)}
-                        sx={{
-                          py: 1,
-                          px: 2,
-                          borderRadius: 1.5,
-                          border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
-                          bgcolor: isSelected ? "rgba(59,130,246,0.1)" : "var(--background)",
-                          color: isSelected ? "var(--primary)" : "inherit",
-                          fontWeight: 600,
-                          fontSize: 13,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 0.75,
-                        }}
-                      >
-                        <span>{opt.label}</span>
-                        {opt.isFree && (
-                          <Chip label="Free" size="small" sx={{ height: 16, fontSize: 9, bgcolor: "rgba(16,185,129,0.15)", color: "#10b981", fontWeight: 700 }} />
-                        )}
-                      </Box>
-                    );
-                  })}
-                </Stack>
-              </Box>
-
-              {/* Region Selector */}
-              <Box>
-                <Typography component="label" htmlFor="region-select" sx={{ display: "block", fontSize: 12.5, fontWeight: 500, mb: 0.75 }}>
-                  Deployment Region *
-                </Typography>
-                <Select
-                  id="region-select"
-                  size="small"
-                  fullWidth
-                  value={region}
-                  onChange={(e) => setRegion(e.target.value)}
+                <Typography
+                  sx={{
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: isFreeTier ? "var(--cd-free)" : "var(--cd-ink)",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
                 >
-                  {FLY_REGIONS.map(({ code, name: rName }) => (
-                    <MenuItem key={code} value={code}>
-                      {rName} ({code.toUpperCase()})
-                    </MenuItem>
-                  ))}
-                </Select>
+                  {monthlyCostLabel}
+                </Typography>
               </Box>
+            </Box>
 
-              {/* Free Tier Notice Banner */}
+            {/* Desktop Sticky Right Summary Panel */}
+            <Box
+              sx={{
+                display: { xs: "none", lg: "block" },
+                position: "sticky",
+                top: 24,
+                mt: 3,
+                p: 2.5,
+                borderRadius: "var(--cd-radius-container)",
+                border: "1px solid var(--cd-border)",
+                bgcolor: "var(--cd-surface)",
+              }}
+            >
+              <Typography sx={{ fontSize: 16, fontWeight: 700, color: "var(--cd-ink)", mb: 1.5 }}>
+                Summary
+              </Typography>
+
               <Box
                 sx={{
                   display: "flex",
-                  alignItems: "center",
+                  alignItems: "baseline",
                   justifyContent: "space-between",
-                  borderRadius: 2,
-                  border: isFreeTier ? "1px solid rgba(16,185,129,0.3)" : "1px solid var(--border)",
-                  bgcolor: isFreeTier ? "rgba(16,185,129,0.06)" : "var(--muted)",
-                  p: 2,
+                  gap: 1.5,
+                  pb: 2,
+                  borderBottom: "1px solid var(--cd-border)",
                 }}
               >
-                <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 600 }}>
-                    {isFreeTier ? "Free Tier Selected: $0.00 / month" : "Standard Resource Plan"}
-                  </Typography>
-                  <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mt: 0.25 }}>
-                    {isFreeTier
-                      ? "Your configuration (Shared CPU, 256 MB RAM, 2 vCPUs) is completely free under the Starter quota."
-                      : `Selected: ${machineType === "shared" ? "Shared" : "Dedicated"} CPU, ${ramMb} MB RAM, ${cpus} vCPU.`}
-                  </Typography>
-                </Box>
-                <Chip
-                  label={isFreeTier ? "FREE" : "~$3.19/mo"}
-                  size="small"
+                <Typography sx={{ fontSize: 13, color: "var(--cd-muted)", lineHeight: 1.45 }}>
+                  {specSummaryLine}
+                </Typography>
+                <Typography
                   sx={{
+                    fontSize: 16,
                     fontWeight: 700,
-                    bgcolor: isFreeTier ? "rgba(16,185,129,0.15)" : "var(--primary)",
-                    color: isFreeTier ? "#10b981" : "var(--primary-foreground)",
+                    color: isFreeTier ? "var(--cd-free)" : "var(--cd-ink)",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
                   }}
-                />
+                >
+                  {monthlyCostLabel}
+                </Typography>
               </Box>
-            </Stack>
 
-            {/* Bottom Next Button */}
-            <Box sx={{ display: "flex", justifyContent: "flex-end", pt: 1 }}>
+              <Stack spacing={1} sx={{ py: 2, fontSize: 13 }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1 }}>
+                  <span style={{ color: "var(--cd-muted)" }}>Compute</span>
+                  <span style={{ fontWeight: 600 }}>
+                    {machineType === "shared" ? "Shared CPU" : "Dedicated CPU"}
+                  </span>
+                </Box>
+                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1 }}>
+                  <span style={{ color: "var(--cd-muted)" }}>Memory</span>
+                  <span style={{ fontWeight: 600 }}>{formatRamLabel(ramMb)}</span>
+                </Box>
+                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1 }}>
+                  <span style={{ color: "var(--cd-muted)" }}>CPU</span>
+                  <span style={{ fontWeight: 600 }}>{cpus} vCPU</span>
+                </Box>
+                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1 }}>
+                  <span style={{ color: "var(--cd-muted)" }}>Disk</span>
+                  <span style={{ fontWeight: 600 }}>
+                    {volumeGb > 0 ? `${volumeGb} GB` : "Ephemeral"}
+                  </span>
+                </Box>
+                <Box sx={{ display: "flex", justifyContent: "space-between", gap: 1 }}>
+                  <span style={{ color: "var(--cd-muted)" }}>Region</span>
+                  <span style={{ fontWeight: 600 }}>{selectedRegionName}</span>
+                </Box>
+              </Stack>
+
+              {disabledReason && (
+                <Typography sx={{ fontSize: 12.5, color: "var(--cd-muted)", mb: 1 }}>
+                  {disabledReason}
+                </Typography>
+              )}
+
               <Button
                 type="button"
                 variant="contained"
-                size="large"
+                fullWidth
                 onClick={() => void handleProceedToAnalysis()}
-                disabled={!name.trim() || (sourceType === "github" ? !repoUrl.trim() : !dockerInputRaw.trim())}
+                disabled={!isConfigureReady}
                 endIcon={<ArrowRight style={{ width: 16, height: 16 }} />}
-                sx={{ px: 4, py: 1.25, fontSize: 14, fontWeight: 600 }}
+                sx={{
+                  minHeight: 44,
+                  borderRadius: "var(--cd-radius-control)",
+                  bgcolor: "var(--cd-accent)",
+                  color: "var(--cd-accent-ink)",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  boxShadow: "none",
+                  "&:hover": {
+                    bgcolor: "var(--cd-accent)",
+                    opacity: 0.92,
+                    boxShadow: "none",
+                  },
+                  "&.Mui-disabled": {
+                    bgcolor: "var(--cd-surface-alt)",
+                    color: "var(--cd-muted)",
+                    border: "1px solid var(--cd-border)",
+                  },
+                }}
               >
-                {sourceType === "github" ? "Next: Analyze Repository" : "Next: Review & Deploy"}
+                {primaryConfigureCta}
               </Button>
             </Box>
-          </Stack>
+          </Box>
+        )}
+
+        {/* Mobile Sticky Bottom Action Bar (Step 1) */}
+        {step === "configure" && (
+          <Box
+            sx={{
+              display: { xs: "block", lg: "none" },
+              position: "fixed",
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 30,
+              bgcolor: "var(--cd-canvas)",
+              borderTop: "1px solid var(--cd-border)",
+              px: 2,
+              pt: 1.25,
+              pb: "calc(12px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            {disabledReason && (
+              <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mb: 0.75, textAlign: "center" }}>
+                {disabledReason}
+              </Typography>
+            )}
+            <Button
+              type="button"
+              variant="contained"
+              fullWidth
+              onClick={() => void handleProceedToAnalysis()}
+              disabled={!isConfigureReady}
+              endIcon={<ArrowRight style={{ width: 16, height: 16 }} />}
+              sx={{
+                minHeight: 44,
+                borderRadius: "var(--cd-radius-control)",
+                bgcolor: "var(--cd-accent)",
+                color: "var(--cd-accent-ink)",
+                fontSize: 14,
+                fontWeight: 700,
+                boxShadow: "none",
+                "&:hover": {
+                  bgcolor: "var(--cd-accent)",
+                  opacity: 0.92,
+                  boxShadow: "none",
+                },
+                "&.Mui-disabled": {
+                  bgcolor: "var(--cd-surface-alt)",
+                  color: "var(--cd-muted)",
+                  border: "1px solid var(--cd-border)",
+                },
+              }}
+            >
+              {primaryConfigureCta}
+            </Button>
+          </Box>
         )}
 
         {/* =========================================================================
-            STEP 2: ANALYZE & DEPLOYABLE PATH
+            STEP 2: REVIEW & DEPLOYABLE PATH
         ========================================================================= */}
         {step === "analyze" && (
-          <Stack spacing={3.5}>
-            {/* Automated Analysis Section */}
-            <Stack spacing={2.5} sx={cardSx}>
-              <Box sx={cardHeaderSx}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <Sparkles style={{ width: 16, height: 16, color: "var(--primary)" }} />
-                  <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
-                    Repository Analysis &amp; Deployable Path
-                  </Typography>
-                </Stack>
-                {isAnalyzingRepo && (
-                  <Chip
-                    icon={<CircularProgress size={12} color="inherit" />}
-                    label="Analyzing Repo…"
-                    size="small"
-                    sx={{ bgcolor: "rgba(59,130,246,0.1)", color: "var(--primary)", fontSize: 11 }}
-                  />
-                )}
-              </Box>
-
-              {/* Scanning status */}
-              {isAnalyzingRepo ? (
-                <Stack
-                  spacing={2}
+          <Box sx={{ maxWidth: 760 }}>
+            {sourceType === "github" && (
+              <Box sx={sectionDividerSx}>
+                <Box
                   sx={{
+                    display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    py: 6,
-                    border: "1px dashed var(--border)",
-                    borderRadius: 2,
-                    bgcolor: "rgba(255,255,255,0.015)",
+                    justifyContent: "space-between",
+                    gap: 1.5,
+                    mb: 2,
                   }}
                 >
-                  <CircularProgress size={32} />
-                  <Box sx={{ textAlign: "center" }}>
-                    <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
-                      Scanning repository &amp; detecting frameworks…
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mt: 0.5 }}>
-                      Detecting build tools (pnpm, npm, cargo, pip), monorepos, and deployable paths automatically.
-                    </Typography>
-                  </Box>
-                </Stack>
-              ) : (
-                <Stack spacing={2.5}>
-                  {discoveryError && (
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      sx={{
-                        alignItems: "center",
-                        borderRadius: 1.5,
-                        border: "1px solid rgba(239,68,68,0.25)",
-                        bgcolor: "rgba(239,68,68,0.08)",
-                        p: 1.5,
-                        fontSize: 12.5,
-                        color: "var(--destructive)",
-                      }}
-                    >
-                      <AlertCircle style={{ width: 16, height: 16, flexShrink: 0 }} />
-                      <span>{discoveryError}</span>
+                  <Typography sx={{ fontSize: 16, fontWeight: 700 }}>
+                    Repository analysis
+                  </Typography>
+                  {isAnalyzingRepo && (
+                    <Stack direction="row" spacing={1} sx={{ alignItems: "center", color: "var(--cd-accent)" }}>
+                      <CircularProgress size={14} color="inherit" />
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 600 }}>Scanning…</Typography>
                     </Stack>
                   )}
+                </Box>
 
-                  {/* Deployable Path Card */}
-                  <Box
+                {isAnalyzingRepo ? (
+                  <Stack
+                    spacing={1.5}
                     sx={{
-                      borderRadius: 2,
-                      border: "1px solid var(--border)",
-                      bgcolor: "var(--background)",
-                      p: 2.5,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      py: 5,
+                      px: 2,
+                      borderRadius: "var(--cd-radius-container)",
+                      border: "1px dashed var(--cd-border)",
+                      bgcolor: "var(--cd-surface)",
+                      textAlign: "center",
                     }}
                   >
-                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1.5 }}>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                        <FolderGit2 style={{ width: 18, height: 18, color: "var(--primary)" }} />
-                        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
-                          Detected Deployable Path:
-                        </Typography>
+                    <CircularProgress size={26} sx={{ color: "var(--cd-accent)" }} />
+                    <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
+                      Scanning repository for build tools and deployable paths
+                    </Typography>
+                    <Typography sx={{ fontSize: 12.5, color: "var(--cd-muted)" }}>
+                      Checking package.json, Dockerfiles, and workspace roots.
+                    </Typography>
+                  </Stack>
+                ) : (
+                  <Stack spacing={2}>
+                    {discoveryError && (
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        role="alert"
+                        sx={{
+                          alignItems: "center",
+                          borderRadius: "var(--cd-radius-control)",
+                          border: "1px solid var(--cd-danger)",
+                          bgcolor: "var(--cd-danger-tint)",
+                          p: 1.5,
+                          fontSize: 13,
+                          color: "var(--cd-danger)",
+                        }}
+                      >
+                        <AlertCircle style={{ width: 16, height: 16, flexShrink: 0 }} />
+                        <span>{discoveryError}</span>
                       </Stack>
-                      <Chip
-                        label={discoveryResult?.monorepo ? "Monorepo Workspace" : "Single Service"}
-                        size="small"
-                        sx={{ fontSize: 11, fontWeight: 600 }}
-                      />
-                    </Box>
+                    )}
 
-                    {/* Candidate Projects or Default Root */}
                     {discoveryResult?.candidates && discoveryResult.candidates.length > 0 ? (
-                      <Stack spacing={1.5} sx={{ mb: 2 }}>
+                      <Stack spacing={1.25}>
+                        <Typography sx={{ fontSize: 13, color: "var(--cd-muted)" }}>
+                          {discoveryResult.monorepo
+                            ? "Monorepo detected. Choose the service directory to deploy:"
+                            : "Detected service:"}
+                        </Typography>
                         {discoveryResult.candidates.map((cand) => {
                           const isSelected = selectedCandidateId === cand.id;
+                          const techTags = [
+                            cand.frameworkName,
+                            cand.language ? cand.language.toUpperCase() : null,
+                            cand.packageManager,
+                            cand.dockerfilePath ? "Dockerfile" : null,
+                          ].filter(Boolean);
+
                           return (
                             <Box
                               key={cand.id}
@@ -1461,67 +1959,72 @@ function CreateApplicationContent() {
                               sx={{
                                 display: "flex",
                                 flexDirection: "column",
-                                gap: 1,
+                                gap: 0.75,
                                 p: 1.75,
-                                borderRadius: 1.5,
-                                border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
-                                bgcolor: isSelected ? "rgba(59,130,246,0.06)" : "var(--card)",
+                                minHeight: 44,
+                                borderRadius: "var(--cd-radius-container)",
+                                border: isSelected
+                                  ? "2px solid var(--cd-accent)"
+                                  : "1px solid var(--cd-border)",
+                                bgcolor: isSelected ? "var(--cd-accent-tint)" : "var(--cd-surface)",
                                 cursor: "pointer",
                                 textAlign: "left",
-                                color: "inherit",
+                                color: "var(--cd-ink)",
+                                fontFamily: "var(--font-sans)",
                               }}
                             >
-                              <Box sx={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center" }}>
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  width: "100%",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  gap: 1,
+                                }}
+                              >
                                 <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                                  <CheckCircle2 style={{ width: 16, height: 16, color: isSelected ? "var(--primary)" : "var(--muted-foreground)" }} />
-                                  <Typography sx={{ fontSize: 13.5, fontWeight: 600 }}>{cand.name}</Typography>
+                                  {isSelected ? (
+                                    <Check style={{ width: 16, height: 16, color: "var(--cd-accent)" }} />
+                                  ) : (
+                                    <FolderGit2 style={{ width: 16, height: 16, color: "var(--cd-muted)" }} />
+                                  )}
+                                  <Typography sx={{ fontSize: 14, fontWeight: isSelected ? 700 : 600 }}>
+                                    {cand.name}
+                                  </Typography>
                                 </Stack>
                                 <Box
                                   component="code"
                                   sx={{
                                     fontFamily: "var(--font-mono)",
                                     fontSize: 12,
-                                    bgcolor: "var(--muted)",
-                                    px: 1,
-                                    py: 0.25,
-                                    borderRadius: 1,
+                                    color: "var(--cd-muted)",
                                   }}
                                 >
-                                  {cand.rootDirectory === "." ? "root (/)" : cand.rootDirectory}
+                                  {cand.rootDirectory === "." ? "./" : cand.rootDirectory}
                                 </Box>
                               </Box>
 
-                              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", pl: 3 }}>
-                                {cand.frameworkName && (
-                                  <Chip label={cand.frameworkName} size="small" sx={{ height: 20, fontSize: 10, bgcolor: "rgba(59,130,246,0.15)", color: "var(--primary)", fontWeight: 600 }} />
-                                )}
-                                {cand.language && (
-                                  <Chip label={cand.language.toUpperCase()} size="small" sx={{ height: 20, fontSize: 10 }} />
-                                )}
-                                {cand.packageManager && (
-                                  <Chip label={cand.packageManager} size="small" sx={{ height: 20, fontSize: 10 }} />
-                                )}
-                                {cand.dockerfilePath && (
-                                  <Chip label="Dockerfile" size="small" sx={{ height: 20, fontSize: 10, bgcolor: "rgba(245,158,11,0.15)", color: "#f59e0b", fontWeight: 600 }} />
-                                )}
-                              </Stack>
+                              {techTags.length > 0 && (
+                                <Typography sx={{ fontSize: 12.5, color: "var(--cd-muted)", pl: 3 }}>
+                                  {techTags.join(" · ")}
+                                </Typography>
+                              )}
                             </Box>
                           );
                         })}
                       </Stack>
                     ) : (
-                      <Box sx={{ mb: 2, p: 2, borderRadius: 1.5, bgcolor: "var(--card)", border: "1px solid var(--border)" }}>
-                        <Typography sx={{ fontSize: 13 }}>
-                          Root service detected at <Box component="code" sx={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>./</Box> (Railpack automated build).
-                        </Typography>
-                      </Box>
+                      <Typography sx={{ fontSize: 13.5, color: "var(--cd-muted)" }}>
+                        Root directory{" "}
+                        <Box component="code" sx={{ fontFamily: "var(--font-mono)", color: "var(--cd-ink)" }}>
+                          ./
+                        </Box>{" "}
+                        will be built automatically.
+                      </Typography>
                     )}
 
-                    {/* Root directory override */}
-                    <Box sx={{ pt: 1.5, borderTop: "1px solid var(--border)" }}>
-                      <Typography component="label" htmlFor="custom-root-dir" sx={{ display: "block", fontSize: 12, fontWeight: 500, mb: 0.75 }}>
-                        Deployable Root Directory (relative to repository root):
-                      </Typography>
+                    <Box sx={{ pt: 1 }}>
+                      <FieldLabel htmlFor="custom-root-dir" label="Root directory" optional />
                       <TextField
                         id="custom-root-dir"
                         size="small"
@@ -1529,90 +2032,146 @@ function CreateApplicationContent() {
                         placeholder="."
                         value={customRootDirectory}
                         onChange={(e) => setCustomRootDirectory(e.target.value)}
-                        slotProps={{ htmlInput: { sx: { fontFamily: "var(--font-mono)", fontSize: 12.5 } } }}
+                        sx={inputSx}
+                        slotProps={{
+                          htmlInput: {
+                            sx: {
+                              fontFamily: customRootDirectory ? "var(--font-mono)" : "var(--font-sans)",
+                              fontSize: 13.5,
+                            },
+                          },
+                        }}
                       />
+                      <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mt: 0.75 }}>
+                        Path relative to the repository root. Keep &ldquo;.&rdquo; for single-app repos.
+                      </Typography>
                     </Box>
-                  </Box>
-                </Stack>
-              )}
-            </Stack>
+                  </Stack>
+                )}
+              </Box>
+            )}
 
-            {/* Deployment Review Summary Card */}
-            <Stack spacing={2} sx={cardSx}>
-              <Box sx={cardHeaderSx}>
-                <Typography sx={{ fontSize: 14, fontWeight: 600 }}>Deployment Configuration Review</Typography>
-                <Chip
-                  label={isFreeTier ? "Free Tier Eligible" : "Standard"}
-                  size="small"
+            {/* Review Summary */}
+            <Box sx={{ py: 3 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  gap: 1.5,
+                  mb: 2,
+                }}
+              >
+                <Typography sx={{ fontSize: 16, fontWeight: 700 }}>Review configuration</Typography>
+                <Typography
                   sx={{
-                    bgcolor: isFreeTier ? "rgba(16,185,129,0.15)" : "var(--muted)",
-                    color: isFreeTier ? "#10b981" : "inherit",
-                    fontWeight: 600,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: isFreeTier ? "var(--cd-free)" : "var(--cd-ink)",
                   }}
-                />
+                >
+                  {monthlyCostLabel}
+                </Typography>
               </Box>
 
-              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2, fontSize: 13 }}>
-                <Box>
-                  <Typography sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>App Name</Typography>
-                  <Typography sx={{ fontWeight: 600 }}>{name}</Typography>
-                </Box>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: "var(--cd-radius-container)",
+                  border: "1px solid var(--cd-border)",
+                  bgcolor: "var(--cd-surface)",
+                }}
+              >
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                    gap: 2,
+                  }}
+                >
+                  <Box>
+                    <Typography sx={{ fontSize: 12, color: "var(--cd-muted)" }}>App name</Typography>
+                    <Typography sx={{ fontSize: 14, fontWeight: 600, mt: 0.25 }}>{name}</Typography>
+                  </Box>
 
-                <Box>
-                  <Typography sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>Target URL</Typography>
-                  <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--primary)" }}>
-                    https://{name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-[id].fly.dev
-                  </Typography>
-                </Box>
+                  <Box>
+                    <Typography sx={{ fontSize: 12, color: "var(--cd-muted)" }}>Live URL</Typography>
+                    <Typography
+                      sx={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 13,
+                        color: "var(--cd-accent)",
+                        mt: 0.25,
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {previewDomainUrl}
+                    </Typography>
+                  </Box>
 
-                <Box>
-                  <Typography sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>Source</Typography>
-                  <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                    {sourceType === "github" ? repoUrl : dockerParsed ? dockerParsed.cleanedImage : dockerInputRaw}
-                  </Typography>
-                </Box>
+                  <Box>
+                    <Typography sx={{ fontSize: 12, color: "var(--cd-muted)" }}>Source</Typography>
+                    <Typography
+                      sx={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 13,
+                        mt: 0.25,
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {sourceType === "github"
+                        ? repoUrl
+                        : dockerParsed
+                          ? dockerParsed.cleanedImage
+                          : dockerInputRaw}
+                    </Typography>
+                  </Box>
 
-                <Box>
-                  <Typography sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>Deployable Path</Typography>
-                  <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600 }}>
-                    {sourceType === "github" ? customRootDirectory || "." : "Container Root"}
-                  </Typography>
-                </Box>
+                  <Box>
+                    <Typography sx={{ fontSize: 12, color: "var(--cd-muted)" }}>
+                      {sourceType === "github" ? "Deployable path" : "Container root"}
+                    </Typography>
+                    <Typography sx={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, mt: 0.25 }}>
+                      {sourceType === "github" ? customRootDirectory || "." : "/"}
+                    </Typography>
+                  </Box>
 
-                <Box>
-                  <Typography sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>Hardware Specs</Typography>
-                  <Typography sx={{ fontWeight: 500 }}>
-                    {machineType === "shared" ? "Shared" : "Performance"} · {cpus} vCPU · {ramMb} MB RAM · {volumeGb > 0 ? `${volumeGb} GB Disk` : "Ephemeral Disk"}
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <Typography sx={{ fontSize: 11.5, color: "var(--muted-foreground)" }}>Region</Typography>
-                  <Typography sx={{ fontWeight: 500 }}>
-                    {selectedRegionName} ({region.toUpperCase()})
-                  </Typography>
+                  <Box sx={{ gridColumn: { sm: "1 / -1" } }}>
+                    <Typography sx={{ fontSize: 12, color: "var(--cd-muted)" }}>Resources</Typography>
+                    <Typography sx={{ fontSize: 14, fontWeight: 500, mt: 0.25 }}>
+                      {machineType === "shared" ? "Shared CPU" : "Dedicated CPU"} · {specSummaryLine}
+                    </Typography>
+                  </Box>
                 </Box>
               </Box>
 
-              <Divider />
-
-              {/* Action Buttons: Back + Deploy */}
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", pt: 1 }}>
+              {/* Step 2 Actions */}
+              <Stack
+                direction={{ xs: "column-reverse", sm: "row" }}
+                spacing={1.5}
+                sx={{ justifyContent: "space-between", alignItems: { sm: "center" }, mt: 3 }}
+              >
                 <Button
                   type="button"
                   variant="outlined"
-                  size="small"
                   onClick={() => setStep("configure")}
                   disabled={deployMutation.isPending}
-                  startIcon={<ArrowLeft style={{ width: 14, height: 14 }} />}
+                  startIcon={<ArrowLeft style={{ width: 16, height: 16 }} />}
+                  sx={{
+                    minHeight: 44,
+                    borderRadius: "var(--cd-radius-control)",
+                    borderColor: "var(--cd-border)",
+                    color: "var(--cd-ink)",
+                    fontSize: 14,
+                    fontWeight: 600,
+                  }}
                 >
-                  Back to Configuration
+                  Back to configure
                 </Button>
 
                 <Button
                   type="button"
                   variant="contained"
-                  size="large"
                   onClick={() => deployMutation.mutate()}
                   disabled={deployMutation.isPending || isAnalyzingRepo}
                   startIcon={
@@ -1622,79 +2181,127 @@ function CreateApplicationContent() {
                       <Rocket style={{ width: 16, height: 16 }} />
                     )
                   }
-                  sx={{ px: 4, py: 1.25, fontWeight: 700 }}
+                  sx={{
+                    minHeight: 44,
+                    px: 3.5,
+                    borderRadius: "var(--cd-radius-control)",
+                    bgcolor: "var(--cd-accent)",
+                    color: "var(--cd-accent-ink)",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    boxShadow: "none",
+                    "&:hover": {
+                      bgcolor: "var(--cd-accent)",
+                      opacity: 0.92,
+                      boxShadow: "none",
+                    },
+                    "&.Mui-disabled": {
+                      bgcolor: "var(--cd-surface-alt)",
+                      color: "var(--cd-muted)",
+                      border: "1px solid var(--cd-border)",
+                    },
+                  }}
                 >
-                  {deployMutation.isPending ? "Deploying Application…" : "Deploy Application"}
+                  {deployMutation.isPending ? "Deploying app…" : "Deploy app"}
                 </Button>
-              </Box>
-            </Stack>
-          </Stack>
+              </Stack>
+            </Box>
+          </Box>
         )}
 
         {/* =========================================================================
             STEP 3: DEPLOYMENT & LIVE LOGS
         ========================================================================= */}
         {step === "deploying" && (
-          <Stack spacing={3}>
-            {/* Live Deployment Header Card */}
-            <Stack spacing={2} sx={cardSx}>
-              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 1.5 }}>
-                <Box>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                    <Server style={{ width: 18, height: 18, color: "var(--primary)" }} />
-                    <Typography sx={{ fontSize: 18, fontWeight: 700 }}>{name}</Typography>
-                    <Chip label="Live Deployment" size="small" sx={{ bgcolor: "rgba(59,130,246,0.15)", color: "var(--primary)", fontWeight: 600 }} />
-                  </Stack>
-                  <Typography sx={{ fontSize: 12.5, color: "var(--muted-foreground)", mt: 0.5 }}>
-                    {sourceType === "github" ? repoUrl : dockerInputRaw} · {selectedRegionName} ({region.toUpperCase()})
-                  </Typography>
-                </Box>
-
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  {activeDeploymentId && (
-                    <Button
-                      component={Link}
-                      href={`/deployments/${activeDeploymentId}`}
-                      variant="outlined"
-                      size="small"
-                      endIcon={<ExternalLink style={{ width: 12, height: 12 }} />}
-                    >
-                      Deployment Details
-                    </Button>
-                  )}
-                  {activeAppId && (
-                    <Button
-                      component={Link}
-                      href={`/apps/${activeAppId}`}
-                      variant="contained"
-                      size="small"
-                      endIcon={<ExternalLink style={{ width: 12, height: 12 }} />}
-                    >
-                      Open App Page
-                    </Button>
-                  )}
-                  <Button
-                    component={Link}
-                    href="/apps"
-                    variant="outlined"
-                    size="small"
-                  >
-                    Go to Apps
-                  </Button>
-                </Stack>
+          <Stack spacing={3} sx={{ pt: 3 }}>
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: { xs: "column", sm: "row" },
+                alignItems: { xs: "flex-start", sm: "center" },
+                justifyContent: "space-between",
+                gap: 2,
+                pb: 2.5,
+                borderBottom: "1px solid var(--cd-border)",
+              }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 20, fontWeight: 700 }}>{name}</Typography>
+                <Typography
+                  sx={{
+                    fontSize: 13,
+                    color: "var(--cd-muted)",
+                    mt: 0.5,
+                    wordBreak: "break-all",
+                  }}
+                >
+                  <Box component="span" sx={{ fontFamily: "var(--font-mono)" }}>
+                    {sourceType === "github" ? repoUrl : dockerInputRaw}
+                  </Box>{" "}
+                  · {selectedRegionName} ({region.toUpperCase()})
+                </Typography>
               </Box>
 
-              {activePublicUrl && (
-                <Box sx={{ pt: 1, borderTop: "1px solid var(--border)" }}>
-                  <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)", mb: 0.5 }}>
-                    Public Application URL:
-                  </Typography>
-                  <CopyField value={activePublicUrl} />
-                </Box>
-              )}
-            </Stack>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                {activeDeploymentId && (
+                  <Button
+                    component={Link}
+                    href={`/deployments/${activeDeploymentId}`}
+                    variant="outlined"
+                    size="small"
+                    endIcon={<ExternalLink style={{ width: 14, height: 14 }} />}
+                    sx={{
+                      minHeight: 44,
+                      borderRadius: "var(--cd-radius-control)",
+                      borderColor: "var(--cd-border)",
+                      color: "var(--cd-ink)",
+                    }}
+                  >
+                    Deployment details
+                  </Button>
+                )}
+                {activeAppId && (
+                  <Button
+                    component={Link}
+                    href={`/apps/${activeAppId}`}
+                    variant="contained"
+                    size="small"
+                    endIcon={<ExternalLink style={{ width: 14, height: 14 }} />}
+                    sx={{
+                      minHeight: 44,
+                      borderRadius: "var(--cd-radius-control)",
+                      bgcolor: "var(--cd-accent)",
+                      color: "var(--cd-accent-ink)",
+                      boxShadow: "none",
+                    }}
+                  >
+                    Open app
+                  </Button>
+                )}
+                <Button
+                  component={Link}
+                  href="/apps"
+                  variant="outlined"
+                  size="small"
+                  sx={{
+                    minHeight: 44,
+                    borderRadius: "var(--cd-radius-control)",
+                    borderColor: "var(--cd-border)",
+                    color: "var(--cd-ink)",
+                  }}
+                >
+                  All apps
+                </Button>
+              </Stack>
+            </Box>
 
-            {/* Live Logs Viewer */}
+            {activePublicUrl && (
+              <Box>
+                <FieldLabel label="Public URL" />
+                <CopyField value={activePublicUrl} />
+              </Box>
+            )}
+
             {activeDeploymentId ? (
               <DeploymentLogsViewer
                 deploymentId={activeDeploymentId}
@@ -1703,28 +2310,29 @@ function CreateApplicationContent() {
               />
             ) : (
               <Stack
-                spacing={2}
+                spacing={1.5}
                 sx={{
                   alignItems: "center",
                   justifyContent: "center",
-                  p: 6,
-                  borderRadius: 2.5,
-                  border: "1px solid var(--border)",
-                  bgcolor: "var(--card)",
+                  p: 5,
+                  borderRadius: "var(--cd-radius-container)",
+                  border: "1px solid var(--cd-border)",
+                  bgcolor: "var(--cd-surface)",
+                  textAlign: "center",
                 }}
               >
-                <CircularProgress size={32} />
-                <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
-                  Provisioning container machine…
+                <CircularProgress size={28} sx={{ color: "var(--cd-accent)" }} />
+                <Typography sx={{ fontSize: 15, fontWeight: 600 }}>
+                  Provisioning container machine
                 </Typography>
-                <Typography sx={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-                  Allocating Anycast IPv4, configuring ports, and launching microVM in {selectedRegionName}.
+                <Typography sx={{ fontSize: 13, color: "var(--cd-muted)" }}>
+                  Allocating IP, configuring ports, and starting instance in {selectedRegionName}.
                 </Typography>
               </Stack>
             )}
           </Stack>
         )}
-      </Stack>
+      </Box>
 
       {/* GitHub Account Connect Dialog */}
       <ConnectGitHubDialog
