@@ -10,19 +10,19 @@ export interface GitHubConnectionResult {
 }
 
 export async function getGitHubConnection(): Promise<GitHubConnectionResult> {
-  const { data } = await apiV1.get<GitHubConnectionResult>("/github/repos");
-  return data;
+  const { data } = await apiV1.get<{ data: GitHubConnectionResult }>("/github/repos");
+  return data.data;
 }
 
 export async function connectGitHub(input: {
   token?: string;
   username?: string;
 }): Promise<GitHubConnectionResult> {
-  const { data } = await apiV1.post<GitHubConnectionResult>("/github/repos", input);
-  return data;
+  const { data } = await apiV1.post<{ data: GitHubConnectionResult }>("/github/repos", input);
+  return data.data;
 }
 
 export async function disconnectGitHub(): Promise<{ connected: boolean }> {
-  const { data } = await apiV1.delete<{ connected: boolean }>("/github/repos");
-  return data;
+  const { data } = await apiV1.delete<{ data: { connected: boolean } }>("/github/repos");
+  return data.data;
 }

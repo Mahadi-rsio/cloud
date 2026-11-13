@@ -179,10 +179,11 @@ function CreateApplicationContent() {
       try {
         const res = await getGitHubConnection();
         if (cancelled) return;
-        setGhConnected(res.connected);
-        setGhUsername(res.username);
-        setGhRepos(res.repos);
-        if (res.connected && res.repos.length > 0) {
+        const repos = Array.isArray(res?.repos) ? res.repos : [];
+        setGhConnected(Boolean(res?.connected));
+        setGhUsername(res?.username ?? null);
+        setGhRepos(repos);
+        if (res?.connected && repos.length > 0) {
           setShowManualUrl(false);
         } else {
           setShowManualUrl(true);
