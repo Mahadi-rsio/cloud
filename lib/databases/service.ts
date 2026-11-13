@@ -17,7 +17,6 @@ export interface DatabaseRecord {
   namespace: string;
   region: string;
   status: string;
-  source: string;
   primaryHost: string;
   httpUrl: string;
   libsqlUrl: string;
@@ -204,7 +203,6 @@ export class DatabaseService {
           namespace: r.namespace,
           region: r.region,
           status: r.status,
-          source: r.source,
           primaryHost: r.primaryHost,
           httpUrl: r.httpUrl,
           libsqlUrl: r.libsqlUrl,
@@ -243,7 +241,6 @@ export class DatabaseService {
       namespace: record.namespace,
       region: record.region,
       status: record.status,
-      source: record.source,
       primaryHost: record.primaryHost,
       httpUrl: record.httpUrl,
       libsqlUrl: record.libsqlUrl,
@@ -300,7 +297,6 @@ export class DatabaseService {
       namespace: record.namespace,
       region: record.region,
       status: record.status,
-      source: record.source,
       primaryHost: record.primaryHost,
       httpUrl: record.httpUrl,
       libsqlUrl: record.libsqlUrl,

@@ -8,7 +8,6 @@ export interface DatabaseItem {
   namespace: string;
   region: string;
   status: "provisioning" | "ready" | "failed" | "deleting" | "deleted";
-  source: "user" | "auth";
   primaryHost: string;
   httpUrl: string;
   libsqlUrl: string;
