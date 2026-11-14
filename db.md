@@ -580,12 +580,39 @@ Do not add indexes speculatively; add each with its query and re-evaluate under 
 - Payment success: verify provider → update transaction → activate subscription → audit → all in one transaction; publish via outbox after commit.
 - Quota enforcement: `SELECT ... FOR UPDATE` or constraint-based checks inside the create transaction.
 
-### 5.6 Connection pooling (Neon)
+### 5.6 Connection Pooling & Database Acceleration (Cloudflare Hyperdrive)
 
-- Current: neon-http with `neonConfig.fetchConnectionCache = true` (`lib/db/index.ts`).
-- Proposed: keep HTTP driver for Worker compatibility; avoid holding transactions across awaits; bound queries per request; use Neon pooled connection string in production.
+- **Production Driver**: `drizzle-orm/node-postgres` paired with `pg.Pool`.
+- **Cloudflare Hyperdrive**: Connects to Neon through Cloudflare Hyperdrive (`cloud-prod-hyperdrive`, binding `HYPERDRIVE`), which maintains a persistent, low-latency TCP connection pool across Cloudflare's edge and Neon's compute regions.
+- **Request-Scoped Pool Management (`withDbScope`)**:
+  - In Cloudflare Workers, TCP sockets cannot be shared across disparate request I/O contexts, and Workers enforce a maximum of 6 concurrent outbound connections per request.
+  - Using a process-global `pg.Pool` or instantiating a new pool per query leads to socket hangs (Cloudflare Error 1101).
+  - Implemented `withDbScope()` using Node's `AsyncLocalStorage` (`lib/db/index.ts`). Every entrypoint (`fetch`, `queue`, `scheduled` in `entrypoints/worker.ts`) runs within `withDbScope()`.
+  - Inside a scope, `getDb()` creates exactly **one** shared `pg.Pool` (max 3 connections) for all queries within that request, and releases it cleanly when the request ends.
+- **Direct Connection Fallback**:
+  - Direct `DATABASE_URL` is retained for local development (`next dev`), automated migrations via Drizzle Kit (`pnpm exec drizzle-kit migrate`), and Vitest integration suites.
 
-### 5.7 Cacheable results and invalidation
+### 5.7 Neon Hot-Path Optimization & Query Reduction
+
+1. **Storage Authorization Context Caching**:
+   - `lib/storage/request-auth.ts` caches complete authorization context (API key ID, scopes, tenant, project) in L1 isolate memory (30s) and L2 Workers KV (`TypedKvCache`, 60s).
+   - Authoritative lookups coalesce in-flight promises to eliminate thundering herds.
+   - Cache misses drop from ~6 queries per request down to 0 on hits.
+2. **Durable Object SQLite Outbox**:
+   - `lib/storage/quota-do.ts` (`TenantMeterDO`) intercepts all storage operations.
+   - Quotas are checked and byte reservations are committed atomically in SQLite.
+   - Usage events are queued in the SQLite outbox and flushed in batches to Neon using:
+     ```sql
+     INSERT INTO storage_usage_events (...) VALUES (...)
+     ON CONFLICT (event_id) DO NOTHING;
+     ```
+   - Daily rollups aggregate atomically via `ON CONFLICT (tenant_id, date) DO UPDATE`.
+3. **Session Query Optimization**:
+   - Better Auth uses 5-minute cookie caching (`cookieCache`), dropping session verification queries from 2 per request to ~0.02 queries per request.
+4. **SSE Build Log Streaming**:
+   - Replaced repeated 3-second database polling on deployment logs with `DeploymentStreamDO`, coordinating live SSE broadcast in Durable Object memory.
+
+### 5.8 Cacheable results and invalidation
 
 - Cache plans catalog, regions, and status summaries in KV with versioned keys (`plans:v3`). Never cache payment/subscription/quota authority.
 - Invalidate on admin edits by bumping the version key.

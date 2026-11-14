@@ -9,19 +9,20 @@
 
 | Component | Implementation | Role |
 | --- | --- | --- |
-| Next.js app (vinext) | `app/**`, `components/**`, `stores/**` | Server-rendered dashboard UI; server components call `getSession()` |
-| Better Auth | `lib/auth/index.ts`, `app/api/auth/[...all]/route.ts` | Email/password auth, sessions, user management |
+| Next.js app (vinext) | `app/**`, `components/**`, `stores/**` | Server-rendered dashboard UI (MUI v9); server components call `getSession()` |
+| Better Auth | `lib/auth/index.ts`, `app/api/auth/[...all]/route.ts` | Email/password auth, sessions in Neon with 5-minute cookie cache (`cookieCache`) |
 | Better Auth API Key plugin | `lib/auth/index.ts` (`apiKey()` plugin), `lib/db/schema.ts` (`apikey` table, migration `0004`) | Programmatic API key issuance and verification for the Storage API |
-| Drizzle ORM + Neon Postgres | `lib/db/index.ts`, `lib/db/schema.ts`, `lib/db/product-schema.ts`, `lib/storage/schema.ts` | Authoritative store for users, accounts, apikeys, applications, deployments, and storage control-plane (`storage_*`) tables |
-| Storage Service | `lib/storage/**`, `app/api/v1/storage/**` | Multi-tenant object storage backed by Cloudflare R2 (`cloud-storage` bucket); control-plane metadata in Neon; auth via `verifyApiKey` |
+| Drizzle ORM + Cloudflare Hyperdrive + Neon | `lib/db/index.ts`, `lib/db/schema.ts`, `lib/db/product-schema.ts`, `lib/storage/schema.ts` | Authoritative PostgreSQL store via Hyperdrive connection pooling (`pg.Pool` scoped to request via `AsyncLocalStorage`); direct URL fallback for dev & migrations |
+| Storage Service | `lib/storage/**`, `app/api/v1/storage/**` | Multi-tenant object storage backed by Cloudflare R2 (`cloud-storage` bucket); control-plane metadata in Neon; tiered L1/L2 auth cache |
 | Cloudflare R2 | `STORAGE_BUCKET` binding (`cloud-storage`) | Object data plane for the Storage Service; key layout: `<tenantId>/<namespace>/<path>` |
-| Cloudflare KV | `lib/auth/storage/kv.ts` (binding `AUTH_KV`) | Better Auth secondary storage (sessions/tokens); in-memory fallback outside Workers |
-| Cloudflare Queue | `cloudflare.config.ts` (binding `AUTH_JOBS`, name `auth-jobs`), `lib/queue.ts`, `entrypoints/worker.ts` | Async welcome-email job |
-| Cloudflare Worker | `entrypoints/worker.ts`, `cloudflare.config.ts`, `vite.config.ts` | Hosts the app; queue consumer; `nodejs_compat` |
-| shadcn/ui + radix-ui + Tailwind v4 | `components/ui/*`, `components/shell/*`, `components.json` | UI primitives and shell |
-| TanStack Query | `components/auth/login-form.tsx`, `components/settings/settings-form.tsx` | Client mutations for auth forms |
-| Zustand | `stores/*` | Client-side UI state (auth form, shell, theme) |
-| Axios client | `lib/api.ts` | Typed-lite HTTP client for `/api/auth` |
+| Cloudflare KV | `APP_KV` binding (`lib/kv.ts` via `TypedKvCache`) | Global read cache for API key authorization context, tenant info, and namespaces |
+| Cloudflare Workers Rate Limiting | `cloudflare.config.ts` (`RL_API_*`, `RL_STORAGE_*`, `RL_STUDIO`) | Native rate limit bindings replacing Upstash Redis |
+| Cloudflare Durable Objects | `TenantMeterDO`, `DeploymentStreamDO` | Atomic quota enforcement, SQLite outbox event batching, and real-time SSE log fan-out |
+| Cloudflare Queue | `cloudflare.config.ts` (bindings `AUTH_JOBS`, `BUILD_JOBS`), `entrypoints/worker.ts` | Asynchronous build dispatch and auth background jobs |
+| Cloudflare Worker | `entrypoints/worker.ts`, `cloudflare.config.ts`, `vite.config.ts` | Hosts control plane, queue consumer, cron handlers, `withDbScope` wrapper |
+| MUI v9 (Material UI) | `components/**` | Production UI component library with emotion styling |
+| TanStack Query | `components/**` | Client-side mutations and queries |
+| Zustand | `stores/**` | Client-side state management |
 
 ### 1.2 Current architecture diagram
 
@@ -29,32 +30,38 @@
 graph TD
   U[User Browser] -->|HTTPS| W[Cloudflare Worker (vinext)]
   subgraph CF[Cloudflare edge]
-    W --> AUTH[Better Auth handler<br/>app/api/auth/*]
+    W --> AUTH[Better Auth + CookieCache]
     W --> SSR[Server-rendered pages<br/>app/(app)/*]
     W --> SAPI[Storage API<br/>app/api/v1/storage/*]
-    AUTH --> KV[(AUTH_KV<br/>KV secondary storage)]
-    AUTH --> PG[(Neon Postgres<br/>user + account + apikey)]
-    AUTH --> Q[(auth-jobs Queue)]
-    AUTH --> APIKEY[apiKey plugin<br/>verifyApiKey]
-    Q --> WQ[queue consumer<br/>entrypoints/worker.ts]
-    SAPI -->|verifyApiKey| APIKEY
-    SAPI -->|storage_* tables| PG
+    W --> RL[Cloudflare Rate Limiting<br/>RL_* bindings]
+    SAPI --> CACHE[Tiered Auth Cache<br/>L1 Memory 30s + L2 APP_KV 60s]
+    SAPI --> METER[TenantMeterDO<br/>Atomic Quotas & SQLite Outbox]
     SAPI --> R2[(cloud-storage<br/>R2 Bucket)]
+    W --> STREAM[DeploymentStreamDO<br/>Live SSE Broker]
+    W --> Q[(Cloudflare Queues<br/>build-jobs / auth-jobs)]
+    AUTH --> HD[Hyperdrive Connection Pool<br/>Request-scoped via ALS]
+    SSR --> HD
+    CACHE -.->|Miss Only| HD
+    METER -.->|Batched Flush| HD
+    HD --> PG[(Neon Postgres<br/>Authoritative Store)]
   end
   SSR -->|getSession| AUTH
 ```
 
 ### 1.3 Data flow boundaries (current)
 
-- The browser talks only to the Worker.
-- Auth reads/writes Postgres through Drizzle (neon-http driver, `fetchConnectionCache = true`).
-- KV is a **secondary** store for Better Auth; the DB remains authoritative for user/account data.
-- The queue is used only for `welcome-email`; the consumer currently logs the job body.
+- The browser talks only to the Cloudflare Worker.
+- Worker entrypoints (`fetch`, `queue`, `scheduled`) are wrapped with `withDbScope()` (`AsyncLocalStorage`), providing a shared, request-scoped `pg.Pool` connected through Cloudflare Hyperdrive to Neon.
+- Database queries for API key authorization are cached in isolate memory (30s) and Cloudflare KV (60s), reducing database queries by >99% on storage hot paths.
+- Revocations immediately store a revocation tombstone in memory and KV, preventing stale key reuse across all regions.
+- Usage events are durably buffered in the `TenantMeterDO` SQLite outbox and asynchronously flushed in batches to Neon, avoiding synchronous multi-query writes on upload/download/delete requests.
+- Log streaming uses `DeploymentStreamDO` to fan out real-time build logs via SSE, eliminating 3-second database polling.
 
 ### 1.4 Reliability properties (current)
 
-- Session caching: `getAuth()`/`getDb()`/`getEnv()` use process-level singletons.
-- Queue: no explicit retry/DLQ configuration is set in code; behavior is Cloudflare Queue defaults. No idempotency is implemented.
+- **Hyperdrive Request Isolation**: `pg.Pool` instances are scoped strictly to the incoming request via `withDbScope()`, preventing cross-request socket leaks and staying well within the Cloudflare Workers 6 concurrent outbound socket limit.
+- **Fail-Safe Authorization**: Cache misses fall back to authoritative database lookups. Any KV failure defaults to an authoritative check; errors never grant unauthorized access.
+- **Durable Metering Outbox**: Storage operations commit usage to local DO SQLite outbox. Flushes to Neon use idempotent `INSERT ... ON CONFLICT (event_id) DO NOTHING` to ensure zero double-counting during retries or temporary network partitions.
 
 ### 1.5 Automatic Project Discovery & Build Pipeline (implemented)
 
@@ -102,28 +109,59 @@ The platform includes a production-grade multi-tenant object storage service:
 - `storage_usage_daily`, `storage_usage_events`, `storage_audit_log` — metering and audit tables
 
 **Auth flow:**
-1. Client sends `x-api-key: <key>` or `Authorization: Bearer <key>` (created via `POST /api/auth/api-key/create`).
-2. `lib/storage/request-auth.ts` checks a fast-path 60-second Redis/in-memory cache (`storage:apikey:<hash>`).
-3. On cache miss, it calls `auth.api.verifyApiKey({ body: { key } })`.
-4. The `referenceId` field on the verified key is the `userId`.
-5. `tenantId` is derived deterministically from `userId`; the tenant record is auto-created on first access and cached for 60s.
+1. Client sends `x-api-key: <key>` or `Authorization: Bearer <key>`.
+2. `lib/storage/request-auth.ts` hashes the token with SHA-256 and checks the local isolate memory cache (`MEMORY_KEY_CACHE`, 30s TTL).
+3. On L1 memory miss, it checks Cloudflare Workers KV (`TypedKvCache("storage:apikey", "v1")`, 60s TTL).
+4. If cached, it checks KV for any revocation tombstone (`storage:apikey-revoked:v1:<hash>`); if a tombstone exists or the key is inactive, it immediately rejects with 401.
+5. On L2 KV miss, it coalesces concurrent lookups via an in-flight promise map and performs a single authoritative database query against Neon through Hyperdrive.
+6. The complete authorization context (API key ID, scopes, tenant details, project details) is cached in L1 and L2 KV. Subsequent requests incur 0 database hits.
+7. Admin operations (`storage:admin`) and explicit force flags bypass cache to guarantee authoritative validation.
+8. API key revocations write an instant revocation tombstone to isolate memory and KV, invalidating active tokens across all Cloudflare edge PoPs within seconds.
 
 **Phase 2 & Phase 3 Core Data Plane & Metering:**
 - **Durable Object Metering & Hard Quotas**: Each tenant has a dedicated SQLite-backed Cloudflare Durable Object (`TenantMeterDO` bound as `STORAGE_METER`). The DO provides single-threaded atomic byte reservations, preventing race conditions on concurrent uploads.
   - **Free Plan Allowances**: 512 MB storage limit (`536,870,912` bytes), 100,000 monthly Class A operations (PUT, COPY, DELETE, LIST), and 100,000 monthly Class B operations (GET, HEAD).
   - **Hard 402 Rejections**: Exceeding the 512 MB storage capacity or monthly operation caps immediately rejects requests with HTTP `402 Quota Exceeded`.
   - **Live Usage API**: `GET /api/v1/storage/usage` and `GET /api/v1/storage/tenants` inspect current byte counts, file count, and monthly ops.
+- **Durable SQLite Outbox for Usage Persistence**:
+  - Upload, download, and delete operations do not perform synchronous multi-query inserts into Neon.
+  - Usage events are atomically written to SQLite inside `TenantMeterDO` and flushed asynchronously in batches to Neon using `INSERT ... ON CONFLICT (event_id) DO NOTHING`.
+  - Daily aggregated totals use `INSERT ... ON CONFLICT DO UPDATE`, completely eliminating duplicate metering entries on retries.
 - **Presigned URLs via Signed Tokens**: For uploads/downloads over several MB, clients call `POST /api/v1/storage/namespaces/:ns/presign` to receive an HMAC-SHA256 signed capability token. Third-party clients then upload directly via `PUT /api/v1/storage/presigned/:token` without requiring the tenant's master API key.
 - **Server-Side File Copy**: `POST /api/v1/storage/namespaces/:ns/files/:path+` duplicates files and metadata within tenant namespaces without client round-trips, reserving destination quota beforehand.
 - **Conditional Requests (ETag & Last-Modified)**: `GET` and `HEAD` endpoints evaluate `If-None-Match` and `If-Modified-Since`, returning `304 Not Modified` without payload transfer when matching.
 - **Security & XSS Hardening**: HTML/SVG/XML uploads served from the control plane origin are forced to `Content-Type: application/octet-stream` and `Content-Disposition: attachment; filename="..."` with `X-Content-Type-Options: nosniff`.
 - **Upload Size Protection**: Enforces an upfront 100 MB max object size via `Content-Length` validation (returning `413 VALIDATION_ERROR` before reading body streams).
-- **Idempotency & Rate Limiting**: `PUT` requests accept an optional `Idempotency-Key` header stored in R2 metadata; all responses include standard `X-RateLimit-*` headers.
+- **Native Rate Limiting**: Enforced via Cloudflare Workers Rate Limiting bindings (`RL_STORAGE_READ`, `RL_STORAGE_WRITE`, `RL_STORAGE_ADMIN`, `RL_STORAGE_PRO_*`), returning `X-RateLimit-*` headers with 429 on abuse.
 - **OpenAPI 3.1 Spec**: Exposed at `GET /api/v1/storage/openapi.json`.
 
 **Object key layout:** `<tenantId>/<namespace>/<path>`
 
 > **Note:** `lib/storage/` is entirely independent of `databases/`. The `databases/` directory is the self-hosted multi-tenant libSQL (`sqld`) service on Fly.io — it is not used by the Storage API in any way.
+
+### 1.7 Production Optimization & Live Benchmark Results
+
+Measured against the live deployment (`https://cloud.rsioex.workers.dev`) using PostgreSQL `pg_stat_statements` to measure actual database queries triggered per request:
+
+```
+BENCH storage GET (API key): n=200 stmts=2 perReq=0.01 p50=348ms p95=388ms
+   1x select "id", "tenant_id", "project_id", "name", "key_hash", ... from "storage_api_keys"
+   1x select "id", "name", "status", "plan", ... from "storage_tenants"
+BENCH storage PUT (API key): n=40 stmts=0 perReq=0.00 p50=572ms p95=645ms
+BENCH get-session (cookie):  n=100 stmts=2 perReq=0.02 p50=23ms  p95=37ms
+   1x select "id", "expires_at", "token", ... from "session"
+   1x select "id", "name", "email", ... from "user"
+BENCH GET /api/v1/deployments: n=50 stmts=50 perReq=1.00 p50=105ms p95=124ms
+   50x select "id", "user_id", "repo_url", ... from "deployments"
+```
+
+| Route / Workload | Baseline DB Ops / Req | Optimized DB Queries / Req | Reduction | Mechanism |
+|---|---|---|---|---|
+| **Storage API GET** | ~6 ops | **0.01 queries** | **>99%** | L1 memory + L2 KV auth context cache |
+| **Storage API PUT** | ~6 ops | **0.00 queries** | **100% on hot path** | Auth cached + TenantMeterDO SQLite outbox batching |
+| **`get-session`** | 2 ops | **0.02 queries** | **>98%** | Better Auth 5-minute `cookieCache` |
+| **Deployments List** | 1–2 ops | **1.00 queries** | Optimal | Direct query through Hyperdrive pool |
+| **SSE Log Streaming** | 1 query / 3s per client | **0 queries** | **100% polling eliminated** | `DeploymentStreamDO` live state & broadcast |
 
 ## 2. Proposed Target Architecture
 

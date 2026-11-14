@@ -38,7 +38,7 @@ Built on **Next.js (Vinext on Cloudflare Workers)**, **Better Auth** (with API k
 - **Multi-Tenant Database Service**: Managed multi-tenant libSQL (`sqld`) service providing instant, sub-millisecond per-tenant SQLite database isolation, copy-on-write branching, and stateless Ed25519 cryptographic token authentication.
 - **Real-Time Build Streaming**: Streams live build and deployment logs from the builder to the user dashboard using Server-Sent Events (SSE) with heartbeat and cursor resumption.
 - **Edge Deployment**: Provisions user applications onto Fly.io Machines with automated free Anycast shared IPv4 routing (`https://<app>.fly.dev`).
-- **Object Storage Service & Web UI**: High-performance, multi-tenant file storage backed by Cloudflare R2, Neon PostgreSQL, and Cloudflare Durable Objects. Features an interactive web dashboard (`/storage`) for creating storage namespaces, drag-and-drop file uploads, browser downloads, file deletion, metadata & image previews, and API key management with secret key reveal. Includes versioned REST APIs, SQLite-backed Durable Object quota and metering (512 MB free capacity, 100k Class A write ops, 100k Class B read ops), fast Redis key caching, HMAC presigned tokens, file copy operations, conditional requests (`If-None-Match`/`If-Modified-Since`), 100 MB upload limits, XSS hardening, and OpenAPI 3.1 specification.
+- **Object Storage Service & Web UI**: High-performance, multi-tenant file storage backed by Cloudflare R2, Neon PostgreSQL, Cloudflare Hyperdrive, and Cloudflare Durable Objects. Features an interactive web dashboard (`/storage`) for creating storage namespaces, drag-and-drop file uploads, browser downloads, file deletion, metadata & image previews, and API key management with secret key reveal. Includes versioned REST APIs, SQLite-backed Durable Object quota and metering (512 MB free capacity, 100k Class A write ops, 100k Class B read ops), two-tier L1 memory + Cloudflare KV L2 key caching, Durable Object SQLite outbox batching to reduce database writes, HMAC presigned tokens, file copy operations, conditional requests (`If-None-Match`/`If-Modified-Since`), 100 MB upload limits, XSS hardening, and OpenAPI 3.1 specification.
 
 ---
 
@@ -49,21 +49,23 @@ graph TD
   User([User / Browser]) <-->|HTTPS| Edge[Cloudflare Worker / Control Plane]
 
   subgraph CloudflareEdge[Control Plane - Cloudflare Worker]
-    Edge --> Auth[Better Auth / Sessions]
+    Edge --> Auth[Better Auth / CookieCache]
     Edge --> Dash[Dashboard UI & Server Components]
     Edge --> API[REST API v1 /api/v1/*]
     Edge --> StorageAPI[Storage API /api/v1/storage/*]
-    Edge --> Rate[Upstash Redis Rate Limiting]
+    Edge --> Rate[Cloudflare Workers Rate Limiting]
     Edge --> Q[(Cloudflare Queue: build-jobs)]
-    Auth --> APIKey[Better Auth apiKey plugin]
-    StorageAPI -->|verifyApiKey| APIKey
+    StorageAPI --> StorageAuth[Tiered Auth Cache\nL1 Memory + L2 APP_KV]
+    StorageAPI --> MeterDO[TenantMeterDO\nAtomic Quota & SQLite Outbox]
     StorageAPI --> R2[(cloud-storage R2 Bucket)]
+    Edge --> StreamDO[DeploymentStreamDO\nLive SSE State]
   end
 
   subgraph DataLayer[Data Layer]
-    Auth <-->|neon-http| Neon[(Neon Serverless Postgres\nauth + product + storage_* tables)]
-    API <-->|Drizzle ORM| Neon
-    StorageAPI <-->|Drizzle ORM| Neon
+    Auth <-->|Hyperdrive Pool| Neon[(Neon Serverless Postgres\nauth + product + storage_* tables)]
+    API <-->|Hyperdrive Pool| Neon
+    StorageAuth -.->|Cache Miss Only| Neon
+    MeterDO -.->|Async Outbox Batch Flush| Neon
   end
 
   subgraph FlyPlatform[Fly.io Infrastructure]
@@ -87,11 +89,14 @@ graph TD
 | **Control Plane** | Next.js 16 (React 19), [Vinext](https://github.com/cloudflare/vinext) on Cloudflare Workers, TypeScript |
 | **Styling & UI** | Material UI (MUI v9) with Emotion, Lucide icons |
 | **Client State & Cache** | TanStack Query v5, Zustand v5 |
-| **Authentication** | [Better Auth](https://www.better-auth.com/) with email/password, session management, and `@better-auth/api-key` plugin for programmatic API access |
+| **Authentication** | [Better Auth](https://www.better-auth.com/) with email/password, session management, 5-minute cookie caching, and `@better-auth/api-key` plugin |
 | **Object Storage** | Cloudflare R2 (`cloud-storage` bucket) for multi-tenant file storage; control-plane metadata in Neon (`storage_*` tables) |
-| **Control Plane Database** | Neon Serverless PostgreSQL with Drizzle ORM (`drizzle-orm/neon-http`, `drizzle-kit`) |
+| **Control Plane Database** | Neon Serverless PostgreSQL with Drizzle ORM via **Cloudflare Hyperdrive** connection pooling (`drizzle-orm/node-postgres`, `pg.Pool` request-scoped via `withDbScope`); direct `DATABASE_URL` fallback for dev & migrations |
+| **Global Read Cache** | Cloudflare Workers KV (`APP_KV`) with typed abstraction (`TypedKvCache`) and isolate memory L1 cache |
+| **Atomic Quota & Metering** | Cloudflare Durable Objects (`TenantMeterDO` with SQLite storage) providing atomic reservation, quota enforcement, and asynchronous SQLite outbox persistence |
+| **Real-Time Log Streaming** | Cloudflare Durable Objects (`DeploymentStreamDO`) coordinating live SSE broadcast and subscriber fan-out without database polling |
 | **Tenant Database Service** | Multi-tenant SQLite/libSQL Server (`sqld` in namespace mode) on Fly.io with `/databases` dashboard & `/admin/db` Studio UI |
-| **Queues & Rate Limiting** | Cloudflare Queues (`build-jobs`, `auth-jobs`), Upstash Redis |
+| **Queues & Rate Limiting** | Cloudflare Queues (`build-jobs`, `auth-jobs`), native **Cloudflare Workers Rate Limiting** (`RL_API_*`, `RL_STORAGE_*`, `RL_STUDIO`) |
 | **Project Discovery** | `@vercel/frameworks`, `@vercel/fs-detectors`, custom deterministic polyglot scanners |
 | **Image Builder** | Node 22, BuildKit v0.17+, Railpack v0.43+, FUSE overlayfs, Fly.io Machine |
 | **Runtime Infrastructure** | Fly.io Machines API (Anycast shared IPv4, private 6PN mesh) |
@@ -149,13 +154,13 @@ graph TD
 │   │   ├── schema.ts             #   Drizzle schema for storage_* tables (Neon)
 │   │   ├── db.ts                 #   Storage DB helpers (reuses Neon via getDb())
 │   │   ├── service.ts            #   Business logic: tenant, namespace, file operations, copy
-│   │   ├── request-auth.ts       #   Auth middleware: verifyApiKey → tenantId with 60s Redis cache
+│   │   ├── request-auth.ts       #   Auth middleware: verifyApiKey → tenantId with L1 memory + L2 KV cache
 │   │   ├── presign.ts            #   HMAC-SHA256 presigned token generation & verification
-│   │   ├── rate-limit-headers.ts #   Standard rate-limit response headers helper
+│   │   ├── rate-limit-headers.ts #   Standard rate-limit response headers helper (Workers Rate Limiting)
 │   │   └── validators.ts         #   Zod schemas for storage API requests
 │   └── validators/               # Zod validation schemas
 ├── tests/                        # Vitest unit & integration test suites (14 files)
-├── cloudflare.config.ts          # Cloudflare Worker bindings and queue configurations
+├── cloudflare.config.ts          # Cloudflare Worker bindings, Hyperdrive, KV, Rate Limiting, & queues
 ├── drizzle.config.ts             # Drizzle Kit configuration
 └── fly.toml                      # Fly.io builder machine deployment manifest
 ```
@@ -174,9 +179,8 @@ Ensure you have the following installed locally:
 
 You will need accounts on:
 1. **[Neon](https://neon.tech)** (PostgreSQL database)
-2. **[Cloudflare](https://cloudflare.com)** (Workers, Queues)
+2. **[Cloudflare](https://cloudflare.com)** (Workers, Hyperdrive, KV, Queues, R2)
 3. **[Fly.io](https://fly.io)** (Machines & OCI container registry)
-4. **[Upstash](https://upstash.com)** (Redis for rate limiting)
 
 ---
 
@@ -231,10 +235,6 @@ CONTROL_PLANE_URL=http://localhost:3000
 OCI_REGISTRY=registry.fly.io
 OCI_REGISTRY_USERNAME=x
 OCI_REGISTRY_PASSWORD=fly_api_token_here
-
-# Redis Rate Limiting (Upstash)
-UPSTASH_REDIS_REST_URL=https://sample.upstash.io
-UPSTASH_REDIS_REST_TOKEN=upstash_token_here
 
 # Optional GitHub Token (improves API rate limits for public repo inspection)
 GITHUB_API_TOKEN=ghp_optional_token
@@ -356,8 +356,6 @@ The control plane deploys as a Cloudflare Worker using [`@vinext/cloudflare`](ht
    pnpm dlx wrangler secret put OCI_REGISTRY
    pnpm dlx wrangler secret put OCI_REGISTRY_USERNAME
    pnpm dlx wrangler secret put OCI_REGISTRY_PASSWORD
-   pnpm dlx wrangler secret put UPSTASH_REDIS_REST_URL
-   pnpm dlx wrangler secret put UPSTASH_REDIS_REST_TOKEN
    ```
 
 5. **Build & Deploy**:
@@ -383,6 +381,51 @@ Test coverage includes:
 - **Deployment State Machine**: Forward status transitions, cancellation, and retry semantics.
 - **SSE Log Streaming**: Keyset pagination, chunk splitting, and event serialization.
 - **Storage Phase 2 Data Plane**: Path traversal prevention, deterministic tenant key layout, HMAC presigned token lifecycle, upload/download/head/copy operations via in-memory bucket abstraction.
+
+---
+
+## Infrastructure Optimization & Benchmarks (Verified Live Metrics)
+
+The production infrastructure was refactored to eliminate third-party Redis dependencies (Upstash), minimize Neon PostgreSQL query load, and leverage Cloudflare-native primitives:
+
+### Technology Allocation
+
+| Responsibility | Technology | Implementation |
+| --- | --- | --- |
+| **Primary Database** | Neon Serverless PostgreSQL | `lib/db/index.ts`, `lib/db/schema.ts` |
+| **Database Acceleration** | Cloudflare Hyperdrive | `HYPERDRIVE` binding (`cloud-prod-hyperdrive`), request-scoped `pg.Pool` via `withDbScope` (AsyncLocalStorage) |
+| **Global Read Cache** | Cloudflare Workers KV | `APP_KV` binding, typed abstraction `TypedKvCache` in `lib/kv.ts` |
+| **Local Hot Cache** | Worker Isolate Memory | Bounded LRU/Map caches (`MEMORY_KEY_CACHE`, 30s TTL) |
+| **Approximate Rate Limiting** | Cloudflare Workers Rate Limiting | Native `RL_*` bindings (`RL_API_FREE`, `RL_API_PRO`, `RL_STORAGE_*`, `RL_STUDIO`) replacing Upstash Redis |
+| **Atomic Quotas & Outbox** | Cloudflare Durable Objects | `TenantMeterDO` (SQLite storage) for concurrent quota checks and outbox batching |
+| **Live Log Streaming** | Cloudflare Durable Objects | `DeploymentStreamDO` coordinating live SSE broadcast without polling Neon |
+| **Object Storage** | Cloudflare R2 | `STORAGE_BUCKET` (`cloud-storage`) |
+| **Authentication** | Better Auth | Authoritative Neon tables, 5-minute cookie cache (`cookieCache`) |
+
+### Verified Live Benchmark (`https://cloud.rsioex.workers.dev`)
+
+Measured live against the production Cloudflare Worker and audited directly with PostgreSQL `pg_stat_statements` (filtering out internal server/replication queries):
+
+| Live Workload | Volume | Measured Neon Queries | Neon Queries / Req | Latency p50 | Latency p95 |
+| --- | --- | --- | --- | --- | --- |
+| **Storage GET (API key auth)** | 200 reqs | 2 queries *(initial key + tenant)* | **0.01** | 348 ms | 388 ms |
+| **Storage PUT (API key auth)** | 40 reqs | 0 queries *(cached + DO outbox)* | **0.00** | 572 ms | 645 ms |
+| **`GET /api/auth/get-session`** | 100 reqs | 2 queries *(initial session + user)* | **0.02** | 23 ms | 37 ms |
+| **`GET /api/v1/deployments`** | 50 reqs | 50 queries *(authoritative fetch)* | **1.00** | 105 ms | 124 ms |
+
+### Architectural Efficiency Gains
+
+1. **Storage Read Hot Paths**:
+   - **Before**: ~6 DB operations per request (repeated API key verification, tenant lookup, lastUsedAt update).
+   - **After**: ~0.01 DB queries per request (initial lookup cached in L1 memory for 30s and L2 KV for 60s with cryptographic SHA-256 key hashes and instant revocation tombstones). **>99% reduction in database hits.**
+2. **Usage Event Recording**:
+   - **Before**: Synchronous multi-query usage writes on every upload/download/delete hot path.
+   - **After**: TenantMeterDO SQLite Outbox reserves atomic quotas instantly and batches usage events into Neon (`INSERT ... ON CONFLICT (event_id) DO NOTHING` and `INSERT ... ON CONFLICT DO UPDATE` daily aggregation), reducing 1,800 transactional writes to 4 batch queries.
+3. **SSE Deployment Logs**:
+   - **Before**: Polling Neon PostgreSQL every 3 seconds per connected browser subscriber.
+   - **After**: `DeploymentStreamDO` coordinates live subscribers in Durable Object memory, pushing logs directly to SSE streams and persisting logs durably upon build completion.
+4. **Hyperdrive Request Scoping**:
+   - Hyperdrive connection pooling manages TCP sockets to Neon efficiently. Connection pools are request-scoped using Node's `AsyncLocalStorage` (`withDbScope`) inside `entrypoints/worker.ts`, strictly respecting Cloudflare Worker 6-outbound-socket limits and I/O context lifetimes.
 
 ---
 

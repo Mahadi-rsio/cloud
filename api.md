@@ -149,7 +149,7 @@ Endpoints marked **[Implemented]** exist today; endpoints marked **[Proposed]** 
 - **Runtime shape (implemented):** `{ image?, guest?: { cpu_kind?, cpus?, memory_mb? }, env?: Record<string,string>, internalPort? }`.
 - **Slug (implemented):** generated server-side from the name plus a random suffix; clients cannot set it.
 - **Delete semantics (implemented):** synchronous. Sets `deleting`, destroys the Fly machine and app (ignoring 404s), marks machines `destroyed`, then sets `deleted` + `deletedAt`. Returns 409 if deletion is already in progress.
-- **Rate limits (implemented):** product endpoints are limited per IP via `lib/rate-limit.ts` (KV-backed, `AUTH_KV`): create 20/60s, update 60/60s, delete 30/60s, list and detail 120/60s. Exceeded requests return 429 `RATE_LIMITED` with `error.details.retryAfter`.
+- **Rate limits (implemented):** product endpoints are limited via native Cloudflare Workers Rate Limiting bindings (`RL_API_FREE` at 120/60s, `RL_API_PRO` at 600/60s in `lib/rate-limit.ts`, with in-memory/KV fallback for local dev): create 20/60s, update 60/60s, delete 30/60s, list and detail 120/60s. Exceeded requests return 429 `RATE_LIMITED` with `error.details.retryAfter` and standard `X-RateLimit-*` headers.
 - **List/detail (implemented):** list returns non-deleted apps only, keyset-paginated on `(order column, id)` — `sort` is `updated_at_desc` (default), `updated_at_asc`, `created_at_desc`, `created_at_asc`; `cursor` is an opaque base64 token; `filter[status]` restricts by status. Detail returns the application plus its machines (newest last).
 - **Networking (implemented):** on create, the app gets a **free shared IPv4** (Anycast) allocated via `POST /v1/apps/{app_name}/ip_assignments` with `type: "shared_v4"`, so it is reachable at `https://<app-name>.fly.dev` (`machine.publicUrl`). No **dedicated IPv4** and no **public IPv6** are ever allocated. The machine also gets its private 6PN address (free, internal network).
 - **Not implemented:** `Idempotency-Key` handling, queue/outbox interaction, `data.operationId` responses, plan/quota selection.
@@ -327,7 +327,7 @@ Each tenant is backed by a dedicated Cloudflare SQLite Durable Object (`TenantMe
 - **Sniff protection:** all GET/HEAD responses return `X-Content-Type-Options: nosniff`.
 - **Conditional requests:** `If-None-Match` and `If-Modified-Since` headers are supported, returning `304 Not Modified` without body transmission.
 - **Idempotency:** writes accept an optional `Idempotency-Key` header, which is preserved in R2 object metadata and returned in response headers.
-- **Rate-limit transparency:** all storage responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers.
+- **Rate-limit transparency:** all storage responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers, enforced via Cloudflare Workers Rate Limiting bindings (`RL_STORAGE_READ`, `RL_STORAGE_WRITE`, `RL_STORAGE_ADMIN`, and Pro variants).
 - **Upload size limit:** requests with `Content-Length` > 100 MB are rejected upfront with `413 VALIDATION_ERROR`.
 
 #### Error responses
