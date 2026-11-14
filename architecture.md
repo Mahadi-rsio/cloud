@@ -18,7 +18,7 @@
 | Cloudflare KV | `APP_KV` binding (`lib/kv.ts` via `TypedKvCache`) | Global read cache for API key authorization context, tenant info, and namespaces |
 | Cloudflare Workers Rate Limiting | `cloudflare.config.ts` (`RL_API_*`, `RL_STORAGE_*`, `RL_STUDIO`) | Native rate limit bindings replacing Upstash Redis |
 | Cloudflare Durable Objects | `TenantMeterDO`, `DeploymentStreamDO` | Atomic quota enforcement, SQLite outbox event batching, and real-time SSE log fan-out |
-| Cloudflare Queue | `cloudflare.config.ts` (bindings `AUTH_JOBS`, `BUILD_JOBS`), `entrypoints/worker.ts` | Asynchronous build dispatch and auth background jobs |
+| Cloudflare Queue | `cloudflare.config.ts` (binding `BUILD_JOBS`), `entrypoints/worker.ts` | Asynchronous build dispatch |
 | Cloudflare Worker | `entrypoints/worker.ts`, `cloudflare.config.ts`, `vite.config.ts` | Hosts control plane, queue consumer, cron handlers, `withDbScope` wrapper |
 | MUI v9 (Material UI) | `components/**` | Production UI component library with emotion styling |
 | TanStack Query | `components/**` | Client-side mutations and queries |
@@ -38,7 +38,7 @@ graph TD
     SAPI --> METER[TenantMeterDO<br/>Atomic Quotas & SQLite Outbox]
     SAPI --> R2[(cloud-storage<br/>R2 Bucket)]
     W --> STREAM[DeploymentStreamDO<br/>Live SSE Broker]
-    W --> Q[(Cloudflare Queues<br/>build-jobs / auth-jobs)]
+    W --> Q[(Cloudflare Queue<br/>build-jobs)]
     AUTH --> HD[Hyperdrive Connection Pool<br/>Request-scoped via ALS]
     SSR --> HD
     CACHE -.->|Miss Only| HD
@@ -230,7 +230,7 @@ graph TD
 
 ### 2.7 Queue processing (proposed)
 
-- Queues: `provisioning`, `lifecycle`, `backups` (or one queue with typed jobs like `AuthJob`).
+- Queues: `provisioning`, `lifecycle`, `backups` (or dedicated queues with typed jobs).
 - Consumers tolerate duplicate delivery via unique `idempotency_key` on `outbox`/`operations` rows.
 - Retry/backoff per queue; failed jobs go to a dead-letter queue with alerting.
 

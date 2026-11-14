@@ -24,10 +24,8 @@ As of the inspected source tree, the following are **implemented and verified**:
 | Email/password authentication via Better Auth | `lib/auth/index.ts`, `lib/validators/auth.ts`, `app/api/auth/[...all]/route.ts`, `components/auth/*` |
 | Session guard in authenticated route group | `app/(app)/layout.tsx` (redirects to `/login` when unauthenticated) |
 | Sign-in / sign-up / sign-out / update-user / delete-user flows | `components/auth/login-form.tsx`, `components/settings/settings-form.tsx` |
-| Welcome-email queue job on user creation | `lib/auth/index.ts` database hook, `lib/queue.ts`, `entrypoints/worker.ts` |
 | Cloudflare KV as Better Auth secondary storage | `lib/auth/storage/kv.ts`, `cloudflare.config.ts` (`AUTH_KV`) |
 | Neon Postgres persistence via Drizzle ORM (Better Auth tables only) | `lib/db/schema.ts`, `lib/db/index.ts`, `drizzle/0000_luxuriant_toad.sql` |
-| Cloudflare Queue `auth-jobs` with worker consumer | `cloudflare.config.ts`, `lib/queue.ts`, `entrypoints/worker.ts` |
 | Dashboard shell (app bar, sidebar, user menu, dark mode, mobile sidebar) | `components/shell/*` |
 | Static placeholder pages | `app/(app)/docs/page.tsx`, `app/(app)/privacy/page.tsx` |
 
@@ -68,7 +66,7 @@ Small teams and independent developers who use Render-like platforms must curren
 | # | Goal | Success Metric | Status |
 | --- | --- | --- | --- |
 | 1 | User can create an application quickly | Time from authenticated create-click to provisioning request | Proposed (no implementation yet) |
-| 2 | Lifecycle operations are idempotent and observable | Duplicate queue delivery handled without double-provisioning | Partially verified (auth queue only, no idempotency set) |
+| 2 | Lifecycle operations are idempotent and observable | Duplicate queue delivery handled without double-provisioning | Verified on `build-jobs` deployment queue |
 | 3 | Users only access their own applications | Automated cross-tenant access tests pass | Proposed (no app tables yet) |
 | 4 | Billing state is authoritative in the database | Reconciliation job between DB and provider state exists | Proposed |
 | 5 | Backups are encrypted, retained, and restorable | Restore drill success rate tracked | Proposed |
@@ -88,7 +86,7 @@ Small teams and independent developers who use Render-like platforms must curren
 
 ## 6. User Journeys
 
-1. **Registration → sign-in:** sign-up with name/email/password (validated by `signUpSchema`: name ≥ 2 chars, valid email, password 8–72 chars) → Better Auth creates user + credentials account → welcome-email job enqueued to the `auth-jobs` queue → (currently) the job is logged by `entrypoints/worker.ts`.
+1. **Registration → sign-in:** sign-up with name/email/password (validated by `signUpSchema`: name ≥ 2 chars, valid email, password 8–72 chars) → Better Auth creates user + credentials account and default personal workspace.
 2. **Dashboard → application creation:** authenticated user opens `/apps` → creates an app → selects plan/runtime → control plane provisions a Fly Machine → status transitions from `pending` to `provisioning` to `running`.
 3. **Management:** start / stop / restart / redeploy / delete.
 4. **Upgrade:** change plan subject to billing and resource constraints.
@@ -101,7 +99,7 @@ Small teams and independent developers who use Render-like platforms must curren
 
 - Email/password sign-up, sign-in, sign-out, session retrieval, profile update, account deletion with password confirmation.
 - Email verification disabled (`requireEmailVerification: false`); password policy 8–72 chars.
-- Welcome-email async job enqueued on user creation.
+- Default personal organization and owner membership created on user registration.
 
 ### 7.2 Dashboard Shell — Implemented
 

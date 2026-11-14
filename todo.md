@@ -21,7 +21,7 @@
 ### Auth and session
 - [x] Sign-out (`POST /api/auth/sign-out` via `components/auth/sign-out-button.tsx`, `components/shell/user-menu.tsx`, `components/shell/sidebar.tsx`)
 - [x] Update display name (`POST /api/auth/update-user`, `components/settings/settings-form.tsx`)
-- [x] Welcome-email job enqueued on user creation (`lib/auth/index.ts` database hook → `lib/queue.ts` → `auth-jobs`)
+- [x] Default personal organization creation on user registration (`lib/auth/index.ts` database hook)
 - [ ] Add email verification or explicit product decision to keep disabled (`lib/auth/index.ts`, `requireEmailVerification: false`)
 
 ### Deployments (GitHub) — implemented end-to-end
@@ -52,9 +52,7 @@
 - [x] End-to-end verification with discovery & builds on deployed builder and live Neon DB migration
 
 ### Queue and async
-- [x] Queue binding `AUTH_JOBS` and worker consumer for `welcome-email` (`cloudflare.config.ts`, `entrypoints/worker.ts`)
 - [x] Queue binding `BUILD_JOBS` and consumer for `deploy-job` with attempt-based retry (`cloudflare.config.ts`, `entrypoints/worker.ts`, `lib/build/process-job.ts`)
-- [ ] Make `welcome-email` consumer robust: retries, logging, DLQ (proposed; currently only `console.log`)
 - [ ] Add product job queues (provisioning/lifecycle/backups) with idempotent consumers (proposed)
 
 ### Object Storage Service (Phase 0, 1 & 2 implemented end-to-end)

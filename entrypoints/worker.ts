@@ -1,5 +1,4 @@
 import fetchHandler from "vinext/server/fetch-handler";
-import type { AuthJob } from "../lib/queue";
 import { processDeployJob, type DeployJob } from "../lib/build/process-job";
 import {
   hasActiveDeploymentHint,
@@ -13,18 +12,9 @@ export { TenantMeterDO, DeploymentStreamDO };
 
 const handler = typeof fetchHandler === "function" ? { fetch: fetchHandler } : fetchHandler;
 
-type QueueJob = AuthJob | DeployJob;
-
-async function processJob(job: QueueJob, attempt: number) {
-  switch (job.type) {
-    case "welcome-email":
-      console.log(
-        `[queue] welcome-email for ${job.email} (${job.userId})`,
-      );
-      break;
-    case "deploy-build":
-      await processDeployJob(job, attempt);
-      break;
+async function processJob(job: DeployJob, attempt: number) {
+  if (job.type === "deploy-build") {
+    await processDeployJob(job, attempt);
   }
 }
 
@@ -38,11 +28,11 @@ export default {
         ctx,
       ),
     )) as typeof handler.fetch,
-  queue: (batch: MessageBatch<QueueJob>) => withDbScope(() => runQueue(batch)),
+  queue: (batch: MessageBatch<DeployJob>) => withDbScope(() => runQueue(batch)),
   scheduled: () => withDbScope(() => runScheduled()),
 };
 
-async function runQueue(batch: MessageBatch<QueueJob>) {
+async function runQueue(batch: MessageBatch<DeployJob>) {
     for (const message of batch.messages) {
       try {
         await processJob(message.body, message.attempts);

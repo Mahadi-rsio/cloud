@@ -74,7 +74,6 @@ export default defineConfig({
         exportName: "DeploymentStreamDO",
       }),
       ASSETS: bindings.assets(),
-      AUTH_JOBS: bindings.queue({ name: "auth-jobs" }),
       BUILD_JOBS: bindings.queue({ name: "build-jobs" }),
       DATABASE_URL: bindings.secret(),
       BETTER_AUTH_SECRET: bindings.secret(),
@@ -103,7 +102,6 @@ export default defineConfig({
       ? {}
       : {
           triggers: [
-            triggers.queue({ name: "auth-jobs" }),
             triggers.queue({ name: "build-jobs" }),
             triggers.scheduled({ schedule: "*/5 * * * *" }),
           ],

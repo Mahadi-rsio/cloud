@@ -96,7 +96,7 @@ graph TD
 | **Atomic Quota & Metering** | Cloudflare Durable Objects (`TenantMeterDO` with SQLite storage) providing atomic reservation, quota enforcement, and asynchronous SQLite outbox persistence |
 | **Real-Time Log Streaming** | Cloudflare Durable Objects (`DeploymentStreamDO`) coordinating live SSE broadcast and subscriber fan-out without database polling |
 | **Tenant Database Service** | Multi-tenant SQLite/libSQL Server (`sqld` in namespace mode) on Fly.io with `/databases` dashboard & `/admin/db` Studio UI |
-| **Queues & Rate Limiting** | Cloudflare Queues (`build-jobs`, `auth-jobs`), native **Cloudflare Workers Rate Limiting** (`RL_API_*`, `RL_STORAGE_*`, `RL_STUDIO`) |
+| **Queues & Rate Limiting** | Cloudflare Queues (`build-jobs`), native **Cloudflare Workers Rate Limiting** (`RL_API_*`, `RL_STORAGE_*`, `RL_STUDIO`) |
 | **Project Discovery** | `@vercel/frameworks`, `@vercel/fs-detectors`, custom deterministic polyglot scanners |
 | **Image Builder** | Node 22, BuildKit v0.17+, Railpack v0.43+, FUSE overlayfs, Fly.io Machine |
 | **Runtime Infrastructure** | Fly.io Machines API (Anycast shared IPv4, private 6PN mesh) |
@@ -331,7 +331,6 @@ The control plane deploys as a Cloudflare Worker using [`@vinext/cloudflare`](ht
 
 2. **Create Cloudflare Queues**:
    ```bash
-   pnpm dlx wrangler queues create auth-jobs
    pnpm dlx wrangler queues create build-jobs
    ```
 

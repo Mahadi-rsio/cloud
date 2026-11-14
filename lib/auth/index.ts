@@ -6,7 +6,6 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { member as memberTable, organization as organizationTable } from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
-import { enqueueAuthJob } from "@/lib/queue";
 
 function toOrgSlug(input: string): string {
   const base = input
@@ -103,13 +102,6 @@ function createAuth(db: Awaited<ReturnType<typeof getDb>>, secret: string, fallb
             } catch (error) {
               console.error("Failed to create default organization for user:", user.id, error);
             }
-
-            await enqueueAuthJob({
-              type: "welcome-email",
-              userId: user.id,
-              email: user.email,
-              name: user.name,
-            });
           },
         },
       },

@@ -5,7 +5,7 @@
 
 ## Current Implementation Baseline (verified)
 
-- Next.js 16.4.3 (vinext) + Cloudflare Workers, Better Auth + Neon/Drizzle (auth tables, plus `applications`/`machines`), KV secondary storage, one queue (`auth-jobs`) with a logging consumer, shadcn/ui shell, TanStack Query in forms, Zustand for UI state.
+- Next.js 16.4.3 (vinext) + Cloudflare Workers, Better Auth + Neon/Drizzle (auth tables, plus `applications`/`machines`), KV secondary storage, deployment queue (`build-jobs`) with retry/reconciliation, shadcn/ui shell, TanStack Query in forms, Zustand for UI state.
 - Applications and machines tables plus create/update/delete API and a synchronous Fly Machines client exist. Billing, payments, volumes, backups, and usage code do not.
 
 ## Phase 0 — Codebase audit and foundational cleanup
@@ -76,14 +76,13 @@
 ## Phase 4 — Queue workers, idempotency, retries, reconciliation
 
 - **Objective:** harden async processing.
-- **Current status:** Only the `welcome-email` job exists (no retry/idempotency).
+- **Current status:** `build-jobs` deployment queue active with retry/recovery.
 - **Prerequisites:** Phase 3.
 - **Tasks:**
   - Add `idempotency_records` unique-constraint checks in every worker.
   - Configure queue retries and a dead-letter queue in `cloudflare.config.ts`.
   - Add a scheduled reconciliation worker comparing `machines.status` with Fly API state.
-  - Enrich `welcome-email` handling with retry and observability.
-- **Expected files:** `entrypoints/worker.ts`, `cloudflare.config.ts`, `lib/queue.ts`.
+- **Expected files:** `entrypoints/worker.ts`, `cloudflare.config.ts`.
 - **Migrations:** `idempotency_records` (from Phase 1) — add if missing.
 - **Tests/verification:** enqueue duplicate messages; assert single side effect; force failure and assert DLQ capture.
 - **Risks:** at-least-once delivery requires idempotent handlers by design.

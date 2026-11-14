@@ -76,7 +76,7 @@ All current endpoints are handled by the Better Auth catch-all route `app/api/au
   - `password`: string, min 8, max 72
 - **Success:** 200; sets session cookie; user record created in Neon (`lib/db/schema.ts` `user` table).
 - **Errors:** 422 on duplicate email, 400 on invalid input.
-- **Side effects:** `databaseHooks.user.create.after` enqueues a `welcome-email` job to the `auth-jobs` Cloudflare Queue (`lib/auth/index.ts`, `lib/queue.ts`).
+- **Side effects:** `databaseHooks.user.create.after` creates a default personal organization and owner membership record in Neon (`lib/auth/index.ts`).
 - **Security:** server-side password hashing by Better Auth; credentials stored in `account` table.
 
 ### 2.2 `POST /api/auth/sign-in/email` — [Implemented]
