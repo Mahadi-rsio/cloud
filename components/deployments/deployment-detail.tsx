@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -16,14 +17,17 @@ import {
   ExternalLink,
   GitBranch,
   RotateCw,
+  Trash2,
 } from "lucide-react";
 import {
+  deleteDeployment,
   getDeployment,
   isTerminalDeploymentStatus,
   retryDeployment,
   type Deployment,
 } from "@/lib/deployments";
 import { extractErrorMessage } from "@/lib/errors";
+import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { CopyField } from "@/components/shared/copy-field";
 import { DataList } from "@/components/shared/data-list";
 import { ErrorState } from "@/components/shared/empty-state";
@@ -43,10 +47,13 @@ export function DeploymentDetailPage({
 }: {
   deploymentId: string;
 }) {
+  const router = useRouter();
   const [deployment, setDeployment] = useState<Deployment | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const load = async () => {
     try {
@@ -98,6 +105,21 @@ export function DeploymentDetailPage({
       setRetryError(extractErrorMessage(err));
     } finally {
       setIsRetrying(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    setRetryError(null);
+    try {
+      await deleteDeployment(deployment.id);
+      setDeleteOpen(false);
+      router.push("/apps");
+      router.refresh();
+    } catch (err) {
+      setRetryError(extractErrorMessage(err));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -184,6 +206,16 @@ export function DeploymentDetailPage({
               {isRetrying ? "Retrying…" : "Retry"}
             </Button>
           )}
+          <Button
+            type="button"
+            variant="outlined"
+            color="error"
+            size="small"
+            onClick={() => setDeleteOpen(true)}
+            startIcon={<Trash2 size={14} />}
+          >
+            Delete
+          </Button>
         </Stack>
       </Box>
 
@@ -240,6 +272,16 @@ export function DeploymentDetailPage({
         deploymentId={deployment.id}
         initialStatus={deployment.status}
         buildNumber={deployment.buildNumber}
+      />
+
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Delete ${deployment.repoOwner}/${deployment.repoName}?`}
+        description="This permanently deletes this deployment, its app, and its machine. The public URL will stop working immediately. This cannot be undone."
+        confirmText={deployment.repoName}
+        isPending={isDeleting}
+        onConfirm={() => void handleDelete()}
       />
     </Box>
   );

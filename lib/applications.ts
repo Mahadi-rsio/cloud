@@ -1,4 +1,5 @@
 import { apiV1 } from "@/lib/api-v1";
+import type { Deployment } from "@/lib/deployments";
 import type {
   CreateApplicationInput,
   UpdateApplicationInput,
@@ -90,10 +91,10 @@ export async function listApplications(
 
 export async function getApplication(
   id: string,
-): Promise<{ application: Application; machines: Machine[] }> {
+): Promise<{ application: Application; machines: Machine[]; deployment?: Deployment | null }> {
   const { data } = await apiV1.get<{
     success: true;
-    data: { application: Application; machines: Machine[] };
+    data: { application: Application; machines: Machine[]; deployment?: Deployment | null };
   }>(`/applications/${id}`);
   return data.data;
 }

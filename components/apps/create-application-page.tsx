@@ -36,6 +36,7 @@ import {
 } from "@/lib/deployments";
 import { parseDockerInput, type ParsedDockerImage } from "@/lib/docker";
 import { extractErrorMessage } from "@/lib/errors";
+import { appUrl } from "@/lib/site";
 import { STARTER_TEMPLATES, type StarterTemplate } from "./machine-presets";
 import {
   getGitHubConnection,
@@ -462,7 +463,12 @@ function CreateApplicationContent() {
             : {}),
         });
 
-        return { type: "github" as const, deploymentId: deployment.id };
+        return {
+          type: "github" as const,
+          deploymentId: deployment.id,
+          appId: deployment.application?.id ?? null,
+          appSlug: deployment.application?.slug ?? null,
+        };
       }
 
       const cleanImg = dockerParsed ? dockerParsed.cleanedImage : dockerInputRaw.trim();
@@ -494,10 +500,12 @@ function CreateApplicationContent() {
     onSuccess: (result) => {
       if (result.type === "github") {
         setActiveDeploymentId(result.deploymentId);
+        if (result.appId) setActiveAppId(result.appId);
+        if (result.appSlug) setActivePublicUrl(appUrl(result.appSlug));
         setStep("deploying");
       } else {
         setActiveAppId(result.appId);
-        setActivePublicUrl(`https://${result.appSlug}.fly.dev`);
+        setActivePublicUrl(appUrl(result.appSlug));
         setStep("deploying");
       }
     },

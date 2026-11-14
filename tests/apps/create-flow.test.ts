@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createDeploymentSchema } from "@/lib/validators/deployment";
 import { parseDockerInput } from "@/lib/docker";
+import { deploymentToApplicationStatus } from "@/lib/build/deployments-service";
+import { deploymentAppName } from "@/lib/build/names";
 
 describe("Apps Service & Create Flow Validation", () => {
   it("validates createDeploymentSchema with machine specs", () => {
@@ -46,5 +48,21 @@ describe("Apps Service & Create Flow Validation", () => {
     expect(ghcr).not.toBeNull();
     expect(ghcr?.cleanedImage).toBe("ghcr.io/owner/custom-app:v1.2");
     expect(ghcr?.registryLabel).toBe("GitHub Container Registry (GHCR)");
+  });
+
+  it("maps GitHub deployment statuses to application statuses", () => {
+    expect(deploymentToApplicationStatus("queued")).toBe("provisioning");
+    expect(deploymentToApplicationStatus("preparing")).toBe("provisioning");
+    expect(deploymentToApplicationStatus("building")).toBe("provisioning");
+    expect(deploymentToApplicationStatus("pushing")).toBe("provisioning");
+    expect(deploymentToApplicationStatus("deploying")).toBe("provisioning");
+    expect(deploymentToApplicationStatus("active")).toBe("running");
+    expect(deploymentToApplicationStatus("failed")).toBe("failed");
+    expect(deploymentToApplicationStatus("cancelled")).toBe("failed");
+  });
+
+  it("derives deterministic Fly app slug from deployment id", () => {
+    const slug = deploymentAppName("12345678-1234-1234-1234-1234567890ab");
+    expect(slug).toBe("dep-12345678123412341234");
   });
 });

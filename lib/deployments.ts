@@ -128,12 +128,19 @@ export async function getDeployment(id: string): Promise<Deployment> {
 
 export async function createDeployment(
   input: CreateDeploymentInput,
-): Promise<Deployment> {
+): Promise<Deployment & { application?: { id: string; slug: string } | null }> {
   const { data } = await apiV1.post<{
     success: true;
-    data: { deployment: Deployment };
+    data: { deployment: Deployment; application?: { id: string; slug: string } | null };
   }>("/deployments", input);
-  return data.data.deployment;
+  return {
+    ...data.data.deployment,
+    application: data.data.application ?? null,
+  };
+}
+
+export async function deleteDeployment(id: string): Promise<void> {
+  await apiV1.delete(`/deployments/${id}`);
 }
 
 export async function validateDeployment(

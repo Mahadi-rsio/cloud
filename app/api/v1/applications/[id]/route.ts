@@ -1,9 +1,9 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { assertOwnership, requireUser } from "@/lib/authz";
 import { getDb } from "@/lib/db";
-import { applications, machines } from "@/lib/db/product-schema";
+import { applications, deployments, machines } from "@/lib/db/product-schema";
 import {
   destroyFlyApp,
   destroyFlyMachine,
@@ -68,7 +68,20 @@ export async function GET(request: NextRequest, ctx: RouteContext) {
       .where(eq(machines.applicationId, id))
       .orderBy(asc(machines.createdAt));
 
-    return jsonOk({ application, machines: machineRows });
+    const resources = application.requestedResources as Record<string, unknown> | null;
+    const deploymentId =
+      typeof resources?.deploymentId === "string" ? resources.deploymentId : null;
+    let deployment = null;
+    if (deploymentId) {
+      const [depRow] = await db
+        .select()
+        .from(deployments)
+        .where(and(eq(deployments.id, deploymentId), eq(deployments.userId, user.id)))
+        .limit(1);
+      deployment = depRow ?? null;
+    }
+
+    return jsonOk({ application, machines: machineRows, deployment });
   } catch (error) {
     return errorResponse(error);
   }
@@ -207,6 +220,32 @@ export async function DELETE(request: NextRequest, ctx: RouteContext) {
       })
       .where(eq(applications.id, id))
       .returning();
+
+    const resources = application.requestedResources as Record<string, unknown> | null;
+    const deploymentId =
+      typeof resources?.deploymentId === "string" ? resources.deploymentId : null;
+    if (deploymentId) {
+      await db
+        .update(deployments)
+        .set({
+          status: "cancelled",
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(deployments.id, deploymentId),
+            eq(deployments.userId, user.id),
+            inArray(deployments.status, [
+              "queued",
+              "preparing",
+              "building",
+              "pushing",
+              "deploying",
+            ]),
+          ),
+        );
+    }
 
     return jsonOk({ application: deletedApplication });
   } catch (error) {

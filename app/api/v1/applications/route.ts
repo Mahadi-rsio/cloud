@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, isNull, lt, or, type SQL } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/authz";
+import { ensureUserDeploymentApplications } from "@/lib/build/deployments-service";
 import { getDb } from "@/lib/db";
 import { applications, machines } from "@/lib/db/product-schema";
 import { getEnv } from "@/lib/env";
@@ -176,6 +177,7 @@ export async function GET(request: NextRequest) {
       windowSeconds: 60,
     });
     const user = await requireUser();
+    await ensureUserDeploymentApplications(user.id).catch(() => undefined);
 
     const url = new URL(request.url);
     const limit = z.coerce

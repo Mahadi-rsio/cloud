@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ne, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { deploymentLogs, deployments } from "@/lib/db/product-schema";
+import { applications, deploymentLogs, deployments, machines } from "@/lib/db/product-schema";
 import { getEnv } from "@/lib/env";
 import {
   allocateSharedIpv4,
@@ -33,6 +33,184 @@ export { deploymentAppName } from "@/lib/build/names";
 
 export type Deployment = typeof deployments.$inferSelect;
 export type DeploymentLog = typeof deploymentLogs.$inferSelect;
+export type Application = typeof applications.$inferSelect;
+
+export function deploymentToApplicationStatus(status: string): string {
+  switch (status) {
+    case "active":
+      return "running";
+    case "failed":
+    case "cancelled":
+      return "failed";
+    default:
+      return "provisioning";
+  }
+}
+
+function buildApplicationMetadataFromDeployment(deployment: Deployment) {
+  const meta = (deployment.discoveryMetadata as Record<string, unknown> | null) ?? {};
+  const guest = meta.guest as Record<string, unknown> | undefined;
+  return {
+    ...(guest ?? {}),
+    source: "github" as const,
+    deploymentId: deployment.id,
+    repoUrl: deployment.repoUrl,
+    repoOwner: deployment.repoOwner,
+    repoName: deployment.repoName,
+    branch: deployment.branch,
+    commitSha: deployment.commitSha,
+    rootDirectory: deployment.rootDirectory ?? ".",
+    framework: deployment.framework,
+    language: deployment.language,
+    runtime: deployment.runtime,
+    packageManager: deployment.packageManager,
+  };
+}
+
+/**
+ * Ensures a GitHub deployment has a corresponding `applications` row (and
+ * `machines` row once deployed) so it is visible, inspectable, and deletable
+ * from the Apps UI alongside Docker-based apps.
+ */
+export async function syncApplicationFromDeployment(
+  deployment: Deployment,
+  extra?: { internalPort?: number },
+): Promise<Application | null> {
+  const db = await getDb();
+  const env = await getEnv();
+  const slug = deploymentAppName(deployment.id);
+  const meta = (deployment.discoveryMetadata as Record<string, unknown> | null) ?? {};
+  const region = (meta.region as string | undefined) ?? env.FLY_DEFAULT_REGION ?? "sin";
+  const appName = (meta.appName as string | undefined)?.trim() || deployment.repoName;
+  const guest = meta.guest as
+    | { cpu_kind?: string; cpus?: number; memory_mb?: number }
+    | undefined;
+  const nextStatus = deploymentToApplicationStatus(deployment.status);
+
+  const [existing] = await db
+    .select()
+    .from(applications)
+    .where(eq(applications.slug, slug))
+    .limit(1);
+
+  if (existing?.deletedAt) {
+    return null;
+  }
+
+  const runtimePayload: Record<string, unknown> = {
+    ...((existing?.runtime as Record<string, unknown> | null) ?? {}),
+    ...(deployment.imageRef ? { image: deployment.imageRef } : {}),
+    ...(guest ? { guest } : {}),
+    ...(extra?.internalPort ? { internalPort: extra.internalPort } : {}),
+  };
+
+  let application: Application;
+  if (!existing) {
+    const [created] = await db
+      .insert(applications)
+      .values({
+        userId: deployment.userId,
+        name: appName,
+        slug,
+        status: nextStatus,
+        region,
+        runtime: Object.keys(runtimePayload).length > 0 ? runtimePayload : null,
+        requestedResources: buildApplicationMetadataFromDeployment(deployment),
+        lastOperationAt: deployment.updatedAt ?? new Date(),
+        createdAt: deployment.createdAt,
+        updatedAt: deployment.updatedAt,
+      })
+      .onConflictDoNothing({ target: applications.slug })
+      .returning();
+
+    if (created) {
+      application = created;
+    } else {
+      const [refetched] = await db
+        .select()
+        .from(applications)
+        .where(eq(applications.slug, slug))
+        .limit(1);
+      if (!refetched || refetched.deletedAt) return null;
+      application = refetched;
+    }
+  } else {
+    const [updated] = await db
+      .update(applications)
+      .set({
+        status: nextStatus,
+        region,
+        runtime: Object.keys(runtimePayload).length > 0 ? runtimePayload : existing.runtime,
+        requestedResources: buildApplicationMetadataFromDeployment(deployment),
+        lastOperationAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(applications.id, existing.id))
+      .returning();
+    application = updated ?? existing;
+  }
+
+  if (deployment.flyMachineId && deployment.status === "active") {
+    const [existingMachine] = await db
+      .select()
+      .from(machines)
+      .where(and(eq(machines.applicationId, application.id), ne(machines.status, "destroyed")))
+      .limit(1);
+
+    const publicUrl = deployment.publicUrl ?? `https://${slug}.fly.dev`;
+    if (!existingMachine) {
+      await db
+        .insert(machines)
+        .values({
+          applicationId: application.id,
+          flyMachineId: deployment.flyMachineId,
+          status: "running",
+          region,
+          instanceNumber: 0,
+          publicUrl,
+          allocatedResources: guest ?? null,
+        })
+        .onConflictDoNothing({ target: machines.flyMachineId });
+    } else {
+      await db
+        .update(machines)
+        .set({
+          flyMachineId: deployment.flyMachineId,
+          status: "running",
+          region,
+          publicUrl,
+          allocatedResources: guest ?? existingMachine.allocatedResources,
+          updatedAt: new Date(),
+        })
+        .where(eq(machines.id, existingMachine.id));
+    }
+  }
+
+  return application;
+}
+
+/**
+ * Backfills `applications` rows for any legacy GitHub deployments belonging to
+ * the user that were created before deployment-to-application syncing existed.
+ */
+export async function ensureUserDeploymentApplications(userId: string): Promise<void> {
+  const db = await getDb();
+  const [userDeployments, existingSlugs] = await Promise.all([
+    db.select().from(deployments).where(eq(deployments.userId, userId)),
+    db
+      .select({ slug: applications.slug })
+      .from(applications)
+      .where(eq(applications.userId, userId)),
+  ]);
+
+  const knownSlugs = new Set(existingSlugs.map((row) => row.slug));
+  for (const deployment of userDeployments) {
+    const slug = deploymentAppName(deployment.id);
+    if (!knownSlugs.has(slug)) {
+      await syncApplicationFromDeployment(deployment).catch(() => undefined);
+    }
+  }
+}
 
 export async function findDeployment(id: string): Promise<Deployment | null> {
   const db = await getDb();
@@ -135,6 +313,7 @@ export async function setDeploymentStatus(
       .returning();
 
     if (updated) {
+      await syncApplicationFromDeployment(updated).catch(() => undefined);
       await notifyDeploymentStatus(deploymentId, {
         status: updated.status,
         errorMessage: updated.errorMessage,

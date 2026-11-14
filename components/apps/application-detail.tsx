@@ -39,6 +39,10 @@ import {
   type Application,
   type Machine,
 } from "@/lib/applications";
+import type { Deployment } from "@/lib/deployments";
+import { DeploymentLogsViewer } from "@/components/deployments/deployment-logs-viewer";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import { extractErrorMessage } from "@/lib/errors";
 import { appUrl } from "@/lib/site";
 import type { RuntimeInput } from "@/lib/validators/application";
@@ -78,10 +82,12 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function OverviewTab({
   application,
   machines,
+  deployment,
   onViewLogs,
 }: {
   application: Application;
   machines: Machine[];
+  deployment?: Deployment | null;
   onViewLogs: () => void;
 }) {
   const machine = machines[0];
@@ -133,6 +139,64 @@ function OverviewTab({
           ]}
         />
       </Stack>
+
+      {deployment && (
+        <Stack spacing={1}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+            <SectionTitle>GitHub source</SectionTitle>
+            <Button
+              component="a"
+              href={`/deployments/${deployment.id}`}
+              variant="outlined"
+              size="small"
+              startIcon={<ExternalLink size={14} />}
+              sx={{ fontSize: "0.75rem" }}
+            >
+              Deployment details
+            </Button>
+          </Box>
+          <DataList
+            items={[
+              {
+                label: "Repository",
+                value: <CopyField value={deployment.repoUrl} />,
+              },
+              {
+                label: "Branch",
+                value: (
+                  <Typography component="span" variant="body2" sx={{ fontFamily: "var(--font-mono)" }}>
+                    {deployment.branch}
+                  </Typography>
+                ),
+              },
+              {
+                label: "Commit",
+                value: deployment.commitSha ? (
+                  <Typography component="span" variant="body2" sx={{ fontFamily: "var(--font-mono)" }}>
+                    {deployment.commitSha.slice(0, 7)}
+                  </Typography>
+                ) : (
+                  "—"
+                ),
+              },
+              {
+                label: "Build status",
+                value: <StatusBadge status={deployment.status} />,
+              },
+              ...(deployment.framework || deployment.runtime
+                ? [
+                    {
+                      label: "Stack",
+                      value: [deployment.framework, deployment.runtime, deployment.packageManager]
+                        .filter(Boolean)
+                        .join(" · "),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </Stack>
+      )}
 
       {machine && (
         <Stack spacing={1}>
@@ -554,10 +618,12 @@ export function ApplicationDetail({ id }: { id: string }) {
   const [data, setData] = useState<{
     application: Application;
     machines: Machine[];
+    deployment?: Deployment | null;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<AppTab>("overview");
+  const [logMode, setLogMode] = useState<"runtime" | "build">("runtime");
   const [editOpen, setEditOpen] = useState(false);
   const [redeployOpen, setRedeployOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
@@ -597,6 +663,7 @@ export function ApplicationDetail({ id }: { id: string }) {
 
   const application = data?.application;
   const machines = data?.machines ?? [];
+  const deployment = data?.deployment ?? null;
 
   return (
     <Box sx={{ mx: "auto", width: "100%", maxWidth: 896, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -802,14 +869,40 @@ export function ApplicationDetail({ id }: { id: string }) {
               <OverviewTab
                 application={application}
                 machines={machines}
+                deployment={deployment}
                 onViewLogs={() => selectTab("logs")}
               />
             )}
             {tab === "logs" && (
-              <MachineLogsViewer
-                application={application}
-                machines={machines}
-              />
+              <Stack spacing={2}>
+                {deployment && (
+                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
+                    <ToggleButtonGroup
+                      size="small"
+                      exclusive
+                      value={logMode}
+                      onChange={(_, next) => {
+                        if (next) setLogMode(next);
+                      }}
+                    >
+                      <ToggleButton value="runtime">Runtime logs</ToggleButton>
+                      <ToggleButton value="build">Build &amp; deploy logs</ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+                )}
+                {deployment && logMode === "build" ? (
+                  <DeploymentLogsViewer
+                    deploymentId={deployment.id}
+                    initialStatus={deployment.status}
+                    buildNumber={deployment.buildNumber}
+                  />
+                ) : (
+                  <MachineLogsViewer
+                    application={application}
+                    machines={machines}
+                  />
+                )}
+              </Stack>
             )}
             {tab === "env" && (
               <EnvVarsTab

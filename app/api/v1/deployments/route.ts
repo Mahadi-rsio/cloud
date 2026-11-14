@@ -9,6 +9,7 @@ import {
 } from "@/lib/build/github";
 import { enqueueDeployJob } from "@/lib/build/process-job";
 import { wakeBuilder } from "@/lib/build/builder-client";
+import { syncApplicationFromDeployment } from "@/lib/build/deployments-service";
 import { getDb } from "@/lib/db";
 import { deployments } from "@/lib/db/product-schema";
 import { getEnv } from "@/lib/env";
@@ -99,6 +100,8 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    const application = await syncApplicationFromDeployment(deployment).catch(() => null);
+
     // Boot the builder as soon as the deploy request arrives, before the job is
     // queued, so a cold start overlaps with request processing.
     await wakeBuilder();
@@ -110,7 +113,7 @@ export async function POST(request: NextRequest) {
       markActiveDeploymentHint(),
     ]).catch(() => {});
 
-    return jsonOk({ deployment: deployment }, 201);
+    return jsonOk({ deployment, application }, 201);
   } catch (error) {
     return errorResponse(error);
   }
