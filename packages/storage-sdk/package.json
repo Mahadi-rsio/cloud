@@ -1,0 +1,59 @@
+{
+  "name": "@cloudisy/storage",
+  "version": "0.1.1",
+  "description": "Official TypeScript SDK for the Cloud Object Storage API",
+  "license": "MIT",
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build:esm": "tsc -p tsconfig.json",
+    "build:cjs": "esbuild src/index.ts --bundle --platform=neutral --format=cjs --sourcemap --outfile=dist/index.cjs",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mahadi-rsio/cloud.git",
+    "directory": "packages/storage-sdk"
+  },
+  "homepage": "https://github.com/Mahadi-rsio/cloud/tree/main/packages/storage-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/Mahadi-rsio/cloud/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "cloud",
+    "storage",
+    "object-storage",
+    "r2",
+    "sdk",
+    "typescript"
+  ]
+}

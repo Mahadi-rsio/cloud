@@ -232,6 +232,62 @@ export default function DocsPage() {
           </Box>
         </CardContent>
       </Card>
+
+      <Card
+        sx={{
+          border: "1px solid var(--border)",
+          backgroundColor: "var(--card)",
+        }}
+      >
+        <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <HardDrive size={18} style={{ color: "var(--primary)" }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                Object Storage TypeScript SDK (@cloudisy/storage)
+              </Typography>
+            </Box>
+            <Chip
+              label="npm"
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: "0.7rem", height: 22 }}
+            />
+          </Box>
+          <Typography variant="body2" color="text.secondary">
+            Install <code>@cloudisy/storage</code> to upload, download, list, copy, delete, and
+            generate presigned URLs from Node.js, Cloudflare Workers, or browsers.
+          </Typography>
+          <Divider sx={{ borderColor: "var(--border)" }} />
+          <Box
+            component="pre"
+            sx={{
+              m: 0,
+              p: 2,
+              borderRadius: "8px",
+              backgroundColor: "var(--muted)",
+              color: "var(--foreground)",
+              fontSize: "0.8rem",
+              fontFamily: "monospace",
+              overflowX: "auto",
+            }}
+          >
+            {`npm install @cloudisy/storage
+
+import { createStorageClient } from "@cloudisy/storage";
+
+const storage = createStorageClient({
+  baseUrl: "https://cloud.rsioex.workers.dev",
+  apiKey: process.env.CLOUD_STORAGE_API_KEY,
+  namespace: "my-bucket",
+});
+
+await storage.upload("hello.txt", "Hello, Cloud!", { contentType: "text/plain" });
+const file = await storage.download("hello.txt");
+console.log(await file.text());`}
+          </Box>
+        </CardContent>
+      </Card>
     </Box>
   );
 }
