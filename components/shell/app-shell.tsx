@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
 import Typography from "@mui/material/Typography";
-import { AppWindow, Database, HardDrive, Menu } from "lucide-react";
-import { Sidebar, MobileSidebar } from "@/components/shell/sidebar";
+import { AppWindow, CreditCard, Database, HardDrive, Settings } from "lucide-react";
+import { Sidebar } from "@/components/shell/sidebar";
 import { AppBar } from "@/components/shell/app-bar";
 import { useShellStore } from "@/stores/shell-store";
 
@@ -32,7 +32,6 @@ export function AppShell({
       }}
     >
       <DesktopRail user={user} />
-      <MobileSidebar user={user} />
       <Box
         component="div"
         sx={{
@@ -70,11 +69,12 @@ const MOBILE_NAV_ITEMS = [
   { href: "/apps", label: "Apps", icon: AppWindow },
   { href: "/databases", label: "Databases", icon: Database },
   { href: "/storage", label: "Storage", icon: HardDrive },
+  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/billing", label: "Billing", icon: CreditCard },
 ] as const;
 
 function MobileBottomNav() {
   const pathname = usePathname();
-  const setSidebarOpen = useShellStore((state) => state.setSidebarOpen);
 
   return (
     <Box
@@ -94,6 +94,10 @@ function MobileBottomNav() {
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
         alignItems: "stretch",
+        overflowX: "auto",
+        overflowY: "hidden",
+        scrollbarWidth: "none",
+        "&::-webkit-scrollbar": { display: "none" },
       }}
     >
       {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
@@ -104,7 +108,9 @@ function MobileBottomNav() {
             component="a"
             href={href}
             sx={{
-              flex: 1,
+              flex: "1 0 auto",
+              minWidth: 80,
+              px: 1.5,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -117,6 +123,7 @@ function MobileBottomNav() {
             <Icon size={19} />
             <Typography
               component="span"
+              noWrap
               sx={{
                 fontSize: "0.6875rem",
                 fontWeight: active ? 600 : 500,
@@ -128,27 +135,6 @@ function MobileBottomNav() {
           </ButtonBase>
         );
       })}
-      <ButtonBase
-        type="button"
-        onClick={() => setSidebarOpen(true)}
-        sx={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 0.375,
-          color: "var(--muted-foreground)",
-        }}
-      >
-        <Menu size={19} />
-        <Typography
-          component="span"
-          sx={{ fontSize: "0.6875rem", fontWeight: 500, lineHeight: 1 }}
-        >
-          More
-        </Typography>
-      </ButtonBase>
     </Box>
   );
 }

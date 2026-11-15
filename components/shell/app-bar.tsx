@@ -14,8 +14,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import TextField from "@mui/material/TextField";
 import InputAdornment from "@mui/material/InputAdornment";
-import { Menu, Search } from "lucide-react";
-import { useShellStore } from "@/stores/shell-store";
+import { Search } from "lucide-react";
 import { ThemeToggleButton } from "@/components/theme/theme-toggle-button";
 import { UserMenu } from "@/components/shell/user-menu";
 import { Wordmark } from "@/components/shell/wordmark";
@@ -170,8 +169,6 @@ function CommandSearch() {
 }
 
 export function AppBar({ user }: { user: { name: string; email: string } }) {
-  const shell = useShellStore();
-
   return (
     <MuiAppBar
       position="sticky"
@@ -195,20 +192,6 @@ export function AppBar({ user }: { user: { name: string; email: string } }) {
           alignItems: "center",
         }}
       >
-        <IconButton
-          edge="start"
-          aria-label="Open menu"
-          onClick={() => shell.setSidebarOpen(true)}
-          sx={{
-            display: { md: "none" },
-            color: "var(--foreground)",
-            borderRadius: "8px",
-            mr: 0.5,
-          }}
-        >
-          <Menu size={20} />
-        </IconButton>
-
         <Box sx={{ display: { xs: "flex", md: "none" }, alignItems: "center" }}>
           <Wordmark />
         </Box>

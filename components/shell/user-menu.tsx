@@ -10,10 +10,9 @@ import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import ButtonBase from "@mui/material/ButtonBase";
-import { ChevronDown, CreditCard, LogOut, Settings } from "lucide-react";
+import { BookOpen, ChevronDown, CreditCard, LogOut, Settings, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { useThemeStore } from "@/stores/theme-store";
-import { ThemeToggleButton } from "@/components/theme/theme-toggle-button";
 import { UserAvatar } from "@/components/shell/user-avatar";
 
 export function UserMenu({ user }: { user: { name: string; email: string } }) {
@@ -122,24 +121,6 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
 
         <Divider sx={{ my: 0.75, borderColor: "var(--border)" }} />
 
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            px: 2,
-            py: 1,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Typography variant="body2" sx={{ color: "var(--foreground)" }}>
-            Theme
-          </Typography>
-          <ThemeToggleButton />
-        </Box>
-
-        <Divider sx={{ my: 0.75, borderColor: "var(--border)" }} />
-
         <MenuItem
           onClick={() => {
             handleClose();
@@ -162,6 +143,30 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
             <Settings size={16} />
           </ListItemIcon>
           Settings
+        </MenuItem>
+
+        <MenuItem
+          onClick={() => {
+            handleClose();
+            router.push("/docs");
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 32, color: "var(--muted-foreground)" }}>
+            <BookOpen size={16} />
+          </ListItemIcon>
+          Docs
+        </MenuItem>
+
+        <MenuItem
+          onClick={() => {
+            handleClose();
+            router.push("/privacy");
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 32, color: "var(--muted-foreground)" }}>
+            <ShieldCheck size={16} />
+          </ListItemIcon>
+          Privacy policy
         </MenuItem>
 
         <Divider sx={{ my: 0.75, borderColor: "var(--border)" }} />
