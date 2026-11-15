@@ -198,11 +198,13 @@ export default function DocsPage() {
 
       <Card
         sx={{
+          minWidth: 0,
+          overflow: "hidden",
           border: "1px solid var(--border)",
           backgroundColor: "var(--card)",
         }}
       >
-        <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5, minWidth: 0 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Terminal size={18} style={{ color: "var(--primary)" }} />
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
@@ -235,11 +237,13 @@ export default function DocsPage() {
 
       <Card
         sx={{
+          minWidth: 0,
+          overflow: "hidden",
           border: "1px solid var(--border)",
           backgroundColor: "var(--card)",
         }}
       >
-        <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <CardContent sx={{ display: "flex", flexDirection: "column", gap: 1.5, minWidth: 0 }}>
           <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <HardDrive size={18} style={{ color: "var(--primary)" }} />

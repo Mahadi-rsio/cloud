@@ -1674,12 +1674,11 @@ function CreateApplicationContent() {
                 </Stack>
               </Box>
 
-              {/* Mobile Inline Summary Row (above sticky bottom CTA bar) */}
+              {/* Mobile Inline Summary & CTA Card */}
               <Box
                 sx={{
                   display: { xs: "flex", lg: "none" },
-                  alignItems: "center",
-                  justifyContent: "space-between",
+                  flexDirection: "column",
                   gap: 1.5,
                   mt: 3,
                   p: 2,
@@ -1688,20 +1687,63 @@ function CreateApplicationContent() {
                   bgcolor: "var(--cd-surface)",
                 }}
               >
-                <Typography sx={{ fontSize: 13, color: "var(--cd-muted)", lineHeight: 1.4 }}>
-                  {specSummaryLine}
-                </Typography>
-                <Typography
+                <Box
                   sx={{
-                    fontSize: 15,
-                    fontWeight: 700,
-                    color: isFreeTier ? "var(--cd-free)" : "var(--cd-ink)",
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1.5,
                   }}
                 >
-                  {monthlyCostLabel}
-                </Typography>
+                  <Typography sx={{ fontSize: 13, color: "var(--cd-muted)", lineHeight: 1.4 }}>
+                    {specSummaryLine}
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: isFreeTier ? "var(--cd-free)" : "var(--cd-ink)",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {monthlyCostLabel}
+                  </Typography>
+                </Box>
+                {disabledReason && (
+                  <Typography sx={{ fontSize: 12, color: "var(--cd-muted)" }}>
+                    {disabledReason}
+                  </Typography>
+                )}
+                <Button
+                  type="button"
+                  variant="contained"
+                  fullWidth
+                  onClick={() => void handleProceedToAnalysis()}
+                  disabled={!isConfigureReady}
+                  endIcon={<ArrowRight style={{ width: 16, height: 16 }} />}
+                  sx={{
+                    minHeight: 44,
+                    borderRadius: "var(--cd-radius-control)",
+                    bgcolor: "var(--cd-accent)",
+                    color: "var(--cd-accent-ink)",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    boxShadow: "none",
+                    "&:hover": {
+                      bgcolor: "var(--cd-accent)",
+                      opacity: 0.92,
+                      boxShadow: "none",
+                    },
+                    "&.Mui-disabled": {
+                      bgcolor: "var(--cd-surface-alt)",
+                      color: "var(--cd-muted)",
+                      border: "1px solid var(--cd-border)",
+                    },
+                  }}
+                >
+                  {primaryConfigureCta}
+                </Button>
               </Box>
             </Box>
 
@@ -1811,60 +1853,6 @@ function CreateApplicationContent() {
                 {primaryConfigureCta}
               </Button>
             </Box>
-          </Box>
-        )}
-
-        {/* Mobile Sticky Bottom Action Bar (Step 1) */}
-        {step === "configure" && (
-          <Box
-            sx={{
-              display: { xs: "block", lg: "none" },
-              position: "fixed",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 30,
-              bgcolor: "var(--cd-canvas)",
-              borderTop: "1px solid var(--cd-border)",
-              px: 2,
-              pt: 1.25,
-              pb: "calc(12px + env(safe-area-inset-bottom, 0px))",
-            }}
-          >
-            {disabledReason && (
-              <Typography sx={{ fontSize: 12, color: "var(--cd-muted)", mb: 0.75, textAlign: "center" }}>
-                {disabledReason}
-              </Typography>
-            )}
-            <Button
-              type="button"
-              variant="contained"
-              fullWidth
-              onClick={() => void handleProceedToAnalysis()}
-              disabled={!isConfigureReady}
-              endIcon={<ArrowRight style={{ width: 16, height: 16 }} />}
-              sx={{
-                minHeight: 44,
-                borderRadius: "var(--cd-radius-control)",
-                bgcolor: "var(--cd-accent)",
-                color: "var(--cd-accent-ink)",
-                fontSize: 14,
-                fontWeight: 700,
-                boxShadow: "none",
-                "&:hover": {
-                  bgcolor: "var(--cd-accent)",
-                  opacity: 0.92,
-                  boxShadow: "none",
-                },
-                "&.Mui-disabled": {
-                  bgcolor: "var(--cd-surface-alt)",
-                  color: "var(--cd-muted)",
-                  border: "1px solid var(--cd-border)",
-                },
-              }}
-            >
-              {primaryConfigureCta}
-            </Button>
           </Box>
         )}
 

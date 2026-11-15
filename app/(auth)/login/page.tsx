@@ -23,10 +23,11 @@ export default async function LoginPage() {
         display: "flex",
         minHeight: "100svh",
         flex: 1,
-        alignItems: "center",
+        alignItems: { xs: "flex-start", sm: "center" },
         justifyContent: "center",
         px: { xs: 2, sm: 3 },
-        py: 4,
+        pt: { xs: 4, sm: 4 },
+        pb: 4,
         background:
           "radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 70%), var(--background)",
       }}

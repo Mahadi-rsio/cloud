@@ -1,7 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import Box from "@mui/material/Box";
+import ButtonBase from "@mui/material/ButtonBase";
+import Typography from "@mui/material/Typography";
+import { AppWindow, Database, HardDrive, Menu } from "lucide-react";
 import { Sidebar, MobileSidebar } from "@/components/shell/sidebar";
 import { AppBar } from "@/components/shell/app-bar";
 import { useShellStore } from "@/stores/shell-store";
@@ -48,13 +52,103 @@ export function AppShell({
             flex: "1 1 0%",
             flexDirection: "column",
             overflowY: "auto",
+            overflowX: "hidden",
             px: { xs: 1.5, sm: 3, md: 4.5 },
-            py: { xs: 2, sm: 3, md: 4 },
+            pt: { xs: 2, sm: 3, md: 4 },
+            pb: { xs: "calc(76px + env(safe-area-inset-bottom, 0px))", md: 4 },
           }}
         >
           {children}
         </Box>
+        <MobileBottomNav />
       </Box>
+    </Box>
+  );
+}
+
+const MOBILE_NAV_ITEMS = [
+  { href: "/apps", label: "Apps", icon: AppWindow },
+  { href: "/databases", label: "Databases", icon: Database },
+  { href: "/storage", label: "Storage", icon: HardDrive },
+] as const;
+
+function MobileBottomNav() {
+  const pathname = usePathname();
+  const setSidebarOpen = useShellStore((state) => state.setSidebarOpen);
+
+  return (
+    <Box
+      component="nav"
+      aria-label="Mobile navigation"
+      sx={{
+        display: { xs: "flex", md: "none" },
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 35,
+        height: "calc(60px + env(safe-area-inset-bottom, 0px))",
+        pb: "env(safe-area-inset-bottom, 0px)",
+        borderTop: "1px solid var(--border)",
+        backgroundColor: "color-mix(in oklab, var(--card) 94%, transparent)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        alignItems: "stretch",
+      }}
+    >
+      {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+        const active = pathname === href || pathname.startsWith(`${href}/`);
+        return (
+          <ButtonBase
+            key={href}
+            component="a"
+            href={href}
+            sx={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 0.375,
+              color: active ? "var(--primary)" : "var(--muted-foreground)",
+              transition: "color 0.15s ease",
+            }}
+          >
+            <Icon size={19} />
+            <Typography
+              component="span"
+              sx={{
+                fontSize: "0.6875rem",
+                fontWeight: active ? 600 : 500,
+                lineHeight: 1,
+              }}
+            >
+              {label}
+            </Typography>
+          </ButtonBase>
+        );
+      })}
+      <ButtonBase
+        type="button"
+        onClick={() => setSidebarOpen(true)}
+        sx={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 0.375,
+          color: "var(--muted-foreground)",
+        }}
+      >
+        <Menu size={19} />
+        <Typography
+          component="span"
+          sx={{ fontSize: "0.6875rem", fontWeight: 500, lineHeight: 1 }}
+        >
+          More
+        </Typography>
+      </ButtonBase>
     </Box>
   );
 }

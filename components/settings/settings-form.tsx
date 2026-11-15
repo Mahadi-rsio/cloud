@@ -161,9 +161,10 @@ function SettingsForm({ user }: { user: { name: string; email: string } }) {
           <Box
             sx={{
               display: "flex",
-              alignItems: "center",
+              flexDirection: { xs: "column", sm: "row" },
+              alignItems: { xs: "stretch", sm: "center" },
               justifyContent: "space-between",
-              gap: 2,
+              gap: { xs: 1.5, sm: 2 },
             }}
           >
             <Box sx={{ minWidth: 0 }}>
@@ -179,6 +180,7 @@ function SettingsForm({ user }: { user: { name: string; email: string } }) {
               variant="outlined"
               startIcon={<LogOut size={16} />}
               onClick={() => signOut.mutate()}
+              sx={{ flexShrink: 0, alignSelf: { xs: "flex-start", sm: "center" } }}
             >
               Log out
             </Button>
@@ -189,9 +191,10 @@ function SettingsForm({ user }: { user: { name: string; email: string } }) {
           <Box
             sx={{
               display: "flex",
-              alignItems: "center",
+              flexDirection: { xs: "column", sm: "row" },
+              alignItems: { xs: "stretch", sm: "center" },
               justifyContent: "space-between",
-              gap: 2,
+              gap: { xs: 1.5, sm: 2 },
             }}
           >
             <Box sx={{ minWidth: 0 }}>
@@ -208,6 +211,7 @@ function SettingsForm({ user }: { user: { name: string; email: string } }) {
               color="error"
               startIcon={<Trash2 size={16} />}
               onClick={() => setDeleteOpen(true)}
+              sx={{ flexShrink: 0, alignSelf: { xs: "flex-start", sm: "center" } }}
             >
               Delete account
             </Button>

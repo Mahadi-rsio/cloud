@@ -28,6 +28,7 @@ const SECTION_LABELS: Record<string, string> = {
   billing: "Billing",
   settings: "Settings",
   docs: "Docs",
+  privacy: "Privacy policy",
 };
 
 function Breadcrumb() {
@@ -38,12 +39,21 @@ function Breadcrumb() {
   if (!section) return null;
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
       <Typography
         sx={{
-          display: { xs: "none", md: "inline" },
+          display: { xs: "inline", md: "none" },
+          color: "var(--muted-foreground)",
+          fontSize: "0.75rem",
+        }}
+      >
+        /
+      </Typography>
+      <Typography
+        noWrap
+        sx={{
           color: "var(--foreground)",
-          fontSize: "0.875rem",
+          fontSize: { xs: "0.8125rem", md: "0.875rem" },
           fontWeight: 600,
         }}
       >
