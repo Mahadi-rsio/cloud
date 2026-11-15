@@ -87,15 +87,20 @@ function StudioShell({ embedded = false, databaseId, databaseName }: StudioProps
   // switch immediately even if a previous database was persisted.
   React.useEffect(() => {
     const currentId = useStudioConnectionStore.getState().databaseId;
+    const intent = useStudioIntentStore.getState();
     if (databaseId) {
+      const resolvedName =
+        databaseName || (intent.databaseId === databaseId ? intent.name : "") || "";
       if (databaseId !== currentId) {
         resetStore();
         void queryClient.clear();
-        useStudioConnectionStore.getState().connect(databaseId, databaseName ?? "", true);
+        useStudioConnectionStore.getState().connect(databaseId, resolvedName, true);
+      }
+      if (intent.databaseId === databaseId) {
+        useStudioIntentStore.getState().clearIntent();
       }
       return;
     }
-    const intent = useStudioIntentStore.getState();
     if (intent.databaseId && intent.databaseId !== currentId) {
       resetStore();
       void queryClient.clear();
@@ -277,11 +282,11 @@ function StudioShell({ embedded = false, databaseId, databaseName }: StudioProps
               }}
             />
 
-            <Tooltip title="Back to databases" arrow>
+            <Tooltip title={databaseId ? "Back to database" : "Back to databases"} arrow>
               <IconButton
                 component="a"
-                href="/databases"
-                aria-label="Back to databases"
+                href={databaseId ? `/databases/${encodeURIComponent(databaseId)}` : "/databases"}
+                aria-label={databaseId ? "Back to database" : "Back to databases"}
                 sx={{
                   width: 44,
                   height: 44,

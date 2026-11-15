@@ -56,7 +56,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ToneBadge } from "@/components/shared/surface-card";
 import { UsageBar } from "@/components/shared/usage-bar";
-import { StudioLoader } from "@/components/studio/StudioLoader";
+import { useStudioIntentStore } from "@/stores/studio-intent";
 import { deleteDatabase, getDatabase, type DatabaseItem } from "@/lib/databases/client";
 import { extractErrorMessage } from "@/lib/errors";
 import { formatBytes } from "@/lib/storage-client";
@@ -158,8 +158,25 @@ export function DatabaseDetailPage({ databaseId }: { databaseId: string }) {
   const rawTab = searchParams.get("tab") as DbTab | null;
   const activeTab: DbTab = rawTab && VALID_TABS.includes(rawTab) ? rawTab : "overview";
 
+  const [db, setDb] = React.useState<DatabaseItem | null>(null);
+
+  const openFullStudio = React.useCallback(() => {
+    useStudioIntentStore.getState().setIntent({ databaseId, name: db?.name ?? "" });
+    router.push(`/databases/${encodeURIComponent(databaseId)}/studio`);
+  }, [databaseId, db?.name, router]);
+
+  React.useEffect(() => {
+    if (rawTab === "studio") {
+      openFullStudio();
+    }
+  }, [rawTab, openFullStudio]);
+
   const setActiveTab = React.useCallback(
     (tab: DbTab) => {
+      if (tab === "studio") {
+        openFullStudio();
+        return;
+      }
       const params = new URLSearchParams(searchParams.toString());
       if (tab === "overview") {
         params.delete("tab");
@@ -169,10 +186,8 @@ export function DatabaseDetailPage({ databaseId }: { databaseId: string }) {
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
-    [pathname, router, searchParams],
+    [openFullStudio, pathname, router, searchParams],
   );
-
-  const [db, setDb] = React.useState<DatabaseItem | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -673,7 +688,7 @@ print(res.rows)`;
                 <Button
                   variant="contained"
                   startIcon={<Table2 size={16} />}
-                  onClick={() => setActiveTab("studio")}
+                  onClick={openFullStudio}
                   sx={{
                     width: { xs: "100%", sm: "auto", lg: "100%" },
                     flex: { sm: "1 1 0%", lg: "0 0 auto" },
@@ -751,24 +766,6 @@ print(res.rows)`;
               />
             </Box>
           </Paper>
-        </Box>
-      )}
-
-      {/* Tab 2: Studio */}
-      {activeTab === "studio" && (
-        <Box
-          sx={{
-            width: "100%",
-            minWidth: 0,
-            overflow: "hidden",
-            height: {
-              xs: "calc(100dvh - var(--appbar-h, 56px) - 160px - var(--bottomnav-h, 60px) - env(safe-area-inset-bottom, 0px))",
-              sm: "calc(100dvh - var(--appbar-h, 60px) - 140px)",
-            },
-            minHeight: 460,
-          }}
-        >
-          <StudioLoader embedded databaseId={db.id} databaseName={db.name} />
         </Box>
       )}
 
@@ -1323,7 +1320,7 @@ print(res.rows)`;
         <MenuItem
           onClick={() => {
             setMenuAnchor(null);
-            setActiveTab("studio");
+            openFullStudio();
           }}
         >
           <ListItemIcon>
