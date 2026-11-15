@@ -376,16 +376,27 @@ print(res.rows)`;
   -d '{"requests":[{"type":"execute","stmt":{"sql":"SELECT 1;"}}]}'`;
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
-      {/* Sticky Header + Tabs */}
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 2.5,
+        minWidth: 0,
+        width: "100%",
+        maxWidth: "100%",
+      }}
+    >
+      {/* Single Sticky Header + Tabs */}
       <Box
         sx={{
           position: "sticky",
-          top: 64,
-          zIndex: 20,
+          top: "var(--appbar-h, 56px)",
+          zIndex: 10,
           backgroundColor: "var(--background)",
-          pt: 0.5,
           borderBottom: "1px solid var(--border)",
+          mx: { xs: -2, sm: -3, md: -4 },
+          px: { xs: 2, sm: 3, md: 4 },
+          pt: 0.5,
         }}
       >
         <Box
@@ -394,11 +405,12 @@ print(res.rows)`;
             flexDirection: { xs: "column", sm: "row" },
             alignItems: { xs: "stretch", sm: "center" },
             justifyContent: "space-between",
-            gap: 1.5,
-            pb: 1.5,
+            gap: 1.25,
+            pb: 1.25,
+            minWidth: 0,
           }}
         >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0, flex: 1 }}>
             <Tooltip title="Back to databases">
               <IconButton
                 aria-label="Back to databases"
@@ -415,12 +427,26 @@ print(res.rows)`;
               </IconButton>
             </Tooltip>
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, flexWrap: "wrap" }}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 0.875,
+                minWidth: 0,
+                flex: 1,
+                flexWrap: "wrap",
+              }}
+            >
               <Typography
                 variant="h5"
                 component="h1"
                 noWrap
-                sx={{ fontWeight: 700, fontSize: { xs: "1.2rem", sm: "1.45rem" } }}
+                sx={{
+                  fontWeight: 700,
+                  fontSize: { xs: "1.15rem", sm: "1.4rem" },
+                  minWidth: 0,
+                  maxWidth: "100%",
+                }}
               >
                 {db.name}
               </Typography>
@@ -439,7 +465,15 @@ print(res.rows)`;
             </Box>
           </Box>
 
-          <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexShrink: 0 }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              alignItems: "center",
+              justifyContent: { xs: "flex-start", sm: "flex-end" },
+              flexShrink: 0,
+            }}
+          >
             <Button
               variant="outlined"
               size="small"
@@ -471,15 +505,17 @@ print(res.rows)`;
           onChange={(_, val: DbTab) => setActiveTab(val)}
           variant="scrollable"
           scrollButtons="auto"
+          allowScrollButtonsMobile
           aria-label="Database sections"
           sx={{
             minHeight: 42,
+            maxWidth: "100%",
             "& .MuiTab-root": {
               minHeight: 42,
               textTransform: "none",
               fontWeight: 600,
               fontSize: "0.85rem",
-              px: 1.75,
+              px: 1.5,
             },
           }}
         >
@@ -494,7 +530,7 @@ print(res.rows)`;
 
       {/* Tab 1: Overview */}
       {activeTab === "overview" && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5, minWidth: 0, width: "100%" }}>
           <Box
             sx={{
               display: "grid",
@@ -504,6 +540,7 @@ print(res.rows)`;
                 lg: "repeat(5, minmax(0, 1fr))",
               },
               gap: 1.5,
+              minWidth: 0,
             }}
           >
             <StatCard
@@ -531,6 +568,7 @@ print(res.rows)`;
               label="Size"
               value={formatBytes(storageBytes)}
               icon={<HardDrive size={14} />}
+              sx={{ gridColumn: { xs: "1 / -1", md: "auto" } }}
             />
           </Box>
 
@@ -538,8 +576,9 @@ print(res.rows)`;
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "1fr", lg: "2fr 1fr" },
+              gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 2fr) minmax(0, 1fr)" },
               gap: 2,
+              minWidth: 0,
             }}
           >
             <Paper
@@ -552,17 +591,25 @@ print(res.rows)`;
                 display: "flex",
                 flexDirection: "column",
                 gap: 1.75,
+                minWidth: 0,
+                maxWidth: "100%",
+                overflow: "hidden",
               }}
             >
               <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                 Connection endpoints
               </Typography>
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
                 <Typography variant="caption" sx={{ color: "var(--muted-foreground)" }}>
                   libSQL URL
                 </Typography>
                 <Box
                   sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    minWidth: 0,
+                    width: "100%",
+                    overflow: "hidden",
                     px: 1.5,
                     py: 1,
                     borderRadius: "8px",
@@ -570,15 +617,20 @@ print(res.rows)`;
                     backgroundColor: "var(--muted)",
                   }}
                 >
-                  <CopyField value={db.libsqlUrl} sx={{ width: "100%" }} />
+                  <CopyField value={db.libsqlUrl} sx={{ width: "100%", minWidth: 0 }} />
                 </Box>
               </Box>
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, minWidth: 0 }}>
                 <Typography variant="caption" sx={{ color: "var(--muted-foreground)" }}>
                   HTTP URL
                 </Typography>
                 <Box
                   sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    minWidth: 0,
+                    width: "100%",
+                    overflow: "hidden",
                     px: 1.5,
                     py: 1,
                     borderRadius: "8px",
@@ -586,7 +638,7 @@ print(res.rows)`;
                     backgroundColor: "var(--muted)",
                   }}
                 >
-                  <CopyField value={db.httpUrl} sx={{ width: "100%" }} />
+                  <CopyField value={db.httpUrl} sx={{ width: "100%", minWidth: 0 }} />
                 </Box>
               </Box>
             </Paper>
@@ -602,40 +654,59 @@ print(res.rows)`;
                 flexDirection: "column",
                 justifyContent: "space-between",
                 gap: 1.5,
+                minWidth: 0,
+                maxWidth: "100%",
               }}
             >
               <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                 Quick actions
               </Typography>
-              <Stack spacing={1}>
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: { xs: "column", sm: "row", lg: "column" },
+                  flexWrap: "wrap",
+                  gap: 1,
+                  minWidth: 0,
+                }}
+              >
                 <Button
                   variant="contained"
-                  fullWidth
                   startIcon={<Table2 size={16} />}
                   onClick={() => setActiveTab("studio")}
-                  sx={{ justifyContent: "flex-start" }}
+                  sx={{
+                    width: { xs: "100%", sm: "auto", lg: "100%" },
+                    flex: { sm: "1 1 0%", lg: "0 0 auto" },
+                    justifyContent: "flex-start",
+                  }}
                 >
                   Open Studio
                 </Button>
                 <Button
                   variant="outlined"
-                  fullWidth
                   startIcon={<KeyRound size={16} />}
                   onClick={() => setActiveTab("connection")}
-                  sx={{ justifyContent: "flex-start" }}
+                  sx={{
+                    width: { xs: "100%", sm: "auto", lg: "100%" },
+                    flex: { sm: "1 1 0%", lg: "0 0 auto" },
+                    justifyContent: "flex-start",
+                  }}
                 >
                   Create token
                 </Button>
                 <Button
                   variant="outlined"
-                  fullWidth
                   startIcon={<Plug size={16} />}
                   onClick={() => setActiveTab("connection")}
-                  sx={{ justifyContent: "flex-start" }}
+                  sx={{
+                    width: { xs: "100%", sm: "auto", lg: "100%" },
+                    flex: { sm: "1 1 0%", lg: "0 0 auto" },
+                    justifyContent: "flex-start",
+                  }}
                 >
                   Connect
                 </Button>
-              </Stack>
+              </Box>
             </Paper>
           </Box>
 
@@ -650,6 +721,8 @@ print(res.rows)`;
               display: "flex",
               flexDirection: "column",
               gap: 2,
+              minWidth: 0,
+              maxWidth: "100%",
             }}
           >
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
@@ -661,8 +734,9 @@ print(res.rows)`;
             <Box
               sx={{
                 display: "grid",
-                gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" },
+                gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))" },
                 gap: 2.5,
+                minWidth: 0,
               }}
             >
               <UsageBar
@@ -682,12 +756,25 @@ print(res.rows)`;
 
       {/* Tab 2: Studio */}
       {activeTab === "studio" && (
-        <StudioLoader embedded databaseId={db.id} databaseName={db.name} />
+        <Box
+          sx={{
+            width: "100%",
+            minWidth: 0,
+            overflow: "hidden",
+            height: {
+              xs: "calc(100dvh - var(--appbar-h, 56px) - 160px - var(--bottomnav-h, 60px) - env(safe-area-inset-bottom, 0px))",
+              sm: "calc(100dvh - var(--appbar-h, 60px) - 140px)",
+            },
+            minHeight: 460,
+          }}
+        >
+          <StudioLoader embedded databaseId={db.id} databaseName={db.name} />
+        </Box>
       )}
 
       {/* Tab 3: Connection */}
       {activeTab === "connection" && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5, minWidth: 0, width: "100%" }}>
           <Paper
             variant="outlined"
             sx={{
@@ -698,6 +785,9 @@ print(res.rows)`;
               display: "flex",
               flexDirection: "column",
               gap: 1.5,
+              minWidth: 0,
+              maxWidth: "100%",
+              overflow: "hidden",
             }}
           >
             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
@@ -705,6 +795,11 @@ print(res.rows)`;
             </Typography>
             <Box
               sx={{
+                display: "flex",
+                alignItems: "center",
+                minWidth: 0,
+                width: "100%",
+                overflow: "hidden",
                 px: 1.5,
                 py: 1,
                 borderRadius: "8px",
@@ -712,7 +807,7 @@ print(res.rows)`;
                 backgroundColor: "var(--muted)",
               }}
             >
-              <CopyField value={db.libsqlUrl} sx={{ width: "100%" }} />
+              <CopyField value={db.libsqlUrl} sx={{ width: "100%", minWidth: 0 }} />
             </Box>
             <Box
               sx={{
@@ -720,6 +815,9 @@ print(res.rows)`;
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: 1,
+                minWidth: 0,
+                width: "100%",
+                overflow: "hidden",
                 px: 1.5,
                 py: 1,
                 borderRadius: "8px",
@@ -770,6 +868,9 @@ print(res.rows)`;
               display: "flex",
               flexDirection: "column",
               gap: 2,
+              minWidth: 0,
+              maxWidth: "100%",
+              overflow: "hidden",
             }}
           >
             <Box
@@ -779,9 +880,10 @@ print(res.rows)`;
                 alignItems: { xs: "stretch", sm: "center" },
                 justifyContent: "space-between",
                 gap: 1.5,
+                minWidth: 0,
               }}
             >
-              <Box>
+              <Box sx={{ minWidth: 0 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                   Auth tokens
                 </Typography>
@@ -792,7 +894,13 @@ print(res.rows)`;
               <Box
                 component="form"
                 onSubmit={handleCreateToken}
-                sx={{ display: "flex", gap: 1, alignItems: "center" }}
+                sx={{
+                  display: "flex",
+                  flexDirection: { xs: "column", sm: "row" },
+                  gap: 1,
+                  alignItems: { xs: "stretch", sm: "center" },
+                  minWidth: 0,
+                }}
               >
                 <TextField
                   size="small"
@@ -807,7 +915,7 @@ print(res.rows)`;
                   size="small"
                   startIcon={<Plus size={14} />}
                   disabled={!newTokenName.trim()}
-                  sx={{ minHeight: 38 }}
+                  sx={{ minHeight: 38, flexShrink: 0 }}
                 >
                   Create token
                 </Button>
@@ -829,7 +937,7 @@ print(res.rows)`;
               </Alert>
             )}
 
-            <TableContainer>
+            <TableContainer sx={{ maxWidth: "100%", overflowX: "auto" }}>
               <Table size="small" aria-label="Database auth tokens">
                 <TableHead>
                   <TableRow
@@ -896,6 +1004,9 @@ print(res.rows)`;
               display: "flex",
               flexDirection: "column",
               gap: 1.5,
+              minWidth: 0,
+              maxWidth: "100%",
+              overflow: "hidden",
             }}
           >
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -909,6 +1020,7 @@ print(res.rows)`;
               onChange={(_, v) => setSnippetTab(v)}
               variant="scrollable"
               scrollButtons="auto"
+              allowScrollButtonsMobile
               sx={{
                 borderBottom: "1px solid var(--border)",
                 minHeight: 38,
@@ -1014,12 +1126,13 @@ print(res.rows)`;
 
       {/* Tab 5: Usage */}
       {activeTab === "usage" && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5, minWidth: 0, width: "100%" }}>
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" },
+              gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(3, minmax(0, 1fr))" },
               gap: 2,
+              minWidth: 0,
             }}
           >
             <StatCard
@@ -1155,8 +1268,9 @@ print(res.rows)`;
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" },
+              gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))" },
               gap: 2,
+              minWidth: 0,
             }}
           >
             {[

@@ -6,6 +6,9 @@
   --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo,
     Consolas, monospace;
 
+  --appbar-h: 56px;
+  --bottomnav-h: 60px;
+
   --radius: 0.5rem;
   --radius-xl-fixed: 0.75rem;
 
@@ -107,9 +110,15 @@
   border-color: var(--border);
 }
 
+@media (min-width: 640px) {
+  :root {
+    --appbar-h: 60px;
+  }
+}
+
 html {
   height: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -118,7 +127,7 @@ html {
 body {
   min-height: 100%;
   margin: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
   display: flex;
   flex-direction: column;
   background-color: var(--background);

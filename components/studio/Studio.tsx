@@ -112,15 +112,17 @@ function StudioShell({ embedded = false, databaseId, databaseName }: StudioProps
     <Box
       sx={{
         display: "flex",
-        height: embedded ? { xs: "calc(100dvh - 260px)", md: "calc(100dvh - 210px)" } : "100dvh",
-        minHeight: embedded ? 520 : undefined,
+        height: embedded ? "100%" : "100dvh",
+        minHeight: 0,
+        minWidth: 0,
+        width: "100%",
         flexDirection: "column",
         bgcolor: "var(--background)",
         color: "var(--foreground)",
+        overflow: embedded ? "hidden" : undefined,
         ...(embedded && {
           borderRadius: "12px",
           border: "1px solid var(--border)",
-          overflow: "hidden",
         }),
       }}
     >
@@ -130,7 +132,7 @@ function StudioShell({ embedded = false, databaseId, databaseName }: StudioProps
         sx={{
           position: embedded ? "relative" : "sticky",
           top: 0,
-          zIndex: 30,
+          zIndex: embedded ? 1 : 30,
           display: "flex",
           minHeight: 56,
           flexShrink: 0,

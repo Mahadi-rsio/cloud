@@ -55,6 +55,7 @@ export function CopyField({
         {
           display: "inline-flex",
           minWidth: 0,
+          maxWidth: "100%",
           alignItems: "center",
           gap: 0.75,
         },
@@ -68,6 +69,9 @@ export function CopyField({
         sx={{
           minWidth: 0,
           flex: 1,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
           fontFamily: "var(--font-mono)",
           fontSize: "0.875rem",
           color: "var(--foreground)",

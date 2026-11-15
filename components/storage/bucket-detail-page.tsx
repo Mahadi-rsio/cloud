@@ -797,16 +797,27 @@ export function BucketDetailPage({ bucketName }: { bucketName: string }) {
   }
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
-      {/* Sticky Header + Tabs */}
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 2.5,
+        minWidth: 0,
+        width: "100%",
+        maxWidth: "100%",
+      }}
+    >
+      {/* Single Sticky Header + Tabs */}
       <Box
         sx={{
           position: "sticky",
-          top: 64,
-          zIndex: 20,
+          top: "var(--appbar-h, 56px)",
+          zIndex: 10,
           backgroundColor: "var(--background)",
-          pt: 0.5,
           borderBottom: "1px solid var(--border)",
+          mx: { xs: -2, sm: -3, md: -4 },
+          px: { xs: 2, sm: 3, md: 4 },
+          pt: 0.5,
         }}
       >
         <Box
@@ -875,6 +886,9 @@ export function BucketDetailPage({ bucketName }: { bucketName: string }) {
         <Tabs
           value={activeTab}
           onChange={(_, v: BucketTab) => setActiveTab(v)}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
           aria-label="Bucket sections"
           sx={{
             minHeight: 42,
@@ -1578,7 +1592,9 @@ export function BucketDetailPage({ bucketName }: { bucketName: string }) {
                   borderColor: "var(--border)",
                   backgroundColor: "var(--card)",
                   position: "sticky",
-                  top: 190,
+                  top: "calc(var(--appbar-h, 60px) + 124px)",
+                  maxHeight: "calc(100dvh - var(--appbar-h, 60px) - 144px)",
+                  overflowY: "auto",
                 }}
               >
                 {inspectorContent}
@@ -1590,7 +1606,7 @@ export function BucketDetailPage({ bucketName }: { bucketName: string }) {
 
       {/* Tab 2: Settings */}
       {activeTab === "settings" && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5, maxWidth: 720 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5, maxWidth: 720, minWidth: 0, width: "100%" }}>
           <Paper
             variant="outlined"
             sx={{
@@ -1782,12 +1798,13 @@ export function BucketDetailPage({ bucketName }: { bucketName: string }) {
 
       {/* Tab 3: Usage */}
       {activeTab === "usage" && (
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5, minWidth: 0, width: "100%" }}>
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" },
+              gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(3, minmax(0, 1fr))" },
               gap: 2,
+              minWidth: 0,
             }}
           >
             <StatCard

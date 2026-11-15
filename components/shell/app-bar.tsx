@@ -185,7 +185,8 @@ export function AppBar({ user }: { user: { name: string; email: string } }) {
       <Toolbar
         variant="dense"
         sx={{
-          minHeight: { xs: 56, sm: 60 },
+          minHeight: "var(--appbar-h, 56px)",
+          height: "var(--appbar-h, 56px)",
           px: { xs: 2, sm: 3 },
           gap: { xs: 1, sm: 2 },
           display: "flex",

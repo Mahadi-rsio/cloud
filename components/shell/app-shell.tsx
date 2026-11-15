@@ -48,19 +48,22 @@ export function AppShell({
           sx={{
             display: "flex",
             minHeight: 0,
+            minWidth: 0,
             flex: "1 1 0%",
             flexDirection: "column",
-            overflowY: "auto",
-            overflowX: "hidden",
-            px: { xs: 1.5, sm: 3, md: 4.5 },
-            pt: { xs: 2, sm: 3, md: 4 },
-            pb: { xs: "calc(76px + env(safe-area-inset-bottom, 0px))", md: 4 },
+            px: { xs: 2, sm: 3, md: 4 },
+            pt: { xs: 2, sm: 2.5, md: 3 },
+            pb: {
+              xs: "calc(var(--bottomnav-h, 60px) + env(safe-area-inset-bottom, 0px) + 16px)",
+              md: 4,
+            },
           }}
         >
           <Box
             sx={{
               width: "100%",
               maxWidth: 1400,
+              minWidth: 0,
               mx: "auto",
               display: "flex",
               flexDirection: "column",
