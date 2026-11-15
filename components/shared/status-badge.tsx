@@ -78,10 +78,12 @@ export function statusLabel(status: string): string {
 /** Status is communicated with a dot AND text, using an MUI pill chip. */
 export function StatusBadge({
   status,
+  label,
   sx,
   size = "small",
 }: {
   status: string;
+  label?: string;
   sx?: SxProps<Theme>;
   size?: "small" | "medium";
 }) {
@@ -115,7 +117,7 @@ export function StatusBadge({
             letterSpacing: "0.02em",
           }}
         >
-          {statusLabel(status)}
+          {label ?? statusLabel(status)}
         </Box>
       }
       sx={[

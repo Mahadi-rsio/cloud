@@ -40,7 +40,13 @@ import { ConnectScreen } from "@/components/studio/ConnectScreen";
 import { CreateTableDialog } from "@/components/studio/CreateTableDialog";
 import { ThemeToggleButton } from "@/components/theme/theme-toggle-button";
 
-export function Studio() {
+export interface StudioProps {
+  embedded?: boolean;
+  databaseId?: string;
+  databaseName?: string;
+}
+
+export function Studio({ embedded = false, databaseId, databaseName }: StudioProps = {}) {
   const [queryClient] = React.useState(
     () =>
       new QueryClient({
@@ -52,12 +58,16 @@ export function Studio() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <StudioShell />
+      <StudioShell
+        embedded={embedded}
+        databaseId={databaseId}
+        databaseName={databaseName}
+      />
     </QueryClientProvider>
   );
 }
 
-function StudioShell() {
+function StudioShell({ embedded = false, databaseId, databaseName }: StudioProps) {
   const queryClient = useQueryClient();
   const isDesktop = useMediaQuery("(min-width:900px)");
   const activeTabId = useStudioStore((s) => s.activeTabId);
@@ -73,18 +83,26 @@ function StudioShell() {
 
   const [createTableOpen, setCreateTableOpen] = React.useState(false);
 
-  // If the user navigated here with an explicit database intent from /databases,
+  // If embedded with an explicit databaseId or navigated with an intent from /databases,
   // switch immediately even if a previous database was persisted.
   React.useEffect(() => {
-    const intent = useStudioIntentStore.getState();
     const currentId = useStudioConnectionStore.getState().databaseId;
+    if (databaseId) {
+      if (databaseId !== currentId) {
+        resetStore();
+        void queryClient.clear();
+        useStudioConnectionStore.getState().connect(databaseId, databaseName ?? "", true);
+      }
+      return;
+    }
+    const intent = useStudioIntentStore.getState();
     if (intent.databaseId && intent.databaseId !== currentId) {
       resetStore();
       void queryClient.clear();
       useStudioConnectionStore.getState().connect(intent.databaseId, intent.name ?? "", true);
       useStudioIntentStore.getState().clearIntent();
     }
-  }, [queryClient, resetStore]);
+  }, [databaseId, databaseName, queryClient, resetStore]);
 
   const handleSwitchDatabase = () => {
     disconnect();
@@ -94,17 +112,23 @@ function StudioShell() {
     <Box
       sx={{
         display: "flex",
-        height: "100dvh",
+        height: embedded ? { xs: "calc(100dvh - 260px)", md: "calc(100dvh - 210px)" } : "100dvh",
+        minHeight: embedded ? 520 : undefined,
         flexDirection: "column",
         bgcolor: "var(--background)",
         color: "var(--foreground)",
+        ...(embedded && {
+          borderRadius: "12px",
+          border: "1px solid var(--border)",
+          overflow: "hidden",
+        }),
       }}
     >
       {/* Header */}
       <Box
         component="header"
         sx={{
-          position: "sticky",
+          position: embedded ? "relative" : "sticky",
           top: 0,
           zIndex: 30,
           display: "flex",
@@ -240,33 +264,37 @@ function StudioShell() {
           </Tooltip>
         )}
 
-        <ThemeToggleButton
-          sx={{
-            width: 44,
-            height: 44,
-            border: "1px solid var(--border)",
-            borderRadius: "10px",
-          }}
-        />
+        {!embedded && (
+          <>
+            <ThemeToggleButton
+              sx={{
+                width: 44,
+                height: 44,
+                border: "1px solid var(--border)",
+                borderRadius: "10px",
+              }}
+            />
 
-        <Tooltip title="Back to databases" arrow>
-          <IconButton
-            component="a"
-            href="/databases"
-            aria-label="Back to databases"
-            sx={{
-              width: 44,
-              height: 44,
-              flexShrink: 0,
-              border: "1px solid var(--border)",
-              borderRadius: "10px",
-              color: "var(--foreground)",
-              "&:hover": { bgcolor: "var(--accent)", borderColor: "var(--primary)" },
-            }}
-          >
-            <ArrowLeft size={18} />
-          </IconButton>
-        </Tooltip>
+            <Tooltip title="Back to databases" arrow>
+              <IconButton
+                component="a"
+                href="/databases"
+                aria-label="Back to databases"
+                sx={{
+                  width: 44,
+                  height: 44,
+                  flexShrink: 0,
+                  border: "1px solid var(--border)",
+                  borderRadius: "10px",
+                  color: "var(--foreground)",
+                  "&:hover": { bgcolor: "var(--accent)", borderColor: "var(--primary)" },
+                }}
+              >
+                <ArrowLeft size={18} />
+              </IconButton>
+            </Tooltip>
+          </>
+        )}
       </Box>
 
       {connected ? (

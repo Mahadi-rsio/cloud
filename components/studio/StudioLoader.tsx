@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
+import type { StudioProps } from "@/components/studio/Studio";
 
 const Studio = dynamic(() => import("@/components/studio/Studio").then((m) => m.Studio), {
   ssr: false,
@@ -10,7 +11,7 @@ const Studio = dynamic(() => import("@/components/studio/Studio").then((m) => m.
     <Box
       sx={{
         display: "flex",
-        height: "100dvh",
+        height: 400,
         alignItems: "center",
         justifyContent: "center",
         bgcolor: "var(--background)",
@@ -21,6 +22,6 @@ const Studio = dynamic(() => import("@/components/studio/Studio").then((m) => m.
   ),
 });
 
-export function StudioLoader() {
-  return <Studio />;
+export function StudioLoader(props: StudioProps) {
+  return <Studio {...props} />;
 }

@@ -37,6 +37,12 @@ export function ConfirmDeleteDialog({
   const requiresText = Boolean(confirmText);
   const canConfirm = !requiresText || typed === confirmText;
 
+  React.useEffect(() => {
+    if (!open) {
+      setTyped("");
+    }
+  }, [open]);
+
   return (
     <Dialog
       open={open}

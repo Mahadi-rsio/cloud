@@ -8,40 +8,30 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
 import MenuItem from "@mui/material/MenuItem";
-import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { Database, Check, Copy, Sparkles, ArrowRight } from "lucide-react";
-import { CopyField } from "@/components/shared/copy-field";
+import { Database } from "lucide-react";
 import { createDatabase, type DatabaseItem } from "@/lib/databases/client";
 import { extractErrorMessage } from "@/lib/errors";
 
-const REGIONS = [
-  { value: "iad", label: "US East (Virginia) - iad" },
-];
+const REGIONS = [{ value: "iad", label: "US East (iad)" }];
+const DB_NAME_REGEX = /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/;
 
 export function CreateDatabaseDialog({
   open,
   onOpenChange,
   onSuccess,
-  onOpenConnect,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: (db: DatabaseItem) => void;
-  onOpenConnect?: (db: DatabaseItem) => void;
 }) {
   const [name, setName] = React.useState("");
   const [region, setRegion] = React.useState("iad");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-
-  const [createdDb, setCreatedDb] = React.useState<DatabaseItem | null>(null);
-  const [copiedToken, setCopiedToken] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
@@ -49,44 +39,39 @@ export function CreateDatabaseDialog({
       setRegion("iad");
       setError(null);
       setIsSubmitting(false);
-      setCreatedDb(null);
-      setCopiedToken(false);
     }
   }, [open]);
 
-  const previewSlug = React.useMemo(() => {
-    const slug = name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 16);
-    return slug || "db";
-  }, [name]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanName = name.trim();
+    const cleanName = name.trim().toLowerCase();
 
     if (!cleanName) {
       setError("Database name is required.");
       return;
     }
 
-    if (cleanName.length < 2 || cleanName.length > 48) {
-      setError("Database name must be between 2 and 48 characters.");
+    if (cleanName.length < 3 || cleanName.length > 32) {
+      setError("Database name must be between 3 and 32 characters.");
+      return;
+    }
+
+    if (!DB_NAME_REGEX.test(cleanName)) {
+      setError(
+        "Use lowercase letters, numbers, and hyphens only (must start and end with a letter or number).",
+      );
       return;
     }
 
     try {
       setIsSubmitting(true);
       setError(null);
-      const res = await createDatabase({
+      const created = await createDatabase({
         name: cleanName,
         region,
       });
-      setCreatedDb(res);
-      onSuccess(res);
+      onOpenChange(false);
+      onSuccess(created);
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -94,240 +79,83 @@ export function CreateDatabaseDialog({
     }
   };
 
-  const handleCopyToken = async () => {
-    if (!createdDb?.defaultToken) return;
-    try {
-      await navigator.clipboard.writeText(createdDb.defaultToken);
-    } catch {
-      const textarea = document.createElement("textarea");
-      textarea.value = createdDb.defaultToken;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
-    }
-    setCopiedToken(true);
-    setTimeout(() => setCopiedToken(false), 2000);
-  };
-
-  if (createdDb) {
-    return (
-      <Dialog open={open} onClose={() => onOpenChange(false)} fullWidth maxWidth="sm">
-        <DialogTitle sx={{ pb: 1 }}>
-          <Box
-            sx={{
-              mb: 1.5,
-              display: "inline-flex",
-              width: 40,
-              height: 40,
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "8px",
-              backgroundColor: "rgba(61, 214, 140, 0.12)",
-              color: "#3dd68c",
-            }}
-          >
-            <Sparkles size={20} />
-          </Box>
-          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
-            Database Created Successfully
-          </Typography>
-        </DialogTitle>
-
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <DialogContentText>
-            Your new distributed libSQL database is provisioned and ready for connections.
-          </DialogContentText>
-
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 1.5,
-              borderRadius: "10px",
-              backgroundColor: "var(--muted)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 1.25,
-            }}
-          >
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Typography variant="caption" color="text.secondary">
-                Database Name
-              </Typography>
-              <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                {createdDb.name}
-              </Typography>
-            </Box>
-            <Divider />
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Typography variant="caption" color="text.secondary">
-                Namespace
-              </Typography>
-              <Typography variant="caption" sx={{ fontFamily: "var(--font-mono)" }}>
-                {createdDb.namespace}
-              </Typography>
-            </Box>
-            <Divider />
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Typography variant="caption" color="text.secondary">
-                Region
-              </Typography>
-              <Typography variant="caption">
-                {createdDb.region.toUpperCase()} (US East)
-              </Typography>
-            </Box>
-            <Divider />
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-              <Typography variant="caption" color="text.secondary">
-                Connection URL
-              </Typography>
-              <CopyField
-                value={createdDb.libsqlUrl}
-                sx={{
-                  borderRadius: "6px",
-                  backgroundColor: "var(--background)",
-                  px: 1,
-                  py: 0.5,
-                  border: "1px solid var(--border)",
-                }}
-              />
-            </Box>
-          </Paper>
-
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-            <Typography variant="caption" sx={{ fontWeight: 600 }}>
-              Primary Auth Token
-            </Typography>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <TextField
-                size="small"
-                fullWidth
-                type="password"
-                value={createdDb.defaultToken}
-                slotProps={{
-                  input: {
-                    readOnly: true,
-                    sx: { fontFamily: "var(--font-mono)", fontSize: "0.75rem" },
-                  },
-                }}
-              />
-              <Button
-                type="button"
-                variant="outlined"
-                size="small"
-                onClick={handleCopyToken}
-                startIcon={
-                  copiedToken ? (
-                    <Check size={14} color="#3dd68c" />
-                  ) : (
-                    <Copy size={14} />
-                  )
-                }
-                sx={{ flexShrink: 0 }}
-              >
-                {copiedToken ? "Copied" : "Copy Token"}
-              </Button>
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              Keep this token safe. It grants full read/write access to this database namespace.
-            </Typography>
-          </Box>
-        </DialogContent>
-
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          {onOpenConnect && (
-            <Button
-              type="button"
-              variant="outlined"
-              endIcon={<ArrowRight size={14} />}
-              onClick={() => {
-                onOpenChange(false);
-                onOpenConnect(createdDb);
-              }}
-            >
-              Connection Guide
-            </Button>
-          )}
-          <Button type="button" variant="contained" onClick={() => onOpenChange(false)}>
-            Done
-          </Button>
-        </DialogActions>
-      </Dialog>
-    );
-  }
-
   return (
     <Dialog
       open={open}
       onClose={() => !isSubmitting && onOpenChange(false)}
       fullWidth
-      maxWidth="xs"
+      slotProps={{
+        paper: {
+          sx: {
+            width: "100%",
+            maxWidth: { xs: "100%", sm: 440 },
+            m: { xs: 0, sm: 2 },
+            alignSelf: { xs: "flex-end", sm: "center" },
+            borderRadius: { xs: "16px 16px 0 0", sm: "14px" },
+          },
+        },
+      }}
     >
       <Box component="form" onSubmit={handleSubmit}>
-        <DialogTitle sx={{ pb: 1 }}>
+        <DialogTitle sx={{ pb: 1.5, display: "flex", alignItems: "center", gap: 1.25 }}>
           <Box
             sx={{
-              mb: 1.5,
               display: "inline-flex",
-              width: 40,
-              height: 40,
+              width: 34,
+              height: 34,
               alignItems: "center",
               justifyContent: "center",
               borderRadius: "8px",
-              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              backgroundColor: "color-mix(in oklab, var(--primary) 12%, transparent)",
               color: "var(--primary)",
+              flexShrink: 0,
             }}
           >
-            <Database size={20} />
+            <Database size={18} />
           </Box>
-          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
-            Create Database
+          <Typography variant="h6" component="span" sx={{ fontWeight: 600, fontSize: "1.05rem" }}>
+            Create database
           </Typography>
         </DialogTitle>
 
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <DialogContentText>
-            Deploy a new ultra-fast libSQL database with instant global replication.
-          </DialogContentText>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+          {error && (
+            <Alert severity="error" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
 
           <TextField
-            id="db-name"
-            label="Database Name"
+            autoFocus
+            label="Database name"
             size="small"
             fullWidth
-            placeholder="e.g. production-db, analytics, myapp"
             value={name}
             onChange={(e) => {
-              setName(e.target.value);
+              setName(e.target.value.toLowerCase());
               if (error) setError(null);
             }}
+            placeholder="my-app-db"
             disabled={isSubmitting}
-            autoFocus
-            autoComplete="off"
-            slotProps={{ htmlInput: { spellCheck: false } }}
-            helperText={
-              <>
-                Domain preview:{" "}
-                <Box
-                  component="span"
-                  sx={{ fontFamily: "var(--font-mono)", color: "var(--foreground)", fontWeight: 500 }}
-                >
-                  {previewSlug}-[id].cloudisy.top
-                </Box>
-              </>
-            }
+            helperText="Lowercase letters, numbers, and hyphens (3-32 chars)"
+            slotProps={{
+              htmlInput: {
+                maxLength: 32,
+                autoCapitalize: "none",
+                autoCorrect: "off",
+                spellCheck: false,
+              },
+            }}
           />
 
           <TextField
-            id="db-region"
-            label="Primary Region"
             select
+            label="Region"
             size="small"
             fullWidth
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             disabled={isSubmitting}
-            helperText="Primary writer instance region. Read replicas can sync globally."
           >
             {REGIONS.map((r) => (
               <MenuItem key={r.value} value={r.value}>
@@ -335,11 +163,16 @@ export function CreateDatabaseDialog({
               </MenuItem>
             ))}
           </TextField>
-
-          {error && <Alert severity="error">{error}</Alert>}
         </DialogContent>
 
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: { xs: "calc(20px + env(safe-area-inset-bottom, 0px))", sm: 2.5 },
+            pt: 1,
+            gap: 1,
+          }}
+        >
           <Button
             type="button"
             variant="outlined"
@@ -352,9 +185,9 @@ export function CreateDatabaseDialog({
             type="submit"
             variant="contained"
             disabled={isSubmitting || !name.trim()}
-            startIcon={isSubmitting ? <CircularProgress size={14} color="inherit" /> : undefined}
+            startIcon={isSubmitting ? <CircularProgress size={15} color="inherit" /> : undefined}
           >
-            {isSubmitting ? "Creating..." : "Create Database"}
+            {isSubmitting ? "Creating..." : "Create"}
           </Button>
         </DialogActions>
       </Box>

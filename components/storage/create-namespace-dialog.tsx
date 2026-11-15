@@ -8,7 +8,6 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -44,18 +43,18 @@ export function CreateNamespaceDialog({
     const clean = name.trim().toLowerCase();
 
     if (!clean) {
-      setError("Storage name is required.");
+      setError("Bucket name is required.");
       return;
     }
 
     if (clean.length < 3 || clean.length > 63) {
-      setError("Storage name must be between 3 and 63 characters.");
+      setError("Bucket name must be between 3 and 63 characters.");
       return;
     }
 
     if (!NAME_REGEX.test(clean)) {
       setError(
-        "Storage name must start and end with a lowercase letter or number, and can only contain lowercase letters, numbers, hyphens, and dots."
+        "Use lowercase letters, numbers, hyphens, and dots (must start and end with a letter or number).",
       );
       return;
     }
@@ -64,8 +63,8 @@ export function CreateNamespaceDialog({
       setIsSubmitting(true);
       setError(null);
       const created = await createStorageNamespace(clean);
-      onSuccess(created);
       onOpenChange(false);
+      onSuccess(created);
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -78,55 +77,79 @@ export function CreateNamespaceDialog({
       open={open}
       onClose={() => !isSubmitting && onOpenChange(false)}
       fullWidth
-      maxWidth="xs"
+      slotProps={{
+        paper: {
+          sx: {
+            width: "100%",
+            maxWidth: { xs: "100%", sm: 440 },
+            m: { xs: 0, sm: 2 },
+            alignSelf: { xs: "flex-end", sm: "center" },
+            borderRadius: { xs: "16px 16px 0 0", sm: "14px" },
+          },
+        },
+      }}
     >
       <Box component="form" onSubmit={handleSubmit}>
-        <DialogTitle sx={{ pb: 1 }}>
+        <DialogTitle sx={{ pb: 1.5, display: "flex", alignItems: "center", gap: 1.25 }}>
           <Box
             sx={{
-              mb: 1.5,
               display: "inline-flex",
-              width: 40,
-              height: 40,
+              width: 34,
+              height: 34,
               alignItems: "center",
               justifyContent: "center",
               borderRadius: "8px",
-              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              backgroundColor: "color-mix(in oklab, var(--primary) 12%, transparent)",
               color: "var(--primary)",
+              flexShrink: 0,
             }}
           >
-            <FolderPlus size={20} />
+            <FolderPlus size={18} />
           </Box>
-          <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
-            Create Storage
+          <Typography variant="h6" component="span" sx={{ fontWeight: 600, fontSize: "1.05rem" }}>
+            Create bucket
           </Typography>
         </DialogTitle>
 
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <DialogContentText>
-            Create an isolated storage bucket namespace for your files, assets, or backups.
-          </DialogContentText>
+        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 1.5, pt: 1 }}>
+          {error && (
+            <Alert severity="error" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
 
           <TextField
-            id="namespace-name"
-            label="Storage Name"
+            autoFocus
+            label="Bucket name"
             size="small"
             fullWidth
-            placeholder="e.g. assets, user-uploads, backups"
             value={name}
             onChange={(e) => {
               setName(e.target.value.toLowerCase());
               if (error) setError(null);
             }}
+            placeholder="my-app-assets"
             disabled={isSubmitting}
-            autoFocus
-            helperText="Lowercase letters, numbers, hyphens, and dots (3-63 characters)."
+            helperText="Lowercase letters, numbers, hyphens, and dots (3-63 chars)"
+            slotProps={{
+              htmlInput: {
+                maxLength: 63,
+                autoCapitalize: "none",
+                autoCorrect: "off",
+                spellCheck: false,
+              },
+            }}
           />
-
-          {error && <Alert severity="error">{error}</Alert>}
         </DialogContent>
 
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <DialogActions
+          sx={{
+            px: 3,
+            pb: { xs: "calc(20px + env(safe-area-inset-bottom, 0px))", sm: 2.5 },
+            pt: 1,
+            gap: 1,
+          }}
+        >
           <Button
             type="button"
             variant="outlined"
@@ -139,9 +162,9 @@ export function CreateNamespaceDialog({
             type="submit"
             variant="contained"
             disabled={isSubmitting || !name.trim()}
-            startIcon={isSubmitting ? <CircularProgress size={14} color="inherit" /> : undefined}
+            startIcon={isSubmitting ? <CircularProgress size={15} color="inherit" /> : undefined}
           >
-            {isSubmitting ? "Creating..." : "Create Storage"}
+            {isSubmitting ? "Creating..." : "Create"}
           </Button>
         </DialogActions>
       </Box>

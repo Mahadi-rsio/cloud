@@ -57,7 +57,19 @@ export function AppShell({
             pb: { xs: "calc(76px + env(safe-area-inset-bottom, 0px))", md: 4 },
           }}
         >
-          {children}
+          <Box
+            sx={{
+              width: "100%",
+              maxWidth: 1400,
+              mx: "auto",
+              display: "flex",
+              flexDirection: "column",
+              flex: "1 1 0%",
+              minHeight: 0,
+            }}
+          >
+            {children}
+          </Box>
         </Box>
         <MobileBottomNav />
       </Box>

@@ -2,16 +2,17 @@
 
 import * as React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Checkbox from "@mui/material/Checkbox";
-import Chip from "@mui/material/Chip";
-import CircularProgress from "@mui/material/CircularProgress";
+import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
+import Skeleton from "@mui/material/Skeleton";
+import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Table from "@mui/material/Table";
@@ -25,65 +26,54 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import {
-  HardDrive,
-  FolderPlus,
-  Upload,
-  Download,
-  Trash2,
-  Search,
-  RefreshCw,
-  Key,
-  Plus,
-  FileText,
-  FileArchive,
-  FileCode,
-  Image as ImageIcon,
-  Info,
+  Copy,
+  ExternalLink,
   Folder,
-  ChevronRight,
-  ArrowUpDown,
+  HardDrive,
+  Key,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
 } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
-import { EmptyState } from "@/components/shared/empty-state";
+import { EmptyState, ErrorState } from "@/components/shared/empty-state";
 import { ConfirmDeleteDialog } from "@/components/shared/confirm-delete-dialog";
 import { CopyField } from "@/components/shared/copy-field";
 import { RelativeTime } from "@/components/shared/relative-time";
-import { QuotaMeterBar } from "./quota-meter-bar";
+import { ResourceRow } from "@/components/shared/resource-row";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { ToneBadge } from "@/components/shared/surface-card";
+import { UsageBar } from "@/components/shared/usage-bar";
 import { CreateNamespaceDialog } from "./create-namespace-dialog";
-import { UploadFileDialog } from "./upload-file-dialog";
-import { FileDetailDialog } from "./file-detail-dialog";
 import { CreateApiKeyDialog } from "./create-api-key-dialog";
 import {
-  fetchStorageUsage,
-  fetchNamespaces,
-  fetchFiles,
-  deleteStorageNamespace,
-  deleteStorageFile,
-  downloadStorageFile,
-  fetchApiKeys,
   deleteStorageApiKey,
+  deleteStorageNamespace,
+  fetchApiKeys,
+  fetchNamespaces,
+  fetchStorageUsage,
   formatBytes,
   getApiKeyStatus,
-  type StorageUsageResponse,
-  type StorageNamespace,
-  type StorageObject,
   type StorageApiKey,
+  type StorageNamespace,
+  type StorageUsageResponse,
 } from "@/lib/storage-client";
 import { extractErrorMessage } from "@/lib/errors";
+
+type StorageTab = "buckets" | "keys";
 
 export type FileSortField = "name" | "size" | "uploaded";
 export type FileSortOrder = "asc" | "desc";
 
-export function sortStorageObjects(
-  items: StorageObject[],
-  field: FileSortField,
-  order: FileSortOrder,
-): StorageObject[] {
+export function sortStorageObjects<
+  T extends { name?: string; key: string; size: number; uploaded: string },
+>(items: T[], field: FileSortField, order: FileSortOrder): T[] {
   const dir = order === "asc" ? 1 : -1;
   return [...items].sort((a, b) => {
-    if (field === "size") {
-      return (a.size - b.size) * dir;
-    }
+    if (field === "size") return (a.size - b.size) * dir;
     if (field === "uploaded") {
       return (new Date(a.uploaded).getTime() - new Date(b.uploaded).getTime()) * dir;
     }
@@ -93,1404 +83,761 @@ export function sortStorageObjects(
   });
 }
 
-function getFileIcon(filename: string, contentType?: string) {
-  const ext = filename.split(".").pop()?.toLowerCase() || "";
-  if (
-    contentType?.startsWith("image/") ||
-    ["jpg", "jpeg", "png", "gif", "webp", "svg", "avif"].includes(ext)
-  ) {
-    return <ImageIcon size={18} color="#3dd68c" style={{ flexShrink: 0 }} />;
+async function copyText(text: string): Promise<void> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fallback below
+    }
   }
-  if (["zip", "tar", "gz", "tgz", "rar", "7z"].includes(ext)) {
-    return <FileArchive size={18} color="#f5a524" style={{ flexShrink: 0 }} />;
-  }
-  if (
-    ["js", "ts", "jsx", "tsx", "json", "html", "css", "yaml", "yml", "sql", "sh"].includes(
-      ext,
-    )
-  ) {
-    return <FileCode size={18} color="#3b82f6" style={{ flexShrink: 0 }} />;
-  }
-  return <FileText size={18} color="var(--primary)" style={{ flexShrink: 0 }} />;
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
 }
 
-const PAGE_LIMIT = 100;
-
 export function StoragePage() {
-  const [activeTab, setActiveTab] = React.useState<"files" | "keys">("files");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  const rawTab = searchParams.get("tab");
+  const activeTab: StorageTab = rawTab === "keys" ? "keys" : "buckets";
+
+  const setActiveTab = React.useCallback(
+    (tab: StorageTab) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (tab === "buckets") {
+        params.delete("tab");
+      } else {
+        params.set("tab", tab);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   const [usage, setUsage] = React.useState<StorageUsageResponse | null>(null);
   const [isLoadingUsage, setIsLoadingUsage] = React.useState(true);
-  const [usageError, setUsageError] = React.useState(false);
 
-  const [namespaces, setNamespaces] = React.useState<StorageNamespace[]>([]);
-  const [selectedNamespace, setSelectedNamespace] = React.useState<string>("");
-  const [isLoadingNamespaces, setIsLoadingNamespaces] = React.useState(true);
-  const [namespacesLoadError, setNamespacesLoadError] = React.useState<string | null>(
-    null,
-  );
-
-  const [files, setFiles] = React.useState<StorageObject[]>([]);
-  const [prefixes, setPrefixes] = React.useState<string[]>([]);
-  const [currentPrefix, setCurrentPrefix] = React.useState<string>("");
-  const [nextCursor, setNextCursor] = React.useState<string | undefined>(undefined);
-  const [hasMoreFiles, setHasMoreFiles] = React.useState(false);
-  const [isLoadingMoreFiles, setIsLoadingMoreFiles] = React.useState(false);
-  const [fileSearch, setFileSearch] = React.useState("");
-  const [sortField, setSortField] = React.useState<FileSortField>("name");
-  const [sortOrder, setSortOrder] = React.useState<FileSortOrder>("asc");
-  const [selectedFileKeys, setSelectedFileKeys] = React.useState<Set<string>>(new Set());
-  const [isBulkDeleting, setIsBulkDeleting] = React.useState(false);
-  const [isLoadingFiles, setIsLoadingFiles] = React.useState(false);
-  const [filesLoadError, setFilesLoadError] = React.useState<string | null>(null);
+  const [buckets, setBuckets] = React.useState<StorageNamespace[]>([]);
+  const [isLoadingBuckets, setIsLoadingBuckets] = React.useState(true);
+  const [bucketsError, setBucketsError] = React.useState<string | null>(null);
+  const [bucketSearch, setBucketSearch] = React.useState("");
 
   const [apiKeys, setApiKeys] = React.useState<StorageApiKey[]>([]);
   const [isLoadingKeys, setIsLoadingKeys] = React.useState(false);
+  const [keysError, setKeysError] = React.useState<string | null>(null);
 
-  const [createStorageOpen, setCreateStorageOpen] = React.useState(false);
-  const [uploadFileOpen, setUploadFileOpen] = React.useState(false);
+  const [createBucketOpen, setCreateBucketOpen] = React.useState(false);
   const [createKeyOpen, setCreateKeyOpen] = React.useState(false);
-  const [detailFile, setDetailFile] = React.useState<StorageObject | null>(null);
-
-  const [deleteFileTarget, setDeleteFileTarget] = React.useState<StorageObject | null>(
-    null,
-  );
-  const [isDeletingFile, setIsDeletingFile] = React.useState(false);
-
-  const [deleteStorageTarget, setDeleteStorageTarget] = React.useState<string | null>(
-    null,
-  );
-  const [isDeletingStorage, setIsDeletingStorage] = React.useState(false);
-
-  const [deleteKeyTarget, setDeleteKeyTarget] = React.useState<StorageApiKey | null>(
-    null,
-  );
+  const [deleteBucketTarget, setDeleteBucketTarget] = React.useState<StorageNamespace | null>(null);
+  const [isDeletingBucket, setIsDeletingBucket] = React.useState(false);
+  const [deleteKeyTarget, setDeleteKeyTarget] = React.useState<StorageApiKey | null>(null);
   const [isDeletingKey, setIsDeletingKey] = React.useState(false);
 
-  const [pageError, setPageError] = React.useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [menuAnchor, setMenuAnchor] = React.useState<{
+    el: HTMLElement;
+    bucket: StorageNamespace;
+  } | null>(null);
+  const [toast, setToast] = React.useState<string | null>(null);
 
-  // Request sequence counter to prevent out-of-order namespace responses from overwriting active view
-  const filesRequestSeqRef = React.useRef(0);
-
-  const loadInitialData = React.useCallback(async () => {
-    setPageError(null);
-    setNamespacesLoadError(null);
-    setUsageError(false);
-    setIsRefreshing(true);
-
-    const [usageResult, nsResult] = await Promise.allSettled([
+  const loadData = React.useCallback(async () => {
+    setIsLoadingBuckets(true);
+    setBucketsError(null);
+    const [usageRes, nsRes] = await Promise.allSettled([
       fetchStorageUsage(),
       fetchNamespaces(),
     ]);
 
-    if (usageResult.status === "fulfilled") {
-      setUsage(usageResult.value);
-      setUsageError(false);
-    } else {
-      setUsage(null);
-      setUsageError(true);
+    if (usageRes.status === "fulfilled") {
+      setUsage(usageRes.value);
     }
-
-    if (nsResult.status === "fulfilled") {
-      const safeNs = Array.isArray(nsResult.value) ? nsResult.value : [];
-      setNamespaces(safeNs);
-      setNamespacesLoadError(null);
-      if (safeNs.length > 0) {
-        setSelectedNamespace((prev) => {
-          if (prev && safeNs.some((ns) => ns.name === prev)) return prev;
-          return safeNs[0]!.name;
-        });
-      } else {
-        setSelectedNamespace("");
-      }
-    } else {
-      const errMsg = extractErrorMessage(nsResult.reason);
-      setNamespacesLoadError(errMsg);
-      setPageError(errMsg);
-    }
-
     setIsLoadingUsage(false);
-    setIsLoadingNamespaces(false);
-    setIsRefreshing(false);
-  }, []);
 
-  React.useEffect(() => {
-    loadInitialData();
-  }, [loadInitialData]);
-
-  const loadFilesForNamespace = React.useCallback(
-    async (ns: string, prefix = "", appendCursor?: string) => {
-      if (!ns) {
-        setFiles([]);
-        setPrefixes([]);
-        setNextCursor(undefined);
-        setHasMoreFiles(false);
-        return;
-      }
-
-      const seq = ++filesRequestSeqRef.current;
-
-      try {
-        if (appendCursor) {
-          setIsLoadingMoreFiles(true);
-        } else {
-          setIsLoadingFiles(true);
-          setFilesLoadError(null);
-          setSelectedFileKeys(new Set());
-        }
-
-        const res = await fetchFiles(ns, {
-          prefix: prefix || undefined,
-          limit: PAGE_LIMIT,
-          cursor: appendCursor,
-        });
-
-        // Ignore stale response if user already switched namespace or prefix
-        if (seq !== filesRequestSeqRef.current) return;
-
-        setFiles((prev) => (appendCursor ? [...prev, ...res.objects] : res.objects));
-        setPrefixes(res.prefixes);
-        setNextCursor(res.cursor);
-        setHasMoreFiles(Boolean(res.truncated && res.cursor));
-      } catch (err) {
-        if (seq !== filesRequestSeqRef.current) return;
-        const msg = extractErrorMessage(err);
-        setFilesLoadError(msg);
-        setPageError(msg);
-      } finally {
-        if (seq === filesRequestSeqRef.current) {
-          setIsLoadingFiles(false);
-          setIsLoadingMoreFiles(false);
-        }
-      }
-    },
-    [],
-  );
-
-  React.useEffect(() => {
-    if (selectedNamespace) {
-      loadFilesForNamespace(selectedNamespace, currentPrefix);
+    if (nsRes.status === "fulfilled") {
+      setBuckets(Array.isArray(nsRes.value) ? nsRes.value : []);
     } else {
-      setFiles([]);
-      setPrefixes([]);
-      setNextCursor(undefined);
-      setHasMoreFiles(false);
+      setBucketsError(extractErrorMessage(nsRes.reason));
     }
-  }, [selectedNamespace, currentPrefix, loadFilesForNamespace]);
+    setIsLoadingBuckets(false);
+  }, []);
 
   const loadKeys = React.useCallback(async () => {
     try {
       setIsLoadingKeys(true);
+      setKeysError(null);
       const keys = await fetchApiKeys();
       setApiKeys(keys);
     } catch (err) {
-      setPageError(extractErrorMessage(err));
+      setKeysError(extractErrorMessage(err));
     } finally {
       setIsLoadingKeys(false);
     }
   }, []);
 
   React.useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  React.useEffect(() => {
     if (activeTab === "keys") {
-      loadKeys();
+      void loadKeys();
     }
   }, [activeTab, loadKeys]);
 
-  const handleStorageCreated = (created: StorageNamespace) => {
-    setNamespaces((prev) => [...prev, created]);
-    setCurrentPrefix("");
-    setSelectedNamespace(created.name);
-    fetchStorageUsage().then(setUsage).catch(() => {});
-  };
-
-  const handleConfirmDeleteStorage = async () => {
-    if (!deleteStorageTarget) return;
-    try {
-      setIsDeletingStorage(true);
-      await deleteStorageNamespace(deleteStorageTarget);
-      setNamespaces((prev) => prev.filter((ns) => ns.name !== deleteStorageTarget));
-      setSelectedNamespace((prev) => (prev === deleteStorageTarget ? "" : prev));
-      setCurrentPrefix("");
-      setDeleteStorageTarget(null);
-      fetchStorageUsage().then(setUsage).catch(() => {});
-    } catch (err) {
-      setPageError(extractErrorMessage(err));
-    } finally {
-      setIsDeletingStorage(false);
-    }
-  };
-
-  const handleFileUploaded = async () => {
-    if (selectedNamespace) {
-      await loadFilesForNamespace(selectedNamespace, currentPrefix);
-    }
-    fetchStorageUsage().then(setUsage).catch(() => {});
-  };
-
-  const handleDownloadFile = async (file: StorageObject) => {
-    const filename = file.name || (file.key ?? "").split("/").pop() || "file";
-    try {
-      await downloadStorageFile(selectedNamespace, file.name || file.key, filename);
-    } catch (err) {
-      setPageError(extractErrorMessage(err));
-    }
-  };
-
-  const handleConfirmDeleteFile = async () => {
-    if (!deleteFileTarget || !selectedNamespace) return;
-    const targetKey = deleteFileTarget.name || deleteFileTarget.key;
-    try {
-      setIsDeletingFile(true);
-      await deleteStorageFile(selectedNamespace, targetKey);
-      setFiles((prev) => prev.filter((f) => (f.name || f.key) !== targetKey));
-      setSelectedFileKeys((prev) => {
-        const next = new Set(prev);
-        next.delete(targetKey);
-        return next;
-      });
-      setDeleteFileTarget(null);
-      fetchStorageUsage().then(setUsage).catch(() => {});
-    } catch (err) {
-      setPageError(extractErrorMessage(err));
-    } finally {
-      setIsDeletingFile(false);
-    }
-  };
-
-  const handleBulkDeleteSelected = async () => {
-    if (!selectedNamespace || selectedFileKeys.size === 0) return;
-    const keysToDelete = Array.from(selectedFileKeys);
-    setIsBulkDeleting(true);
-    setPageError(null);
-    try {
-      for (const fileKey of keysToDelete) {
-        await deleteStorageFile(selectedNamespace, fileKey);
+  // "/" keyboard shortcut to focus search
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || target?.isContentEditable) return;
+      if (activeTab === "buckets") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
       }
-      setFiles((prev) => prev.filter((f) => !selectedFileKeys.has(f.name || f.key)));
-      setSelectedFileKeys(new Set());
-      fetchStorageUsage().then(setUsage).catch(() => {});
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeTab]);
+
+  const filteredBuckets = React.useMemo(() => {
+    const q = bucketSearch.trim().toLowerCase();
+    if (!q) return buckets;
+    return buckets.filter((b) => b.name.toLowerCase().includes(q));
+  }, [buckets, bucketSearch]);
+
+  const getBucketEndpoint = (bucketName: string) => {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://cloud.rsioex.workers.dev";
+    return `${origin}/api/v1/storage/namespaces/${encodeURIComponent(bucketName)}/files`;
+  };
+
+  const handleCopyEndpoint = async (bucketName: string) => {
+    await copyText(getBucketEndpoint(bucketName));
+    setToast("Bucket endpoint copied");
+  };
+
+  const handleDeleteBucket = async () => {
+    if (!deleteBucketTarget) return;
+    try {
+      setIsDeletingBucket(true);
+      await deleteStorageNamespace(deleteBucketTarget.name);
+      setBuckets((prev) => prev.filter((b) => b.name !== deleteBucketTarget.name));
+      setToast(`Deleted bucket "${deleteBucketTarget.name}"`);
+      setDeleteBucketTarget(null);
+      void loadData();
     } catch (err) {
-      setPageError(extractErrorMessage(err));
+      setToast(extractErrorMessage(err));
     } finally {
-      setIsBulkDeleting(false);
+      setIsDeletingBucket(false);
     }
   };
 
-  const handleKeyCreated = (apiKey: StorageApiKey) => {
-    setApiKeys((prev) => [apiKey, ...prev]);
-  };
-
-  const handleConfirmDeleteKey = async () => {
+  const handleDeleteKey = async () => {
     if (!deleteKeyTarget) return;
     try {
       setIsDeletingKey(true);
       await deleteStorageApiKey(deleteKeyTarget.id);
-      setApiKeys((prev) =>
-        prev.map((k) =>
-          k.id === deleteKeyTarget.id
-            ? { ...k, revokedAt: new Date().toISOString() }
-            : k,
-        ),
-      );
+      setApiKeys((prev) => prev.filter((k) => k.id !== deleteKeyTarget.id));
+      setToast(`Revoked API key "${deleteKeyTarget.name}"`);
       setDeleteKeyTarget(null);
     } catch (err) {
-      setPageError(extractErrorMessage(err));
+      setToast(extractErrorMessage(err));
     } finally {
       setIsDeletingKey(false);
     }
   };
 
-  // Derive virtual subfolder prefixes and sorted/filtered files for current prefix
-  const { visibleSubfolders, filteredFiles } = React.useMemo(() => {
-    const folderSet = new Set<string>(prefixes);
-    const matchingFiles: StorageObject[] = [];
-    const q = fileSearch.trim().toLowerCase();
-
-    for (const f of files) {
-      const fullPath = f.name || f.key;
-      if (currentPrefix && !fullPath.startsWith(currentPrefix)) continue;
-
-      const relative = currentPrefix ? fullPath.slice(currentPrefix.length) : fullPath;
-      // When not searching, group nested paths into clickable folders
-      if (!q && relative.includes("/")) {
-        const subFolder = relative.split("/")[0]!;
-        folderSet.add(`${currentPrefix}${subFolder}/`);
-      }
-
-      if (
-        !q ||
-        fullPath.toLowerCase().includes(q) ||
-        (f.httpMetadata?.contentType || "").toLowerCase().includes(q)
-      ) {
-        matchingFiles.push(f);
-      }
-    }
-
-    return {
-      visibleSubfolders: Array.from(folderSet).sort(),
-      filteredFiles: sortStorageObjects(matchingFiles, sortField, sortOrder),
-    };
-  }, [files, prefixes, currentPrefix, fileSearch, sortField, sortOrder]);
-
-  const breadcrumbSegments = React.useMemo(() => {
-    if (!currentPrefix) return [];
-    const parts = currentPrefix.replace(/\/+$/, "").split("/").filter(Boolean);
-    return parts.map((label, idx) => ({
-      label,
-      prefix: parts.slice(0, idx + 1).join("/") + "/",
-    }));
-  }, [currentPrefix]);
-
-  const toggleSort = (field: FileSortField) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortOrder("asc");
-    }
-  };
-
-  const toggleSelectFile = (key: string) => {
-    setSelectedFileKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const toggleSelectAllFiles = () => {
-    if (selectedFileKeys.size === filteredFiles.length && filteredFiles.length > 0) {
-      setSelectedFileKeys(new Set());
-    } else {
-      setSelectedFileKeys(new Set(filteredFiles.map((f) => f.name || f.key)));
-    }
-  };
+  const usedBytes = usage?.usedBytes ?? 0;
+  const limitBytes = usage?.storageLimitBytes ?? 536_870_912;
+  const storagePercent = usage?.storagePercent ?? 0;
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 3,
-        maxWidth: "80rem",
-        mx: "auto",
-        width: "100%",
-      }}
-    >
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
       <PageHeader
-        title="Storage"
-        description="High-performance S3-compatible object storage powered by Cloudflare R2 and Durable Objects with free tier metering."
+        title={
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>
+            <span>Storage</span>
+            {!isLoadingBuckets && (
+              <ToneBadge tone="primary" mono>
+                {buckets.length}
+              </ToneBadge>
+            )}
+          </Box>
+        }
+        description="S3-compatible, zero egress fees"
         actions={
-          <Stack direction="row" spacing={1}>
-            <Button
-              type="button"
-              variant="outlined"
-              size="small"
-              onClick={() => {
-                loadInitialData();
-                if (selectedNamespace) {
-                  loadFilesForNamespace(selectedNamespace, currentPrefix);
-                }
-                if (activeTab === "keys") loadKeys();
-              }}
-              disabled={isRefreshing}
-              startIcon={
-                <RefreshCw
-                  size={15}
-                  style={
-                    isRefreshing ? { animation: "spin 1s linear infinite" } : undefined
-                  }
-                />
-              }
-            >
-              Refresh
-            </Button>
-            {activeTab === "files" ? (
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            <Tooltip title="Refresh storage">
+              <span>
+                <IconButton
+                  aria-label="Refresh storage"
+                  onClick={() => {
+                    void loadData();
+                    if (activeTab === "keys") void loadKeys();
+                  }}
+                  disabled={isLoadingBuckets}
+                  sx={{
+                    width: 40,
+                    height: 40,
+                    border: "1px solid var(--border)",
+                    borderRadius: "10px",
+                  }}
+                >
+                  <RefreshCw
+                    size={16}
+                    style={isLoadingBuckets ? { animation: "spin 1s linear infinite" } : undefined}
+                  />
+                </IconButton>
+              </span>
+            </Tooltip>
+            {activeTab === "buckets" ? (
               <Button
-                type="button"
                 variant="contained"
-                size="small"
-                onClick={() => setCreateStorageOpen(true)}
-                startIcon={<FolderPlus size={15} />}
+                startIcon={<Plus size={16} />}
+                onClick={() => setCreateBucketOpen(true)}
+                sx={{ minHeight: 40, borderRadius: "10px" }}
               >
-                New Storage
+                Create bucket
               </Button>
             ) : (
               <Button
-                type="button"
                 variant="contained"
-                size="small"
+                startIcon={<Plus size={16} />}
                 onClick={() => setCreateKeyOpen(true)}
-                startIcon={<Plus size={15} />}
+                sx={{ minHeight: 40, borderRadius: "10px" }}
               >
-                Create API Key
+                Create API key
               </Button>
             )}
           </Stack>
         }
       />
 
-      <QuotaMeterBar
-        usage={usage}
-        isLoading={isLoadingUsage}
-        hasError={usageError}
-      />
-
-      {pageError && (
-        <Alert
-          severity="error"
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={() => {
-                loadInitialData();
-                if (selectedNamespace) {
-                  loadFilesForNamespace(selectedNamespace, currentPrefix);
-                }
-              }}
-            >
-              Retry
-            </Button>
-          }
-        >
-          {pageError}
-        </Alert>
-      )}
-
-      <Box>
-        <Tabs
-          value={activeTab}
-          onChange={(_, v) => setActiveTab(v)}
-          sx={{ borderBottom: "1px solid var(--border)" }}
-        >
-          <Tab
-            value="files"
-            icon={<HardDrive size={16} />}
-            iconPosition="start"
-            label="Storages & Files"
-            sx={{ minHeight: 44 }}
-          />
-          <Tab
-            value="keys"
-            icon={<Key size={16} />}
-            iconPosition="start"
-            label="API Keys"
-            sx={{ minHeight: 44 }}
-          />
-        </Tabs>
-
-        {activeTab === "files" && (
-          <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 2.5 }}>
-            {namespacesLoadError && namespaces.length === 0 ? (
-              <EmptyState
-                icon={<HardDrive size={24} />}
-                title="Unable to load storages"
-                description={namespacesLoadError}
-                action={
-                  <Button
-                    variant="outlined"
-                    startIcon={<RefreshCw size={16} />}
-                    onClick={() => loadInitialData()}
-                  >
-                    Retry
-                  </Button>
-                }
-              />
-            ) : namespaces.length === 0 && !isLoadingNamespaces ? (
-              <EmptyState
-                icon={<FolderPlus size={24} />}
-                title="No storages created yet"
-                description="Create your first storage bucket namespace to begin uploading, downloading, and managing files."
-                action={
-                  <Button
-                    variant="contained"
-                    startIcon={<FolderPlus size={16} />}
-                    onClick={() => setCreateStorageOpen(true)}
-                  >
-                    Create Storage
-                  </Button>
-                }
-              />
-            ) : (
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {/* Storage Selector Bar */}
-                <Paper
-                  variant="outlined"
-                  sx={{
-                    display: "flex",
-                    flexDirection: { xs: "column", sm: "row" },
-                    alignItems: { xs: "stretch", sm: "center" },
-                    justifyContent: "space-between",
-                    gap: 1.5,
-                    borderRadius: "12px",
-                    p: { xs: 1.5, sm: 2 },
-                  }}
-                >
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
-                    <Box
-                      sx={{
-                        borderRadius: "8px",
-                        backgroundColor: "rgba(56, 189, 248, 0.12)",
-                        p: 1,
-                        color: "var(--primary)",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Folder size={20} />
-                    </Box>
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          display: "block",
-                        }}
-                      >
-                        Active Storage
-                      </Typography>
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.25 }}>
-                        <TextField
-                          select
-                          size="small"
-                          value={selectedNamespace}
-                          onChange={(e) => {
-                            setCurrentPrefix("");
-                            setSelectedNamespace(e.target.value);
-                          }}
-                          sx={{ minWidth: { xs: 160, sm: 220 }, maxWidth: 320, flex: 1 }}
-                        >
-                          {namespaces.map((ns) => (
-                            <MenuItem key={ns.id || ns.name} value={ns.name}>
-                              {ns.name}
-                            </MenuItem>
-                          ))}
-                        </TextField>
-                        <Tooltip title="Create new storage" arrow>
-                          <IconButton
-                            size="small"
-                            aria-label="Create new storage"
-                            onClick={() => setCreateStorageOpen(true)}
-                          >
-                            <Plus size={16} />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </Box>
-                  </Box>
-
-                  <Stack
-                    direction="row"
-                    spacing={1}
-                    sx={{ alignSelf: { xs: "flex-end", sm: "center" } }}
-                  >
-                    {selectedFileKeys.size > 0 && (
-                      <Button
-                        type="button"
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                        startIcon={<Trash2 size={15} />}
-                        onClick={handleBulkDeleteSelected}
-                        disabled={isBulkDeleting}
-                      >
-                        {isBulkDeleting
-                          ? "Deleting..."
-                          : `Delete (${selectedFileKeys.size})`}
-                      </Button>
-                    )}
-                    <Button
-                      type="button"
-                      variant="contained"
-                      size="small"
-                      startIcon={<Upload size={15} />}
-                      onClick={() => setUploadFileOpen(true)}
-                      disabled={!selectedNamespace}
-                    >
-                      Upload File
-                    </Button>
-                    {selectedNamespace && (
-                      <Tooltip title="Delete storage" arrow>
-                        <IconButton
-                          size="small"
-                          aria-label={`Delete storage ${selectedNamespace}`}
-                          onClick={() => setDeleteStorageTarget(selectedNamespace)}
-                          sx={{
-                            color: "var(--muted-foreground)",
-                            "&:hover": { color: "var(--destructive)" },
-                          }}
-                        >
-                          <Trash2 size={16} />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </Stack>
-                </Paper>
-
-                {/* Folder Breadcrumbs */}
-                {breadcrumbSegments.length > 0 && (
-                  <Box
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: 0.5,
-                      px: 0.5,
-                    }}
-                  >
-                    <Button
-                      size="small"
-                      variant="text"
-                      onClick={() => setCurrentPrefix("")}
-                      sx={{ minWidth: 0, px: 1, fontSize: "0.75rem" }}
-                    >
-                      {selectedNamespace}
-                    </Button>
-                    {breadcrumbSegments.map((seg) => (
-                      <React.Fragment key={seg.prefix}>
-                        <ChevronRight size={14} color="var(--muted-foreground)" />
-                        <Button
-                          size="small"
-                          variant="text"
-                          onClick={() => setCurrentPrefix(seg.prefix)}
-                          sx={{
-                            minWidth: 0,
-                            px: 1,
-                            fontSize: "0.75rem",
-                            fontWeight: seg.prefix === currentPrefix ? 700 : 500,
-                          }}
-                        >
-                          {seg.label}
-                        </Button>
-                      </React.Fragment>
-                    ))}
-                  </Box>
-                )}
-
-                {/* Files Explorer Bar */}
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: { xs: "column", sm: "row" },
-                    alignItems: { xs: "stretch", sm: "center" },
-                    justifyContent: "space-between",
-                    gap: 1.5,
-                  }}
-                >
-                  <TextField
-                    size="small"
-                    placeholder="Search files by path or MIME type..."
-                    value={fileSearch}
-                    onChange={(e) => setFileSearch(e.target.value)}
-                    sx={{ maxWidth: { sm: 380 }, flex: 1 }}
-                    slotProps={{
-                      input: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <Search size={16} />
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                  />
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ alignSelf: { xs: "flex-end", sm: "center" } }}
-                  >
-                    {filteredFiles.length} {filteredFiles.length === 1 ? "file" : "files"}
-                    {files.length > 0 && (
-                      <> • {formatBytes(files.reduce((sum, f) => sum + f.size, 0))}</>
-                    )}
-                  </Typography>
-                </Box>
-
-                {/* Subfolder chips */}
-                {visibleSubfolders.length > 0 && !fileSearch.trim() && (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                    {visibleSubfolders.map((folderPrefix) => {
-                      const label = folderPrefix
-                        .slice(currentPrefix.length)
-                        .replace(/\/$/, "");
-                      return (
-                        <Chip
-                          key={folderPrefix}
-                          icon={<Folder size={14} />}
-                          label={`${label}/`}
-                          clickable
-                          onClick={() => setCurrentPrefix(folderPrefix)}
-                          variant="outlined"
-                          sx={{ borderRadius: "8px", fontWeight: 500 }}
-                        />
-                      );
-                    })}
-                  </Box>
-                )}
-
-                {/* Files Table */}
-                {isLoadingFiles ? (
-                  <Box
-                    sx={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      py: 6,
-                      gap: 1,
-                    }}
-                  >
-                    <CircularProgress size={24} />
-                    <Typography variant="body2" color="text.secondary">
-                      Loading files from R2...
-                    </Typography>
-                  </Box>
-                ) : filesLoadError && files.length === 0 ? (
-                  <EmptyState
-                    icon={<HardDrive size={24} />}
-                    title="Failed to load files"
-                    description={filesLoadError}
-                    action={
-                      <Button
-                        variant="outlined"
-                        startIcon={<RefreshCw size={16} />}
-                        onClick={() =>
-                          loadFilesForNamespace(selectedNamespace, currentPrefix)
-                        }
-                      >
-                        Retry
-                      </Button>
-                    }
-                  />
-                ) : filteredFiles.length === 0 ? (
-                  files.length === 0 ? (
-                    <EmptyState
-                      icon={<Upload size={24} />}
-                      title="No files in this storage"
-                      description={`Storage "${selectedNamespace}" is currently empty. Upload files to get started.`}
-                      action={
-                        <Button
-                          variant="contained"
-                          startIcon={<Upload size={16} />}
-                          onClick={() => setUploadFileOpen(true)}
-                        >
-                          Upload File
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <Paper
-                      variant="outlined"
-                      sx={{
-                        borderStyle: "dashed",
-                        borderRadius: "12px",
-                        p: 4,
-                        textAlign: "center",
-                      }}
-                    >
-                      <Typography variant="body2" color="text.secondary">
-                        No files match your search query.
-                      </Typography>
-                    </Paper>
-                  )
-                ) : (
-                  <>
-                    <TableContainer
-                      component={Paper}
-                      variant="outlined"
-                      sx={{ borderRadius: "12px", overflowX: "auto" }}
-                    >
-                      <Table size="small" sx={{ minWidth: 560 }}>
-                        <TableHead>
-                          <TableRow sx={{ backgroundColor: "var(--muted)" }}>
-                            <TableCell padding="checkbox">
-                              <Checkbox
-                                size="small"
-                                checked={
-                                  filteredFiles.length > 0 &&
-                                  selectedFileKeys.size === filteredFiles.length
-                                }
-                                indeterminate={
-                                  selectedFileKeys.size > 0 &&
-                                  selectedFileKeys.size < filteredFiles.length
-                                }
-                                onChange={toggleSelectAllFiles}
-                                slotProps={{ input: { "aria-label": "Select all files" } }}
-                              />
-                            </TableCell>
-                            <TableCell
-                              onClick={() => toggleSort("name")}
-                              sx={{
-                                fontWeight: 600,
-                                fontSize: "0.75rem",
-                                textTransform: "uppercase",
-                                cursor: "pointer",
-                                userSelect: "none",
-                              }}
-                            >
-                              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
-                                Name
-                                <ArrowUpDown size={12} />
-                              </Box>
-                            </TableCell>
-                            <TableCell
-                              onClick={() => toggleSort("size")}
-                              sx={{
-                                fontWeight: 600,
-                                fontSize: "0.75rem",
-                                textTransform: "uppercase",
-                                cursor: "pointer",
-                                userSelect: "none",
-                              }}
-                            >
-                              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
-                                Size
-                                <ArrowUpDown size={12} />
-                              </Box>
-                            </TableCell>
-                            <TableCell
-                              onClick={() => toggleSort("uploaded")}
-                              sx={{
-                                fontWeight: 600,
-                                fontSize: "0.75rem",
-                                textTransform: "uppercase",
-                                cursor: "pointer",
-                                userSelect: "none",
-                              }}
-                            >
-                              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
-                                Last Modified
-                                <ArrowUpDown size={12} />
-                              </Box>
-                            </TableCell>
-                            <TableCell
-                              sx={{
-                                fontWeight: 600,
-                                fontSize: "0.75rem",
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              ETag
-                            </TableCell>
-                            <TableCell
-                              align="right"
-                              sx={{
-                                fontWeight: 600,
-                                fontSize: "0.75rem",
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              Actions
-                            </TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {filteredFiles.map((file) => {
-                            const fileKey = file.name || file.key;
-                            const filename = fileKey.split("/").pop() || "file";
-                            const isSelected = selectedFileKeys.has(fileKey);
-                            return (
-                              <TableRow
-                                key={fileKey}
-                                hover
-                                selected={isSelected}
-                                sx={{ cursor: "pointer" }}
-                                onClick={() => setDetailFile(file)}
-                              >
-                                <TableCell
-                                  padding="checkbox"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Checkbox
-                                    size="small"
-                                    checked={isSelected}
-                                    onChange={() => toggleSelectFile(fileKey)}
-                                    slotProps={{ input: { "aria-label": `Select ${fileKey}` } }}
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-                                    {getFileIcon(filename, file.httpMetadata?.contentType)}
-                                    <Box sx={{ minWidth: 0 }}>
-                                      <Typography
-                                        variant="body2"
-                                        noWrap
-                                        sx={{ fontWeight: 500, maxWidth: { xs: 200, sm: 360 } }}
-                                      >
-                                        {fileKey}
-                                      </Typography>
-                                      <Typography
-                                        variant="caption"
-                                        color="text.secondary"
-                                        sx={{ fontSize: "11px" }}
-                                      >
-                                        {file.httpMetadata?.contentType ||
-                                          "application/octet-stream"}
-                                      </Typography>
-                                    </Box>
-                                  </Box>
-                                </TableCell>
-                                <TableCell
-                                  sx={{
-                                    color: "var(--muted-foreground)",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {formatBytes(file.size)}
-                                </TableCell>
-                                <TableCell
-                                  sx={{
-                                    color: "var(--muted-foreground)",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  <RelativeTime date={file.uploaded} />
-                                </TableCell>
-                                <TableCell
-                                  sx={{
-                                    fontFamily: "var(--font-mono)",
-                                    fontSize: "0.75rem",
-                                    color: "var(--muted-foreground)",
-                                    maxWidth: 140,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {file.etag}
-                                </TableCell>
-                                <TableCell
-                                  align="right"
-                                  sx={{ whiteSpace: "nowrap" }}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Tooltip title="Download" arrow>
-                                    <IconButton
-                                      size="small"
-                                      aria-label={`Download ${fileKey}`}
-                                      onClick={() => handleDownloadFile(file)}
-                                    >
-                                      <Download size={16} />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="View details" arrow>
-                                    <IconButton
-                                      size="small"
-                                      aria-label={`Details for ${fileKey}`}
-                                      onClick={() => setDetailFile(file)}
-                                    >
-                                      <Info size={16} />
-                                    </IconButton>
-                                  </Tooltip>
-                                  <Tooltip title="Delete" arrow>
-                                    <IconButton
-                                      size="small"
-                                      aria-label={`Delete ${fileKey}`}
-                                      onClick={() => setDeleteFileTarget(file)}
-                                      sx={{ "&:hover": { color: "var(--destructive)" } }}
-                                    >
-                                      <Trash2 size={16} />
-                                    </IconButton>
-                                  </Tooltip>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-
-                    {hasMoreFiles && nextCursor && (
-                      <Box sx={{ display: "flex", justifyContent: "center", pt: 1 }}>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          disabled={isLoadingMoreFiles}
-                          onClick={() =>
-                            loadFilesForNamespace(
-                              selectedNamespace,
-                              currentPrefix,
-                              nextCursor,
-                            )
-                          }
-                        >
-                          {isLoadingMoreFiles ? "Loading more..." : "Load More Files"}
-                        </Button>
-                      </Box>
-                    )}
-                  </>
-                )}
-              </Box>
-            )}
+      {/* Quota Summary Strip */}
+      <Paper
+        variant="outlined"
+        sx={{
+          px: 2.25,
+          py: 1.75,
+          borderRadius: "12px",
+          borderColor: "var(--border)",
+          backgroundColor: "var(--card)",
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: { xs: "stretch", sm: "center" },
+          justifyContent: "space-between",
+          gap: 2,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
+          <Box
+            sx={{
+              display: "flex",
+              width: 36,
+              height: 36,
+              flexShrink: 0,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "9px",
+              backgroundColor: "color-mix(in oklab, var(--primary) 12%, transparent)",
+              color: "var(--primary)",
+            }}
+          >
+            <HardDrive size={17} />
           </Box>
-        )}
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              {isLoadingUsage
+                ? "Loading quota..."
+                : `${formatBytes(usedBytes)} of ${formatBytes(limitBytes)} used`}
+            </Typography>
+            <Typography variant="caption" sx={{ color: "var(--muted-foreground)" }}>
+              {usage ? `${usage.fileCount.toLocaleString()} total objects across ${buckets.length} buckets` : "Free tier storage quota"}
+            </Typography>
+          </Box>
+        </Box>
+        <Box sx={{ width: { xs: "100%", sm: 280 }, flexShrink: 0 }}>
+          <UsageBar
+            compact
+            percent={storagePercent}
+            valueLabel={`${storagePercent.toFixed(1)}%`}
+          />
+        </Box>
+      </Paper>
 
-        {activeTab === "keys" && (
-          <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 3 }}>
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: { xs: "column", sm: "row" },
-                alignItems: { sm: "center" },
-                justifyContent: "space-between",
-                gap: 1.5,
+      {/* Top-level Tabs: Buckets | API Keys */}
+      <Tabs
+        value={activeTab}
+        onChange={(_, v: StorageTab) => setActiveTab(v)}
+        aria-label="Storage sections"
+        sx={{
+          borderBottom: "1px solid var(--border)",
+          minHeight: 42,
+          "& .MuiTab-root": {
+            minHeight: 42,
+            textTransform: "none",
+            fontWeight: 600,
+            fontSize: "0.875rem",
+          },
+        }}
+      >
+        <Tab value="buckets" label="Buckets" />
+        <Tab value="keys" label="API Keys" />
+      </Tabs>
+
+      {/* Tab 1: Buckets */}
+      {activeTab === "buckets" && (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <Box sx={{ maxWidth: { xs: "100%", sm: 340 } }}>
+            <TextField
+              inputRef={searchInputRef}
+              size="small"
+              fullWidth
+              placeholder="Search buckets... (Press /)"
+              value={bucketSearch}
+              onChange={(e) => setBucketSearch(e.target.value)}
+              slotProps={{
+                input: {
+                  sx: { borderRadius: "10px" },
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Search size={16} />
+                    </InputAdornment>
+                  ),
+                },
               }}
-            >
-              <Box>
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                  Storage API Keys
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Keys authenticate REST API, cURL scripts, and S3-compatible SDKs
-                  against your storage buckets.
-                </Typography>
-              </Box>
-              <Button
-                type="button"
-                variant="contained"
-                size="small"
-                startIcon={<Plus size={15} />}
-                onClick={() => setCreateKeyOpen(true)}
-                sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}
-              >
-                Create API Key
-              </Button>
-            </Box>
+            />
+          </Box>
 
-            {isLoadingKeys ? (
-              <Box
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  py: 6,
-                  gap: 1,
-                }}
-              >
-                <CircularProgress size={24} />
-                <Typography variant="body2" color="text.secondary">
-                  Loading API keys...
-                </Typography>
-              </Box>
-            ) : apiKeys.length === 0 ? (
-              <EmptyState
-                icon={<Key size={24} />}
-                title="No API keys generated"
-                description="Create an API key to securely upload, download, and manage storage programmatically."
-                action={
-                  <Button
-                    variant="contained"
-                    startIcon={<Plus size={16} />}
-                    onClick={() => setCreateKeyOpen(true)}
-                  >
-                    Create API Key
-                  </Button>
-                }
-              />
-            ) : (
+          {isLoadingBuckets && buckets.length === 0 ? (
+            <Paper
+              variant="outlined"
+              sx={{ borderRadius: "12px", borderColor: "var(--border)", overflow: "hidden" }}
+            >
+              {[1, 2, 3].map((i) => (
+                <Box
+                  key={i}
+                  sx={{
+                    px: 2,
+                    py: 1.75,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    borderBottom: i < 3 ? "1px solid var(--border)" : "none",
+                  }}
+                >
+                  <Skeleton variant="rounded" width={34} height={34} />
+                  <Box sx={{ flex: 1 }}>
+                    <Skeleton width="30%" height={20} />
+                    <Skeleton width="20%" height={16} />
+                  </Box>
+                </Box>
+              ))}
+            </Paper>
+          ) : bucketsError ? (
+            <ErrorState
+              title="Failed to load buckets"
+              description={bucketsError}
+              onRetry={() => void loadData()}
+            />
+          ) : buckets.length === 0 ? (
+            <EmptyState
+              icon={<Folder size={22} />}
+              title="No buckets yet"
+              description="Create your first S3-compatible bucket to store assets, backups, and user uploads."
+              action={
+                <Button
+                  variant="contained"
+                  startIcon={<Plus size={16} />}
+                  onClick={() => setCreateBucketOpen(true)}
+                >
+                  Create bucket
+                </Button>
+              }
+            />
+          ) : filteredBuckets.length === 0 ? (
+            <EmptyState
+              icon={<Search size={22} />}
+              title="No matching buckets"
+              description={`No buckets match "${bucketSearch}".`}
+              action={
+                <Button variant="outlined" onClick={() => setBucketSearch("")}>
+                  Clear search
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              {/* Desktop Table (>=900px / md+) */}
               <TableContainer
                 component={Paper}
                 variant="outlined"
-                sx={{ borderRadius: "12px", overflowX: "auto" }}
+                sx={{
+                  display: { xs: "none", md: "block" },
+                  borderRadius: "12px",
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--card)",
+                }}
               >
-                <Table size="small" sx={{ minWidth: 680 }}>
+                <Table size="medium" aria-label="Storage buckets table">
                   <TableHead>
-                    <TableRow sx={{ backgroundColor: "var(--muted)" }}>
-                      <TableCell
-                        sx={{
+                    <TableRow
+                      sx={{
+                        "& th": {
                           fontWeight: 600,
                           fontSize: "0.75rem",
+                          color: "var(--muted-foreground)",
                           textTransform: "uppercase",
-                        }}
-                      >
-                        Key Name
-                      </TableCell>
-                      <TableCell
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Prefix / Key ID
-                      </TableCell>
-                      <TableCell
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Status
-                      </TableCell>
-                      <TableCell
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Permissions
-                      </TableCell>
-                      <TableCell
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Last Used
-                      </TableCell>
-                      <TableCell
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Created
-                      </TableCell>
-                      <TableCell
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Expires
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{
-                          fontWeight: 600,
-                          fontSize: "0.75rem",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Actions
-                      </TableCell>
+                          letterSpacing: "0.04em",
+                          borderBottomColor: "var(--border)",
+                          py: 1.25,
+                        },
+                      }}
+                    >
+                      <TableCell>Bucket name</TableCell>
+                      <TableCell>Files</TableCell>
+                      <TableCell>Total size</TableCell>
+                      <TableCell>Created</TableCell>
+                      <TableCell align="right">Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {apiKeys.map((key) => {
-                      const status = getApiKeyStatus(key);
-                      const scopeItems = String(key.scopes || "")
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter(Boolean);
-                      return (
-                        <TableRow key={key.id} hover>
-                          <TableCell sx={{ fontWeight: 500 }}>
-                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                              <Key size={15} color="var(--muted-foreground)" />
-                              <span>{key.name}</span>
+                    {filteredBuckets.map((bucket) => (
+                      <TableRow
+                        key={bucket.name}
+                        hover
+                        onClick={() => router.push(`/storage/${encodeURIComponent(bucket.name)}`)}
+                        sx={{
+                          cursor: "pointer",
+                          "& td": { borderBottomColor: "var(--border)", py: 1.375 },
+                          "&:last-child td": { borderBottom: 0 },
+                        }}
+                      >
+                        <TableCell>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                width: 34,
+                                height: 34,
+                                alignItems: "center",
+                                justifyContent: "center",
+                                borderRadius: "8px",
+                                backgroundColor: "color-mix(in oklab, var(--primary) 12%, transparent)",
+                                color: "var(--primary)",
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Folder size={16} />
                             </Box>
-                          </TableCell>
-                          <TableCell
-                            sx={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}
-                          >
-                            <CopyField value={key.prefix || key.id} />
-                          </TableCell>
-                          <TableCell>
-                            <Chip
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              {bucket.name}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: "0.8125rem" }}>
+                          {(bucket.objectCount ?? 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell sx={{ fontFamily: "var(--font-mono)", fontSize: "0.8125rem" }}>
+                          {formatBytes(bucket.totalBytes ?? 0)}
+                        </TableCell>
+                        <TableCell sx={{ color: "var(--muted-foreground)", fontSize: "0.8125rem" }}>
+                          <RelativeTime value={bucket.createdAt} />
+                        </TableCell>
+                        <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                          <Tooltip title="Bucket actions">
+                            <IconButton
                               size="small"
-                              label={
-                                status === "active"
-                                  ? "Active"
-                                  : status === "revoked"
-                                    ? "Revoked"
-                                    : "Expired"
-                              }
-                              color={
-                                status === "active"
-                                  ? "success"
-                                  : status === "revoked"
-                                    ? "error"
-                                    : "warning"
-                              }
-                              sx={{ height: 22, fontSize: "0.7rem", fontWeight: 600 }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                              {scopeItems.map((scope) => (
-                                <Chip
-                                  key={scope}
-                                  size="small"
-                                  label={scope}
-                                  sx={{
-                                    height: 20,
-                                    fontSize: "0.7rem",
-                                    borderRadius: "6px",
-                                  }}
-                                />
-                              ))}
-                            </Box>
-                          </TableCell>
-                          <TableCell
-                            sx={{
-                              color: "var(--muted-foreground)",
-                              fontSize: "0.75rem",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {key.lastUsedAt ? (
-                              <RelativeTime date={key.lastUsedAt} />
-                            ) : (
-                              "Never"
-                            )}
-                          </TableCell>
-                          <TableCell
-                            sx={{
-                              color: "var(--muted-foreground)",
-                              fontSize: "0.75rem",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            <RelativeTime date={key.createdAt} />
-                          </TableCell>
-                          <TableCell
-                            sx={{
-                              color: "var(--muted-foreground)",
-                              fontSize: "0.75rem",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {key.expiresAt ? (
-                              <RelativeTime date={key.expiresAt} />
-                            ) : (
-                              "Never"
-                            )}
-                          </TableCell>
-                          <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                            {status === "active" && (
-                              <Tooltip title="Revoke API key" arrow>
-                                <IconButton
-                                  size="small"
-                                  aria-label={`Revoke API key ${key.name}`}
-                                  onClick={() => setDeleteKeyTarget(key)}
-                                  sx={{
-                                    color: "var(--muted-foreground)",
-                                    "&:hover": { color: "var(--destructive)" },
-                                  }}
-                                >
-                                  <Trash2 size={16} />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                              aria-label={`Actions for ${bucket.name}`}
+                              onClick={(e) => setMenuAnchor({ el: e.currentTarget, bucket })}
+                            >
+                              <MoreHorizontal size={16} />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </TableContainer>
-            )}
-          </Box>
-        )}
-      </Box>
 
-      {/* Dialogs */}
-      <CreateNamespaceDialog
-        open={createStorageOpen}
-        onOpenChange={setCreateStorageOpen}
-        onSuccess={handleStorageCreated}
-      />
-
-      {selectedNamespace && (
-        <UploadFileDialog
-          namespace={selectedNamespace}
-          currentPrefix={currentPrefix}
-          open={uploadFileOpen}
-          onOpenChange={setUploadFileOpen}
-          onSuccess={handleFileUploaded}
-        />
+              {/* Mobile Compact Rows (<900px) */}
+              <Paper
+                variant="outlined"
+                sx={{
+                  display: { xs: "block", md: "none" },
+                  borderRadius: "12px",
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--card)",
+                  overflow: "hidden",
+                }}
+              >
+                {filteredBuckets.map((bucket, idx) => (
+                  <React.Fragment key={bucket.name}>
+                    {idx > 0 && <Divider />}
+                    <ResourceRow
+                      onClick={() => router.push(`/storage/${encodeURIComponent(bucket.name)}`)}
+                      icon={<Folder size={16} />}
+                      primary={
+                        <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                          {bucket.name}
+                        </Typography>
+                      }
+                      secondary={
+                        <>
+                          <span>{(bucket.objectCount ?? 0).toLocaleString()} files</span>
+                          <span>•</span>
+                          <span>{formatBytes(bucket.totalBytes ?? 0)}</span>
+                          <span>•</span>
+                          <RelativeTime value={bucket.createdAt} />
+                        </>
+                      }
+                      trailing={
+                        <IconButton
+                          size="small"
+                          aria-label={`Actions for ${bucket.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMenuAnchor({ el: e.currentTarget, bucket });
+                          }}
+                        >
+                          <MoreHorizontal size={16} />
+                        </IconButton>
+                      }
+                    />
+                  </React.Fragment>
+                ))}
+              </Paper>
+            </>
+          )}
+        </Box>
       )}
 
-      <FileDetailDialog
-        file={detailFile}
-        namespace={selectedNamespace}
-        open={Boolean(detailFile)}
-        onOpenChange={(open) => {
-          if (!open) setDetailFile(null);
+      {/* Tab 2: API Keys */}
+      {activeTab === "keys" && (
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {isLoadingKeys && apiKeys.length === 0 ? (
+            <Skeleton variant="rounded" height={180} sx={{ borderRadius: "12px" }} />
+          ) : keysError ? (
+            <ErrorState
+              title="Failed to load API keys"
+              description={keysError}
+              onRetry={() => void loadKeys()}
+            />
+          ) : apiKeys.length === 0 ? (
+            <EmptyState
+              icon={<Key size={22} />}
+              title="No storage API keys yet"
+              description="Create an API key to upload, download, and manage objects programmatically."
+              action={
+                <Button
+                  variant="contained"
+                  startIcon={<Plus size={16} />}
+                  onClick={() => setCreateKeyOpen(true)}
+                >
+                  Create API key
+                </Button>
+              }
+            />
+          ) : (
+            <TableContainer
+              component={Paper}
+              variant="outlined"
+              sx={{
+                borderRadius: "12px",
+                borderColor: "var(--border)",
+                backgroundColor: "var(--card)",
+              }}
+            >
+              <Table size="medium" aria-label="Storage API keys">
+                <TableHead>
+                  <TableRow
+                    sx={{
+                      "& th": {
+                        fontWeight: 600,
+                        fontSize: "0.75rem",
+                        color: "var(--muted-foreground)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                        borderBottomColor: "var(--border)",
+                      },
+                    }}
+                  >
+                    <TableCell>Name</TableCell>
+                    <TableCell>Prefix</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Created</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {apiKeys.map((k) => {
+                    const status = getApiKeyStatus(k);
+                    return (
+                      <TableRow
+                        key={k.id}
+                        sx={{
+                          "& td": { borderBottomColor: "var(--border)" },
+                          "&:last-child td": { borderBottom: 0 },
+                        }}
+                      >
+                        <TableCell sx={{ fontWeight: 600 }}>{k.name}</TableCell>
+                        <TableCell>
+                          <CopyField value={k.prefix} />
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={status} />
+                        </TableCell>
+                        <TableCell sx={{ color: "var(--muted-foreground)", fontSize: "0.8125rem" }}>
+                          <RelativeTime value={k.createdAt} />
+                        </TableCell>
+                        <TableCell align="right">
+                          <Tooltip title="Revoke API key">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              aria-label={`Revoke ${k.name}`}
+                              onClick={() => setDeleteKeyTarget(k)}
+                            >
+                              <Trash2 size={15} />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Box>
+      )}
+
+      {/* Bucket Row Actions Menu */}
+      <Menu
+        anchorEl={menuAnchor?.el ?? null}
+        open={Boolean(menuAnchor)}
+        onClose={() => setMenuAnchor(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <MenuItem
+          onClick={() => {
+            const b = menuAnchor?.bucket;
+            setMenuAnchor(null);
+            if (b) router.push(`/storage/${encodeURIComponent(b.name)}`);
+          }}
+        >
+          <ListItemIcon>
+            <ExternalLink size={16} />
+          </ListItemIcon>
+          Open
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            const b = menuAnchor?.bucket;
+            setMenuAnchor(null);
+            if (b) void handleCopyEndpoint(b.name);
+          }}
+        >
+          <ListItemIcon>
+            <Copy size={16} />
+          </ListItemIcon>
+          Copy endpoint
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          onClick={() => {
+            const b = menuAnchor?.bucket;
+            setMenuAnchor(null);
+            if (b) setDeleteBucketTarget(b);
+          }}
+          sx={{ color: "var(--destructive)" }}
+        >
+          <ListItemIcon sx={{ color: "inherit" }}>
+            <Trash2 size={16} />
+          </ListItemIcon>
+          Delete
+        </MenuItem>
+      </Menu>
+
+      <CreateNamespaceDialog
+        open={createBucketOpen}
+        onOpenChange={setCreateBucketOpen}
+        onSuccess={(created) => {
+          setBuckets((prev) => [created, ...prev]);
+          router.push(`/storage/${encodeURIComponent(created.name)}`);
         }}
-        onDelete={(file) => setDeleteFileTarget(file)}
       />
 
       <CreateApiKeyDialog
         open={createKeyOpen}
         onOpenChange={setCreateKeyOpen}
-        onSuccess={handleKeyCreated}
-        namespaces={namespaces}
+        onSuccess={() => {
+          void loadKeys();
+        }}
       />
 
-      {deleteFileTarget && (
-        <ConfirmDeleteDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setDeleteFileTarget(null);
-          }}
-          title={`Delete ${deleteFileTarget.name || deleteFileTarget.key}?`}
-          description={
-            <>
-              This will permanently delete this file from storage bucket{" "}
-              <Box component="code" sx={{ fontWeight: 600, color: "var(--foreground)" }}>
-                {selectedNamespace}
-              </Box>
-              . This action cannot be undone.
-            </>
-          }
-          isPending={isDeletingFile}
-          onConfirm={handleConfirmDeleteFile}
-        />
-      )}
+      <ConfirmDeleteDialog
+        open={Boolean(deleteBucketTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteBucketTarget(null);
+        }}
+        title="Delete bucket"
+        description={
+          <>
+            This permanently deletes bucket <strong>{deleteBucketTarget?.name}</strong> and all
+            objects inside it.
+          </>
+        }
+        confirmText={deleteBucketTarget?.name}
+        confirmLabel="Delete bucket"
+        isPending={isDeletingBucket}
+        onConfirm={() => void handleDeleteBucket()}
+      />
 
-      {deleteStorageTarget && (
-        <ConfirmDeleteDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setDeleteStorageTarget(null);
-          }}
-          title={`Delete storage "${deleteStorageTarget}"?`}
-          description={
-            <>
-              This will permanently delete storage bucket{" "}
-              <Box component="code" sx={{ fontWeight: 600, color: "var(--foreground)" }}>
-                {deleteStorageTarget}
-              </Box>{" "}
-              and all files stored within it.
-            </>
-          }
-          confirmText={deleteStorageTarget}
-          isPending={isDeletingStorage}
-          onConfirm={handleConfirmDeleteStorage}
-        />
-      )}
+      <ConfirmDeleteDialog
+        open={Boolean(deleteKeyTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteKeyTarget(null);
+        }}
+        title="Revoke API key"
+        description={
+          <>
+            Requests using <strong>{deleteKeyTarget?.name}</strong> will immediately fail.
+          </>
+        }
+        confirmLabel="Revoke key"
+        isPending={isDeletingKey}
+        onConfirm={() => void handleDeleteKey()}
+      />
 
-      {deleteKeyTarget && (
-        <ConfirmDeleteDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setDeleteKeyTarget(null);
-          }}
-          title={`Revoke API Key "${deleteKeyTarget.name}"?`}
-          description="Any application or script using this API key will immediately lose access to your storage buckets. This cannot be undone."
-          isPending={isDeletingKey}
-          onConfirm={handleConfirmDeleteKey}
-        />
-      )}
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={2500}
+        onClose={() => setToast(null)}
+        message={toast}
+      />
     </Box>
   );
 }
 
-const queryClient = new QueryClient();
+const storageQueryClient = new QueryClient();
 
 export function StoragePageProvider() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={storageQueryClient}>
       <StoragePage />
     </QueryClientProvider>
   );
